@@ -27,6 +27,10 @@ export class Store {
     text(user,100);if(!['owner','clerk'].includes(role))throw new Error('invalid input');
     return this.tx(()=>{if(this.role(actor,shop)!=='owner')throw new Error('forbidden');this.db.prepare('INSERT INTO members VALUES (?,?,?)').run(shop,user,role);});
   }
+  removeClerk(actor,shop,user) {
+    text(user,100);
+    return this.tx(()=>{if(this.role(actor,shop)!=='owner')throw new Error('forbidden');const result=this.db.prepare("DELETE FROM members WHERE shop_id=? AND user_id=? AND role='clerk'").run(shop,user);if(result.changes!==1)throw new Error('not found');});
+  }
   createClient(actor,shop,id,name) {
     text(id,100);text(name,80);
     return this.tx(()=>{this.role(actor,shop);this.db.prepare('INSERT INTO clients VALUES (?,?,?)').run(shop,id,name.trim());});
@@ -51,3 +55,4 @@ export class Store {
   async backup(path) { await backup(this.db,path); }
 }
 function text(value,max){if(typeof value!=='string'||!value.trim()||value.length>max)throw new Error('invalid input');}
+

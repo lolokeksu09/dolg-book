@@ -1,0 +1,10 @@
+import { Store } from './store.js';
+import { createApi } from './http.js';
+import { createIntrospector } from './auth.js';
+const {IDENTITY_INTROSPECTION_URL,IDENTITY_ISSUER,IDENTITY_AUDIENCE,IDENTITY_CLIENT_ID,IDENTITY_CLIENT_SECRET,LEDGER_DATABASE,PORT}=process.env;
+if(!LEDGER_DATABASE)throw new Error('LEDGER_DATABASE is required');
+const authenticate=createIntrospector({endpoint:IDENTITY_INTROSPECTION_URL,issuer:IDENTITY_ISSUER,audience:IDENTITY_AUDIENCE,clientId:IDENTITY_CLIENT_ID,clientSecret:IDENTITY_CLIENT_SECRET});
+const store=new Store(LEDGER_DATABASE);
+const port=Number(PORT||3000);if(!Number.isInteger(port)||port<1||port>65535)throw new Error('invalid PORT');
+const server=createApi({store,authenticate});server.listen(port,'127.0.0.1',()=>console.log('Ledger API listening on loopback'));
+for(const sig of ['SIGINT','SIGTERM'])process.on(sig,()=>server.close(()=>{store.close();process.exit(0);}));
