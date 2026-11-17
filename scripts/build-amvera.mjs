@@ -9,7 +9,7 @@ if(existsSync(out)){
 }
 mkdirSync(join(out,'server'),{recursive:true});mkdirSync(join(out,'dist'),{recursive:true});
 writeFileSync(marker,'dolg-book-amvera-output-v1\n');
-for(const name of ['auth.js','http.js','start.js','store.js'])copyFileSync(join('server',name),join(out,'server',name));
+for(const name of ['auth.js','config.js','http.js','start.js','store.js'])copyFileSync(join('server',name),join(out,'server',name));
 for(const name of ['app.js','ledger.js','style.css'])copyFileSync(join('dist',name),join(out,'dist',name));
 copyFileSync('package.json',join(out,'package.json'));
 const sourceLink='<a href="project-source.zip" download>Скачать исходники и план запуска (ZIP)</a>';
