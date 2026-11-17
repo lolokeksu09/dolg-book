@@ -42,3 +42,4 @@ export function demoBook(){
   entries.push({id:'p-1',clientId:'demo-0',type:'payment',amount:150000,date:new Date().toISOString(),due:'',note:'Пример: часть оплаты'},{id:'p-2',clientId:'demo-3',type:'payment',amount:85000,date:new Date().toISOString(),due:'',note:'Пример: оплачено полностью'});
   return validateBook({version:1,clients,entries});
 }
+
