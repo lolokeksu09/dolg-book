@@ -1,0 +1,13 @@
+meta:
+  environment: node
+  toolchain:
+    name: npm
+    version: 24
+build:
+  additionalCommands: node scripts/build-amvera.mjs
+  artifacts:
+    "amvera-dist/*": /
+run:
+  scriptName: server/start.js
+  containerPort: 80
+  persistenceMount: /data
