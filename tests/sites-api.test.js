@@ -28,3 +28,30 @@ test('owner isolation, retry, version conflicts and validation on SQLite',async(
   assert.equal((await handleBook(req('PUT','b',{version:1,requestId:'first-request-0002',book:empty}),db)).status,409);
  }finally{db.close()}
 });
+
+test('rejects valid oversized snapshot before storage and preserves previous version',async()=>{
+ const db=new LocalD1();try{
+  const seed={version:0,requestId:'seed-request-00001',book:empty};
+  assert.equal((await handleBook(req('PUT','a',seed),db)).status,200);
+  const clients=Array.from({length:9500},(_,i)=>({id:String(i).padStart(5,'0')+'x'.repeat(95),name:'Я'.repeat(80),phone:'1'.repeat(30)}));
+  const large={version:2,clients,entries:[]};
+  assert.ok(new TextEncoder().encode(JSON.stringify(large)).length>2000000);
+  const r=await handleBook(req('PUT','a',{version:1,requestId:'large-request-0001',book:large}),db);
+  assert.equal(r.status,413);assert.equal((await r.json()).error,'book exceeds storage limit');
+  const saved=await (await handleBook(req('GET','a'),db)).json();assert.equal(saved.version,1);assert.deepEqual(saved.book,empty);
+ }finally{db.close()}
+});
+
+test('rejects deletion or alteration of ledger history but permits a client rename',async()=>{
+ const db=new LocalD1();try {
+  const original={version:2,clients:[{id:'c',name:'Anna',phone:''}],entries:[{id:'d',clientId:'c',type:'debt',amount:20000,date:'2026-01-01T00:00:00Z',due:'',note:''}]};
+  assert.equal((await handleBook(req('PUT','a',{version:0,requestId:'history-request-001',book:original}),db)).status,200);
+  const erased={...original,entries:[]};
+  let r=await handleBook(req('PUT','a',{version:1,requestId:'history-request-002',book:erased}),db);assert.equal(r.status,422);
+  const rewritten={...original,entries:[{...original.entries[0],amount:10000}]};
+  r=await handleBook(req('PUT','a',{version:1,requestId:'history-request-003',book:rewritten}),db);assert.equal(r.status,422);
+  const renamed={...original,clients:[{...original.clients[0],name:'Анна'}]};
+  r=await handleBook(req('PUT','a',{version:1,requestId:'history-request-004',book:renamed}),db);assert.equal(r.status,200);
+  assert.deepEqual((await (await handleBook(req('GET','a'),db)).json()).book,renamed);
+ }finally{db.close()}
+});

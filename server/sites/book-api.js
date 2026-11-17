@@ -1,6 +1,8 @@
 import { validateBook } from '../../dist/ledger.js';
 
+// D1 limits each row to 2,000,000 bytes; reserve space for keys and metadata.
 const limit=5*1024*1024;
+const maxBookBytes=1_900_000;
 const reply=(status,data)=>Response.json(data,{status,headers:{'cache-control':'no-store','x-content-type-options':'nosniff'}});
 async function readBounded(request){
   const len=request.headers.get('content-length');if(len!==null&&(!/^\d+$/.test(len)||Number(len)>limit))throw new Error('too large');
@@ -28,7 +30,15 @@ export async function handleBook(request,db){
     let input;try{input=JSON.parse(await readBounded(request));}catch(e){return reply(e.message==='too large'?413:400,{error:'invalid request'});}
     if(!input||Array.isArray(input)||typeof input!=='object'||Object.keys(input).sort().join(',')!=='book,requestId,version'||!Number.isSafeInteger(input.version)||input.version<0||input.version>2147483646||typeof input.requestId!=='string'||!/^[A-Za-z0-9_-]{16,100}$/.test(input.requestId))return reply(400,{error:'invalid request'});
     let book;try{book=validateBook(input.book);}catch{return reply(400,{error:'invalid book'});}
-    const payload=JSON.stringify(book);if(new TextEncoder().encode(payload).length>limit-1024)return reply(413,{error:'book too large'});
+    const payload=JSON.stringify(book);if(new TextEncoder().encode(payload).length>maxBookBytes)return reply(413,{error:'book exceeds storage limit'});
+    // Matching versions still must preserve the transaction journal and client identities.
+    // The conditional SQL write below remains the final concurrency guard.
+    const previous=await db.prepare('SELECT version, book_json FROM site_books WHERE owner_id = ?').bind(user).first();
+    if(previous && previous.version===input.version){
+      let saved;try{saved=validateBook(JSON.parse(previous.book_json));}catch{return reply(503,{error:'stored book invalid'});}
+      const clients=new Set(book.clients.map(c=>c.id));
+      if(saved.clients.some(c=>!clients.has(c.id)) || saved.entries.length>book.entries.length || saved.entries.some((e,i)=>JSON.stringify(e)!==JSON.stringify(book.entries[i])))return reply(422,{error:'history cannot be altered'});
+    }
     const digest=await hash(JSON.stringify([input.version,payload]));
     const result=await db.prepare(`INSERT INTO site_books (owner_id,version,book_json,request_id,request_hash,updated_at)
       SELECT ?,1,?,?,?,? WHERE ?=0 OR EXISTS (SELECT 1 FROM site_books WHERE owner_id=?)
