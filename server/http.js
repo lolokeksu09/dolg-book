@@ -9,7 +9,7 @@ export function createApi({store, authenticate, staticDirectory=null}) {
   const send=(status,body)=>{res.writeHead(status,{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'});res.end(JSON.stringify(body));};
   try {
    if(req.url==='/health' && req.method==='GET')return send(200,{status:'ok'});
-   const staticAssets={'/':['index.html','text/html; charset=utf-8'],'/index.html':['index.html','text/html; charset=utf-8'],'/app.js':['app.js','text/javascript; charset=utf-8'],'/ledger.js':['ledger.js','text/javascript; charset=utf-8'],'/style.css':['style.css','text/css; charset=utf-8'],'/project-source.zip':['project-source.zip','application/zip']};
+   const staticAssets={'/':['index.html','text/html; charset=utf-8'],'/index.html':['index.html','text/html; charset=utf-8'],'/app.js':['app.js','text/javascript; charset=utf-8'],'/ledger.js':['ledger.js','text/javascript; charset=utf-8'],'/style.css':['style.css','text/css; charset=utf-8']};
    const assetPath=new URL(req.url,'http://localhost').pathname;
    const asset=Object.hasOwn(staticAssets,assetPath)?staticAssets[assetPath]:null;
    if(staticDirectory&&asset&&(req.method==='GET'||req.method==='HEAD')){
