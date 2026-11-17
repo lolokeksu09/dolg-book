@@ -44,14 +44,16 @@ function openClient(clientId=''){
   $('#client-form').reset();$('#client-dialog .dialog-error').hidden=true;
   const c=book.clients.find(c=>c.id===editClientId);
   if(c){$('#client-form [name=name]').value=c.name;$('#client-form [name=phone]').value=c.phone;}
-  $('#client-title').textContent=c?'Изменить клиента':'Новый клиент';$('#client-submit').textContent=c?'Сохранить изменения':'Создать карточку';$('#client-hint').textContent=c?'История и остаток клиента сохранятся.':'После создания карточки можно записать долг.';
+  $('#client-submit-debt').hidden=!!c;$('#client-title').textContent=c?'Изменить клиента':'Новый клиент';$('#client-submit').textContent=c?'Сохранить изменения':'Создать карточку';$('#client-hint').textContent=c?'История и остаток клиента сохранятся.':'После создания карточки можно записать долг.';
   $('#client-dialog').showModal();
 }
 $('#add-client').onclick=()=>openClient();
 $('#client-form').onsubmit=e=>{e.preventDefault();try{
   const f=new FormData(e.target),name=f.get('name').trim(),phone=f.get('phone').trim();if(!name)throw Error('Введите имя клиента.');
-  save({...book,clients:editClientId?book.clients.map(c=>c.id===editClientId?{...c,name,phone}:c):[...book.clients,{id:id(),name,phone}]});
-  $('#client-dialog').close();if(editClientId)openDetail(editClientId);else toast('Карточка клиента создана.');
+  const newClientId=editClientId||id();
+  save({...book,clients:editClientId?book.clients.map(c=>c.id===editClientId?{...c,name,phone}:c):[...book.clients,{id:newClientId,name,phone}]});
+  const addDebt=!editClientId&&e.submitter?.id==='client-submit-debt';
+  $('#client-dialog').close();if(editClientId)openDetail(editClientId);else if(addDebt)openEntry(newClientId,'debt');else toast('Карточка клиента создана.');
 }catch(err){toast(err.message);}};
 function openEntry(clientId,type){entryClient=clientId;entryType=type;const c=book.clients.find(c=>c.id===clientId);$('#entry-form').reset();$('#entry-dialog .dialog-error').hidden=true;$('#entry-client').textContent=c.name;$('#entry-title').textContent=type==='debt'?'Записать долг':'Принять оплату';$('#entry-balance').textContent='Текущий остаток: '+rub(balance(book,clientId));$('#due-label').hidden=type==='payment';$('#entry-submit').textContent=type==='debt'?'Записать долг':'Сохранить оплату';$('#entry-dialog').showModal();}
 $('#entry-form').onsubmit=e=>{e.preventDefault();try{const f=new FormData(e.target),amount=moneyToCents(f.get('amount'));if(entryType==='payment'&&amount>balance(book,entryClient))throw Error('Оплата превышает остаток долга.');save(addEntry(book,{id:id(),clientId:entryClient,type:entryType,amount,date:new Date().toISOString(),due:entryType==='debt'?f.get('due'):'',note:f.get('note').trim()}));$('#entry-dialog').close();toast(entryType==='debt'?'Долг записан.':'Оплата сохранена. Остаток пересчитан.');}catch(err){toast(err.message);}};
