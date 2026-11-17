@@ -1,12 +1,21 @@
 import { createServer } from 'node:http';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 
 // Requires an introspector; there is deliberately no fallback to caller-supplied identity.
-export function createApi({store, authenticate}) {
+export function createApi({store, authenticate, staticDirectory=null}) {
  if(!store || typeof authenticate!=='function')throw new Error('identity verifier required');
  return createServer(async(req,res)=>{
   const send=(status,body)=>{res.writeHead(status,{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'});res.end(JSON.stringify(body));};
   try {
    if(req.url==='/health' && req.method==='GET')return send(200,{status:'ok'});
+   const staticAssets={'/':['index.html','text/html; charset=utf-8'],'/index.html':['index.html','text/html; charset=utf-8'],'/app.js':['app.js','text/javascript; charset=utf-8'],'/ledger.js':['ledger.js','text/javascript; charset=utf-8'],'/style.css':['style.css','text/css; charset=utf-8'],'/project-source.zip':['project-source.zip','application/zip']};
+   const assetPath=new URL(req.url,'http://localhost').pathname;
+   const asset=Object.hasOwn(staticAssets,assetPath)?staticAssets[assetPath]:null;
+   if(staticDirectory&&asset&&(req.method==='GET'||req.method==='HEAD')){
+    try{const data=await readFile(join(staticDirectory,asset[0]));res.writeHead(200,{'content-type':asset[1],'cache-control':'no-cache','x-content-type-options':'nosniff'});return res.end(req.method==='HEAD'?undefined:data);}
+    catch{return send(503,{error:'interface unavailable'});}
+   }
    let actor;try{actor=await authenticate(req.headers.authorization);}catch{return send(503,{error:'identity unavailable'});}
    if(!actor)return send(401,{error:'unauthorized'});
    const path=new URL(req.url,'http://localhost').pathname;

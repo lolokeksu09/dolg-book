@@ -1,0 +1,9 @@
+meta:
+  environment: node
+  toolchain:
+    name: npm
+    version: 24
+run:
+  scriptName: server/start.js
+  containerPort: 80
+  persistenceMount: /data
