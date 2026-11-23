@@ -476,8 +476,10 @@ public final class MainActivity extends Activity {
         phone.setInputType(InputType.TYPE_CLASS_PHONE);
         content.addView(formGroup("Имя",name));content.addView(formGroup("Телефон",phone));
         showDialog(client==null?"Новый клиент":"Изменить клиента",content,()->{
-            if(client==null)ledger.addClient(name.getText().toString(),phone.getText().toString());
-            else ledger.editClient(client.id,name.getText().toString(),phone.getText().toString());
+            if(client==null){
+                ledger.addClient(name.getText().toString(),phone.getText().toString());
+                tab="Клиенты";selectedClient=null;
+            }else ledger.editClient(client.id,name.getText().toString(),phone.getText().toString());
             return true;
         });
     }
