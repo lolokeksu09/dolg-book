@@ -117,8 +117,21 @@ adb exec-out screencap -p > android/build/native-history.png
 tap_text 'Настройки'
 sleep 0.5
 dump_ui
-grep -Fq 'Восстановить из JSON' android/build/native-ui.xml
-grep -Fq 'JSON-копия ещё не сохранена' android/build/native-ui.xml
+grep -Fq 'Ежедневно проверять сроки' android/build/native-ui.xml
+find_visible() {
+  local target="$1" attempt
+  for attempt in 1 2 3 4 5 6; do
+    dump_ui
+    if grep -Fq "$target" android/build/native-ui.xml; then return 0; fi
+    adb shell input swipe 540 1500 540 740 280
+    sleep 0.35
+  done
+  echo "Missing settings text: $target" >&2
+  return 1
+}
+find_visible 'JSON-копия ещё не сохранена'
+find_visible 'Восстановить из JSON'
+for i in 1 2 3 4 5; do adb shell input swipe 540 620 540 1570 230; done
 adb exec-out screencap -p > android/build/native-settings.png
 tap_text 'Крупный текст'
 sleep 0.5
@@ -198,6 +211,16 @@ grep -Fq 'Просроченных долгов нет' android/build/native-ui.
 adb exec-out screencap -p > android/build/native-clients-filtered.png
 tap_text 'Все'
 sleep 0.4
+tap_text 'Настройки'
+sleep 0.6
+tap_text 'Создать защищённую точку'
+sleep 0.6
+tap_text 'Восстановить защищённую точку'
+sleep 0.4
+dump_ui
+grep -Fq 'Восстановить точку?' android/build/native-ui.xml
+tap_text 'Закрыть'
+sleep 0.2
 tap_text 'Главная'
 
 # Reopen: the onboarding must not be shown twice and the remaining debt persists.
@@ -217,4 +240,17 @@ if grep -F 'FATAL EXCEPTION' android/build/android-runtime-errors.txt; then
   echo 'Android crash observed during onboarding smoke test'
   exit 1
 fi
+# Wide tablet: verify real dual-pane layout with existing QA book.
+adb shell wm size 2000x1200
+adb shell wm density 160
+adb shell am force-stop "$PACKAGE"
+adb shell am start -W -n "$PACKAGE/dev.ventry.raschet.SplashActivity"
+sleep 3
+tap_text 'Клиенты'
+sleep 0.6
+dump_ui
+grep -Fq 'Выберите клиента' android/build/native-ui.xml
+adb exec-out screencap -p > android/build/native-tablet-clients.png
+adb shell wm size reset
+adb shell wm density reset
 echo 'NATIVE_ONBOARDING_SMOKE_PASS'
