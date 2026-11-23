@@ -47,6 +47,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /** Native Android debt ledger, with platform views and SQLite persistence. */
 public final class MainActivity extends Activity {
@@ -54,11 +56,14 @@ public final class MainActivity extends Activity {
     private static final int BORDER=0xff2b3b32, TEXT=0xfff4f7f3, MUTED=0xff9eb4a6;
     private static final int ACCENT=0xffb9efd0, INK=0xff12271b, ALERT=0xffffca97, RED=0xffffacac;
     private static final int REQUEST_IMPORT=101, REQUEST_EXPORT=102, MAX_IMPORT=5*1024*1024;
+    private static final String RECOVERY_PREFS="raschet_local_recovery";
+    private static final ExecutorService RECOVERY_WORK=Executors.newSingleThreadExecutor();
     public static final String EXTRA_FIRST_START = "dev.ventry.raschet.FIRST_START";
     private static final String[] TABS={"Главная","Клиенты","История","Настройки"};
     private static final int[] ICONS={R.drawable.ic_nav_home,R.drawable.ic_nav_people,R.drawable.ic_nav_history,R.drawable.ic_nav_settings};
     private final DateTimeFormatter dayFormat=DateTimeFormatter.ofPattern("d MMM yyyy",new Locale("ru","RU"));
     private LedgerStore ledger;
+    private RecoveryVault vault;
     private LinearLayout root, mainPanel, navigation;
     private TextView shopCaption;
     private FrameLayout page;
@@ -76,6 +81,7 @@ public final class MainActivity extends Activity {
         getWindow().setNavigationBarColor(BG);
         getWindow().getDecorView().setSystemUiVisibility(0);
         ledger=new LedgerStore(this);
+        vault=new RecoveryVault(this);
         shopName=getPreferences(MODE_PRIVATE).getString("shop","Мой магазин");
         largeText=getPreferences(MODE_PRIVATE).getBoolean("large",false);
         if(state!=null){
@@ -503,7 +509,24 @@ public final class MainActivity extends Activity {
                 : "Последний подтверждённый экспорт: "+dayFormat.format(
                     Instant.ofEpochMilli(lastExport).atZone(ZoneId.systemDefault()).toLocalDate());
         view.addView(label(lastExportText,13,lastExport==0L?ALERT:MUTED,false),margin(-1,-2,12));
-        actionRow(view,"↓","Скачать JSON-копию","Вся история, клиенты и суммы",()->exportBook(false));
+        LinearLayout vaultCard=card();
+        vaultCard.addView(label("Защищённые точки восстановления",16,TEXT,true));
+        int count=vault.count();
+        String status=count==0
+                ? "Пока нет точек. Создайте первую, прежде чем менять книгу."
+                : "Сохранено точек: "+count+" · последняя: "+dayFormat.format(
+                    Instant.ofEpochMilli(vault.latestTime())
+                            .atZone(ZoneId.systemDefault()).toLocalDate());
+        vaultCard.addView(label(status,13,MUTED,false));
+        vaultCard.addView(label("Зашифрованы на этом устройстве. После удаления приложения или сброса устройства восстановить их нельзя.",12,ALERT,false));
+        addButton(vaultCard,"Создать защищённую точку",false,
+                this::createRecoveryPoint,1);
+        if(vault.hasPoints())
+            addButton(vaultCard,"Восстановить защищённую точку",false,
+                    this::restoreRecoveryPoint,1);
+        view.addView(vaultCard,margin(-1,-2,10));
+        view.addView(recoveryAutoSetting(),margin(-1,-2,12));
+        actionRow(view,"↓","Скачать JSON-копию","Для переноса на другое устройство",()->exportBook(false));
         actionRow(view,"≡","Экспортировать CSV","Таблица операций",()->exportBook(true));
         actionRow(view,"↑","Восстановить из JSON","Полная замена данных после подтверждения",()->pickImport());
         LinearLayout warning=card();
@@ -563,6 +586,65 @@ public final class MainActivity extends Activity {
         return box;
     }
 
+    private android.content.SharedPreferences recoveryPrefs() {
+        return getSharedPreferences(RECOVERY_PREFS,MODE_PRIVATE);
+    }
+    private void createRecoveryPoint() {
+        try{
+            vault.create(ledger);
+            message("Защищённая точка создана.");
+            render();
+        }catch(Exception e){message("Точка не создана: "+e.getMessage());}
+    }
+    private void restoreRecoveryPoint() {
+        final String snapshot;
+        try{snapshot=vault.readLatest();}
+        catch(Exception ex){message("Не удалось прочитать точку: "+ex.getMessage());return;}
+        LinearLayout form=stack(10);
+        form.addView(label("Текущая книга будет заменена. Сначала автоматически создадим защищённую копию текущих записей. Для переноса между устройствами используйте внешний JSON.",14,ALERT,false));
+        showDialog("Восстановить точку?",form,()->{
+            vault.create(ledger); // Fail closed: do not replace if recovery point cannot be created.
+            ledger.importJson(snapshot);
+            getPreferences(MODE_PRIVATE).edit().remove("last_json_export").apply();
+            selectedClient=null;tab="Клиенты";
+            return true;
+        });
+    }
+    private LinearLayout recoveryAutoSetting() {
+        LinearLayout row=row();
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(16),dp(14),dp(16),dp(14));
+        row.setBackground(shape(PANEL,16,BORDER));
+        LinearLayout detail=stack(4);
+        detail.addView(label("Автозащита после изменений",15,TEXT,true));
+        detail.addView(label("Создаёт локальную зашифрованную точку после сохранения операции. Сохраняются последние четыре.",12,MUTED,false));
+        row.addView(detail,new LinearLayout.LayoutParams(0,-2,1));
+        Switch toggle=new Switch(this);
+        toggle.setChecked(recoveryPrefs().getBoolean("enabled",false));
+        toggle.setContentDescription("Автозащита книги");
+        toggle.setOnCheckedChangeListener((button,checked)->{
+            recoveryPrefs().edit().putBoolean("enabled",checked).apply();
+            if(checked)enqueueRecovery();
+            message(checked?"Локальная автозащита включена.":"Локальная автозащита отключена.");
+        });
+        row.addView(toggle,new LinearLayout.LayoutParams(-2,dp(52)));
+        return row;
+    }
+    private void enqueueRecovery() {
+        if(!recoveryPrefs().getBoolean("enabled",false))return;
+        android.content.Context app=getApplicationContext();
+        RECOVERY_WORK.execute(()->{
+            try(LedgerStore snapshotBook=new LedgerStore(app)){
+                new RecoveryVault(app).create(snapshotBook);
+                app.getSharedPreferences(RECOVERY_PREFS,MODE_PRIVATE).edit()
+                    .putLong("last_success",System.currentTimeMillis())
+                    .remove("last_error").apply();
+            }catch(Exception e){
+                app.getSharedPreferences(RECOVERY_PREFS,MODE_PRIVATE).edit()
+                    .putString("last_error","Не удалось создать локальную копию").apply();
+            }
+        });
+    }
     private LinearLayout textSizeSetting() {
         LinearLayout row=row();
         row.setGravity(Gravity.CENTER_VERTICAL);
@@ -711,7 +793,7 @@ public final class MainActivity extends Activity {
         if(save!=null)addButton(buttons,"Сохранить",true,()->{
             if(saving)return;
             saving=true;
-            try{if(save.save()){dialog.dismiss();render();message("Сохранено.");}}
+            try{if(save.save()){dialog.dismiss();render();enqueueRecovery();message("Сохранено.");}}
             catch(Exception ex){error.setText(ex.getMessage()==null?"Не удалось сохранить запись.":ex.getMessage());error.setVisibility(View.VISIBLE);}
             finally{saving=false;}
         },1);
@@ -803,6 +885,9 @@ public final class MainActivity extends Activity {
                 LinearLayout form=stack(12);
                 form.addView(label("Текущие клиенты и операции будут полностью заменены содержимым JSON-файла. Сохраните свою копию перед продолжением.",15,ALERT,false));
                 showDialog("Восстановить книгу?",form,()->{
+                    // Import is destructive. Keep an authenticated encrypted rollback point first.
+                    // If creating this point fails, abort before touching SQLite.
+                    vault.create(ledger);
                     int[] count=ledger.importJson(backup);
                     // A backup of the previous book is not a backup of this restored book.
                     getPreferences(MODE_PRIVATE).edit().remove("last_json_export").apply();
