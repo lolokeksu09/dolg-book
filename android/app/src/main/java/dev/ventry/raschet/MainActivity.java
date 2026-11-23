@@ -793,7 +793,11 @@ public final class MainActivity extends Activity {
     }
     private TextView label(String text,int size,int color,boolean bold) {
         TextView textView=new TextView(this);
-        textView.setText(text);textView.setTextColor(color);textView.setTextSize(size);
+        textView.setText(text);
+        textView.setTextColor(color);
+        // Large text applies to everyday labels and actions, not only totals.
+        int actualSize=largeText && size<26 ? size+(size<=12?1:2) : size;
+        textView.setTextSize(actualSize);
         textView.setFontFeatureSettings("kern");
         if(bold)textView.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));
         textView.setGravity(Gravity.CENTER_VERTICAL);

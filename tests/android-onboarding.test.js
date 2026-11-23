@@ -77,3 +77,9 @@ test('interactive onboarding practices debt, partial payments and backup without
   assert.doesNotMatch(intro, /\bimport\s+[^;]*(?:LedgerStore|SQLiteDatabase)\s*;/);
   assert.doesNotMatch(intro, /\b(?:new\s+LedgerStore\s*\(|getWritableDatabase\s*\(|getReadableDatabase\s*\(|execSQL\s*\()/);
 });
+
+test('large-text preference affects native labels and remains user-controlled',()=>{
+  const activity=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
+  assert.ok(activity.includes('largeText && size<26'), 'ordinary native labels must honor the large-text switch');
+  assert.ok(activity.includes('getPreferences(MODE_PRIVATE).edit().putBoolean("large",checked)'));
+});

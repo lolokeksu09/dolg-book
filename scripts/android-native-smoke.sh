@@ -104,10 +104,62 @@ dump_ui
 grep -Fq 'Восстановить из JSON' android/build/native-ui.xml
 grep -Fq 'JSON-копия ещё не сохранена' android/build/native-ui.xml
 adb exec-out screencap -p > android/build/native-settings.png
+tap_text 'Крупный текст'
+sleep 0.5
+adb exec-out screencap -p > android/build/native-settings-large.png
+tap_text 'Крупный текст'
+tap_text 'Клиенты'
+
+# Full native UI transaction path, with fictitious records on the fresh CI emulator.
+fill_form_input() {
+  local index="$1" value="$2" coords
+  dump_ui
+  coords=$(python3 - "$index" <<'PY'
+import re, sys, xml.etree.ElementTree as ET
+index=int(sys.argv[1])
+fields=[node for node in ET.parse("android/build/native-ui.xml").iter("node")
+        if node.attrib.get("class")=="android.widget.EditText"]
+if len(fields)<=index: sys.exit("Input missing at index "+str(index))
+nums=[int(s) for s in re.findall(r"\d+",fields[index].attrib.get("bounds",""))]
+if len(nums)!=4: sys.exit("No input coordinates")
+print(f"{(nums[0]+nums[2])//2} {(nums[1]+nums[3])//2}")
+PY
+  )
+  adb shell input tap $coords
+  adb shell input text "$value"
+  adb shell input keyevent 4
+}
+
+tap_text 'Добавить первого клиента'
+sleep 0.4
+fill_form_input 0 TestBuyer
+tap_text 'Сохранить'
+sleep 0.6
+dump_ui
+grep -Fq 'TestBuyer' android/build/native-ui.xml
+tap_text 'TestBuyer'
+sleep 0.4
+tap_text '+ Долг'
+sleep 0.4
+fill_form_input 0 1200
+tap_text 'Сохранить'
+sleep 0.5
+dump_ui
+grep -Fq '200,00' android/build/native-ui.xml
+tap_text 'Оплата'
+sleep 0.4
+fill_form_input 0 400
+tap_text 'Сохранить'
+sleep 0.5
+dump_ui
+grep -Fq '800,00' android/build/native-ui.xml
 tap_text 'Главная'
 sleep 0.4
+dump_ui
+grep -Fq '800,00' android/build/native-ui.xml
+adb exec-out screencap -p > android/build/native-ledger-800.png
 
-# Reopen: the onboarding must not be shown twice.
+# Reopen: the onboarding must not be shown twice and the remaining debt persists.
 adb shell am force-stop "$PACKAGE"
 adb shell am start -W -n "$PACKAGE/dev.ventry.raschet.SplashActivity"
 sleep 3
@@ -117,6 +169,7 @@ if grep -Fq 'Записывайте долги быстро' android/build/nativ
     exit 1
 fi
 grep -Fq 'ОБЩАЯ ЗАДОЛЖЕННОСТЬ' android/build/native-ui.xml
+grep -Fq '800,00' android/build/native-ui.xml
 
 adb logcat -d -s AndroidRuntime:E > android/build/android-runtime-errors.txt
 if grep -F 'FATAL EXCEPTION' android/build/android-runtime-errors.txt; then
