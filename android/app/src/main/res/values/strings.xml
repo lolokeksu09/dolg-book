@@ -1,19 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Расчёт</string>
-    <string name="open_book">Открыть общую книгу</string>
-    <string name="book_description">Долги, оплаты и остатки по клиентам. Книга открывается в браузере.</string>
-    <string name="browser_missing">Установите браузер, чтобы открыть книгу.</string>
-    <string name="address_missing">Сборка проверочная. Адрес сервера пока не задан.</string>
+    <string name="open_book">Общая книга</string>
+    <string name="local_book">Локальная книга</string>
+    <string name="local_note">Записи сохраняются на устройстве · без синхронизации</string>
+    <string name="browser_missing">Не найден браузер для безопасного входа.</string>
+    <string name="address_missing">Сервер общей книги пока не настроен. Локальная книга работает без него.</string>
+    <string name="backup_size_error">Копия слишком большая для сохранения через приложение.</string>
+    <string name="backup_saved">Файл сохранён.</string>
+    <string name="backup_error">Не удалось сохранить файл. Попробуйте снова.</string>
+    <string name="pick_file_error">Не удалось открыть выбор файла.</string>
     <style name="RaschetTheme" parent="android:style/Theme.Material.NoActionBar">
         <item name="android:fontFamily">sans</item>
-        <item name="android:colorAccent">#A9D8BA</item>
+        <item name="android:colorAccent">#8FD8B2</item>
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:windowLightNavigationBar">false</item>
-        <item name="android:windowBackground">#0C1310</item>
-    </style>
-    <style name="RaschetButton" parent="android:style/Theme.Material">
-        <item name="android:colorButtonNormal">#CFE8D5</item>
-        <item name="android:textColorPrimary">#11251A</item>
+        <item name="android:windowBackground">#0B1512</item>
     </style>
 </resources>
