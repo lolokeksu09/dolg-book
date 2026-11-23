@@ -57,9 +57,15 @@ public final class CustomerStatementPdf {
                 paint.setColor(Color.GRAY);
                 canvas.drawText("Дата / Операция",42,183,paint);
                 canvas.drawText("Сумма",465,183,paint);
-                int y=207,rows=0;
-                while(offset<entries.size() && y<=752){
-                    LedgerStore.Entry entry=entries.get(offset++);
+                int y=207;
+                while(offset<entries.size()){
+                    LedgerStore.Entry entry=entries.get(offset);
+                    paint.setTextSize(10);
+                    List<String> noteLines=wrap(entry.note,paint,485);
+                    int needed=18+noteLines.size()*15;
+                    // Never split a financial operation or silently crop its note.
+                    if(y+needed>780)break;
+                    offset++;
                     boolean canceledEntry=canceled.contains(entry.id);
                     String type="debt".equals(entry.type)?"Долг":
                             "payment".equals(entry.type)?"Оплата":"Отмена";
@@ -72,13 +78,12 @@ public final class CustomerStatementPdf {
                     canvas.drawText(("payment".equals(entry.type)?"−":"debt".equals(entry.type)?"+":"↶ ")
                             +rubles(entry.amount),465,y,paint);
                     y+=18;
-                    if(!entry.note.isEmpty()){
-                        paint.setColor(Color.GRAY);
-                        paint.setTextSize(10);
-                        canvas.drawText(fit(entry.note,paint,485),52,y,paint);
-                        y+=17;
+                    paint.setColor(Color.GRAY);
+                    paint.setTextSize(10);
+                    for(String noteLine:noteLines){
+                        canvas.drawText(noteLine,52,y,paint);
+                        y+=15;
                     }
-                    rows++;
                 }
                 if(entries.isEmpty() && page==0){
                     paint.setColor(Color.GRAY);paint.setTextSize(12);
@@ -94,6 +99,18 @@ public final class CustomerStatementPdf {
         }finally{
             document.close();
         }
+    }
+    private static List<String> wrap(String note,Paint paint,int width){
+        List<String> lines=new ArrayList<>();
+        if(note==null||note.isEmpty())return lines;
+        String remaining=note.replace('\n',' ').replace('\r',' ');
+        while(!remaining.isEmpty()){
+            int characters=paint.breakText(remaining,true,width,null);
+            if(characters<=0)characters=1;
+            lines.add(remaining.substring(0,characters));
+            remaining=remaining.substring(characters);
+        }
+        return lines;
     }
     private static String fit(String text,Paint paint,float width){
         if(paint.measureText(text)<=width)return text;
