@@ -73,6 +73,7 @@ test('interactive onboarding practices debt, partial payments and backup without
   }
   assert.ok(intro.includes('ACCESSIBILITY_LIVE_REGION_POLITE'));
   assert.ok(intro.includes('setMinHeight(dp(48))'));
-  assert.ok(!intro.includes('LedgerStore') && !intro.includes('SQLiteDatabase'),
-    'onboarding demo must not persist sample debt or customers');
+  // Do not treat an explanatory comment about LedgerStore as an actual database write.
+  assert.doesNotMatch(intro, /\bimport\s+[^;]*(?:LedgerStore|SQLiteDatabase)\s*;/);
+  assert.doesNotMatch(intro, /\b(?:new\s+LedgerStore\s*\(|getWritableDatabase\s*\(|getReadableDatabase\s*\(|execSQL\s*\()/);
 });

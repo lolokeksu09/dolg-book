@@ -133,7 +133,7 @@ public final class IntroActivity extends Activity {
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
         content.setGravity(Gravity.CENTER_VERTICAL);
-        content.setPadding(dp(28), dp(30), dp(28), dp(18));
+        content.setPadding(dp(28), dp(12), dp(28), dp(12));
 
         FrameLayout glyphFrame = new FrameLayout(this);
         glyphFrame.setBackground(shape(PANEL, 30));
@@ -141,32 +141,32 @@ public final class IntroActivity extends Activity {
         glyph.setImageResource(ICONS[step]);
         glyph.setColorFilter(ACCENT);
         glyph.setContentDescription(null);
-        FrameLayout.LayoutParams glyphParams = new FrameLayout.LayoutParams(dp(60), dp(60), Gravity.CENTER);
+        FrameLayout.LayoutParams glyphParams = new FrameLayout.LayoutParams(dp(44), dp(44), Gravity.CENTER);
         glyphFrame.addView(glyph, glyphParams);
-        content.addView(glyphFrame, new LinearLayout.LayoutParams(dp(112), dp(112)));
+        content.addView(glyphFrame, new LinearLayout.LayoutParams(dp(78), dp(78)));
 
         TextView number = label("ШАГ " + (step + 1) + " ИЗ 3", 12, ACCENT, true);
         number.setLetterSpacing(0.16f);
         LinearLayout.LayoutParams noParams = new LinearLayout.LayoutParams(-1, -2);
-        noParams.topMargin = dp(36);
+        noParams.topMargin = dp(16);
         content.addView(number, noParams);
 
-        TextView title = label(TITLES[step], 31, TEXT, true);
+        TextView title = label(TITLES[step], 28, TEXT, true);
         title.setMaxLines(3);
         LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(-1, -2);
-        titleParams.topMargin = dp(12);
+        titleParams.topMargin = dp(8);
         content.addView(title, titleParams);
 
         TextView description = label(DESCRIPTIONS[step], 16, MUTED, false);
         description.setLineSpacing(dp(4), 1f);
         LinearLayout.LayoutParams descParams = new LinearLayout.LayoutParams(-1, -2);
-        descParams.topMargin = dp(18);
+        descParams.topMargin = dp(12);
         content.addView(description, descParams);
 
         previewHost = new FrameLayout(this);
         previewHost.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
         LinearLayout.LayoutParams previewParams = new LinearLayout.LayoutParams(-1, -2);
-        previewParams.topMargin = dp(30);
+        previewParams.topMargin = dp(18);
         content.addView(previewHost, previewParams);
         updatePracticePreview();
         scroll.addView(content);
@@ -212,7 +212,7 @@ public final class IntroActivity extends Activity {
     private LinearLayout practiceCard(String heading) {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(18), dp(18), dp(18), dp(18));
+        card.setPadding(dp(16), dp(16), dp(16), dp(16));
         GradientDrawable background = shape(PANEL, 22);
         background.setStroke(dp(1), BORDER);
         card.setBackground(background);
@@ -249,14 +249,14 @@ public final class IntroActivity extends Activity {
             updatePracticePreview();
         });
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
-        params.topMargin = dp(12);
+        params.topMargin = dp(8);
         card.addView(button, params);
     }
 
     private LinearLayout debtPractice() {
         LinearLayout card = practiceCard("Попробуйте записать долг");
         practiceText(card, exampleClientAdded ? "Покупатель · пример" : "Список пока пуст",
-                14, MUTED, 18);
+                14, MUTED, 12);
         if (exampleDebtAdded) {
             practiceText(card, "Долг: 1 200 ₽", 24, ACCENT, 5);
             practiceText(card, "Покупка записана. Перейдите к оплатам на следующем шаге.",
@@ -280,7 +280,7 @@ public final class IntroActivity extends Activity {
     private LinearLayout paymentPractice() {
         LinearLayout card = practiceCard("Попробуйте принять оплату");
         int remaining = 1200 - examplePaid;
-        practiceText(card, "Остаток долга", 13, MUTED, 18);
+        practiceText(card, "Остаток долга", 13, MUTED, 12);
         practiceText(card, money(remaining), 27, remaining == 0 ? ACCENT : TEXT, 2);
         practiceText(card, "Уже оплачено: " + money(examplePaid), 13, MUTED, 5);
         if (remaining > 0) {

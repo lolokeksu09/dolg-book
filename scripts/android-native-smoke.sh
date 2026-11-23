@@ -14,21 +14,30 @@ dump_ui() {
   adb exec-out cat /sdcard/raschet-ui.xml > android/build/native-ui.xml
 }
 tap_text() {
-  local target="$1" coords
-  dump_ui
-  coords=$(python3 - "$target" <<'PY'
+  local target="$1" coords attempt
+  # Off-screen practice actions require scrolling on compact displays.
+  for attempt in 1 2 3 4; do
+    dump_ui
+    if coords=$(python3 - "$target" <<'PY'
 import re, sys, xml.etree.ElementTree as ET
 target=sys.argv[1]
 for node in ET.parse("android/build/native-ui.xml").iter("node"):
     if node.attrib.get("text")==target or node.attrib.get("content-desc")==target:
         nums=[int(s) for s in re.findall(r"\d+",node.attrib.get("bounds",""))]
-        if len(nums)==4:
+        if len(nums)==4 and nums[3] > nums[1]:
             print(f"{(nums[0]+nums[2])//2} {(nums[1]+nums[3])//2}")
             sys.exit(0)
-sys.exit("Cannot find tap target: "+target)
+sys.exit(1)
 PY
-)
-  adb shell input tap $coords
+    ); then
+      adb shell input tap $coords
+      return 0
+    fi
+    adb shell input swipe 540 1490 540 730 300
+    sleep 0.35
+  done
+  echo "Cannot find tap target after scrolling: $target" >&2
+  return 1
 }
 dump_ui
 grep -Fq 'Записывайте долги быстро' android/build/native-ui.xml
@@ -65,6 +74,11 @@ tap_text 'Показать состав JSON'
 sleep 0.4
 dump_ui
 grep -Fq 'Клиенты и контакты' android/build/native-ui.xml
+if ! grep -Fq 'Здесь файл не создаётся' android/build/native-ui.xml; then
+  adb shell input swipe 540 1490 540 730 300
+  sleep 0.35
+  dump_ui
+fi
 grep -Fq 'Здесь файл не создаётся' android/build/native-ui.xml
 adb exec-out screencap -p > android/build/native-intro-3-practice.png
 tap_text 'Начать работу'
