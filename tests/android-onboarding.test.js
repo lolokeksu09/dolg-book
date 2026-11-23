@@ -25,10 +25,10 @@ test('intro shows three real steps and completes only after action',()=>{
   for(const text of ['Записывайте долги быстро','Принимайте оплаты без путаницы',
     'Ваша книга всегда под рукой','Далее','Начать работу','Пропустить'])
     assert.ok(intro.includes(text), 'Missing introduction text: '+text);
-  assert.match(intro,/if\\s*\\(state\\s*!=\\s*null\\)/);
+  assert.match(intro,/if\s*\(state\s*!=\s*null\)/);
   assert.ok(intro.includes('finishOnboarding()'));
   assert.ok(intro.includes('putBoolean(KEY_COMPLETED,true)'));
-  assert.match(intro,/getSharedPreferences\\(PREFS,\\s*MODE_PRIVATE\\)/);
+  assert.match(intro,/getSharedPreferences\(PREFS,\s*MODE_PRIVATE\)/);
   assert.ok(!intro.includes('WebView'));
 });
 
