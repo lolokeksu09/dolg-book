@@ -47,7 +47,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
-/** Native Android UI: no WebView, HTML, JavaScript, remote login or hidden network reads. */
+/** Native Android views with an offline database and explicitly separate browser login. */
 public final class MainActivity extends Activity {
     private static final int BG=0xff090e0c, PANEL=0xff141c18, ELEVATED=0xff1b2820;
     private static final int BORDER=0xff2b3b32, TEXT=0xfff4f7f3, MUTED=0xff9eb4a6;
@@ -646,15 +646,14 @@ public final class MainActivity extends Activity {
         button.setPadding(dp(6),dp(9),dp(6),dp(9));
         button.setBackground(shape(filled?ACCENT:ELEVATED,14,filled?0:BORDER));
         button.setOnClickListener(v->action.run());
-        LinearLayout.LayoutParams param=new LinearLayout.LayoutParams(0,-1,weight);
-        if(parent.getChildCount()>0)param.leftMargin=dp(8);
+        boolean horizontal=parent.getOrientation()==LinearLayout.HORIZONTAL;
+        LinearLayout.LayoutParams param=horizontal
+                ?new LinearLayout.LayoutParams(0,-1,weight)
+                :new LinearLayout.LayoutParams(-1,dp(54));
+        if(horizontal&&parent.getChildCount()>0)param.leftMargin=dp(8);
         parent.addView(button,param);
     }
-    private static LinearLayout row() {
-        // Activity-owned factory is below.
-        throw new UnsupportedOperationException("Use instance row()");
-    }
-    private LinearLayout rowInstance() {
+    private LinearLayout row() {
         LinearLayout layout=new LinearLayout(this);
         layout.setOrientation(LinearLayout.HORIZONTAL);
         return layout;
@@ -690,9 +689,9 @@ public final class MainActivity extends Activity {
         block.setBackground(shape(PANEL,19,BORDER));
         return block;
     }
-    private static LinearLayout.LayoutParams margin(int width,int height,int bottom) {
+    private LinearLayout.LayoutParams margin(int width,int height,int bottom) {
         LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(width,height);
-        p.bottomMargin=bottom*3; // physical pixels approx; corrected by dp in caller where necessary.
+        p.bottomMargin=dp(bottom);
         return p;
     }
     private int dp(int value) {return Math.round(value*getResources().getDisplayMetrics().density);}
