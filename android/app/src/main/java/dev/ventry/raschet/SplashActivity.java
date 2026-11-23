@@ -43,7 +43,7 @@ public final class SplashActivity extends Activity {
         name.setText("Расчёт");
         name.setTextSize(32);
         name.setTextColor(TEXT);
-        name.setTypeface(android.graphics.Typeface.create("sans-serif-medium", 0));
+        name.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL));
         name.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams nameParams = new LinearLayout.LayoutParams(-1, -2);
         nameParams.topMargin = dp(20);
