@@ -51,6 +51,8 @@ jobs:
             android/build/native-intro-3-practice.png
             android/build/native-home.png
             android/build/native-clients.png
+            android/build/native-history.png
+            android/build/native-settings.png
             android/build/native-ui.xml
             android/build/android-runtime-errors.txt
           if-no-files-found: warn

@@ -62,7 +62,8 @@ public final class MainActivity extends Activity {
     private TextView shopCaption;
     private FrameLayout page;
     private String tab="Главная", selectedClient=null, search="", historyFilter="Все";
-    private String exportPayload=null, shopName="Мой магазин";
+    private String shopName="Мой магазин";
+    private boolean pendingExport, pendingExportCsv;
     private boolean tablet=false, largeText=false, saving=false;
     private final int pad=18;
 
@@ -74,14 +75,21 @@ public final class MainActivity extends Activity {
         ledger=new LedgerStore(this);
         shopName=getPreferences(MODE_PRIVATE).getString("shop","Мой магазин");
         largeText=getPreferences(MODE_PRIVATE).getBoolean("large",false);
-        if(state!=null){tab=state.getString("tab","Главная");selectedClient=state.getString("client");}
+        if(state!=null){
+            tab=state.getString("tab","Главная");selectedClient=state.getString("client");
+            pendingExport=state.getBoolean("pending_export");
+            pendingExportCsv=state.getBoolean("pending_export_csv");
+        }
         else if(getIntent().getBooleanExtra(EXTRA_FIRST_START,false)&&ledger.clients().isEmpty())tab="Клиенты";
         tablet=getResources().getConfiguration().screenWidthDp>=720;
         setContentView(createShell());
         render();
     }
     @Override protected void onSaveInstanceState(Bundle out) {
-        out.putString("tab",tab);out.putString("client",selectedClient);super.onSaveInstanceState(out);
+        out.putString("tab",tab);out.putString("client",selectedClient);
+        out.putBoolean("pending_export",pendingExport);
+        out.putBoolean("pending_export_csv",pendingExportCsv);
+        super.onSaveInstanceState(out);
     }
     private View createShell() {
         root=new LinearLayout(this);
@@ -200,6 +208,13 @@ public final class MainActivity extends Activity {
         addButton(quick,"Принять оплату",false,()->chooseClient("payment"),1);
         hero.addView(quick,margin(-1,dp(stackedActions?116:54),7));
         view.addView(hero,margin(-1,-2,4));
+        if(!entries.isEmpty() && getPreferences(MODE_PRIVATE).getLong("last_json_export",0L)==0L) {
+            LinearLayout backupHint=card();
+            backupHint.addView(label("Сохраните копию книги",16,TEXT,true));
+            backupHint.addView(label("На этом устройстве ещё не подтверждён ни один JSON-экспорт. Создайте копию перед обновлением или сменой телефона.",13,MUTED,false));
+            addButton(backupHint,"Создать JSON-копию",true,()->exportBook(false),1);
+            view.addView(backupHint,margin(-1,-2,10));
+        }
 
         LinearLayout metrics=row();
         metrics.addView(metric("КЛИЕНТЫ",String.valueOf(customers.size()),"Всего в книге"),new LinearLayout.LayoutParams(0,-2,1));
@@ -367,6 +382,12 @@ public final class MainActivity extends Activity {
         actionRow(view,"✎",shopName,"Изменить название",()->showShopName());
         view.addView(textSizeSetting(),margin(-1,-2,8));
         section(view,"Сохранность данных","Рекомендуется копировать книгу регулярно");
+        long lastExport=getPreferences(MODE_PRIVATE).getLong("last_json_export",0L);
+        String lastExportText=lastExport==0L
+                ? "JSON-копия ещё не сохранена через это приложение."
+                : "Последний подтверждённый экспорт: "+dayFormat.format(
+                    Instant.ofEpochMilli(lastExport).atZone(ZoneId.systemDefault()).toLocalDate());
+        view.addView(label(lastExportText,13,lastExport==0L?ALERT:MUTED,false),margin(-1,-2,12));
         actionRow(view,"↓","Скачать JSON-копию","Вся история, клиенты и суммы",()->exportBook(false));
         actionRow(view,"≡","Экспортировать CSV","Таблица операций",()->exportBook(true));
         actionRow(view,"↑","Восстановить из JSON","Полная замена данных после подтверждения",()->pickImport());
@@ -581,13 +602,19 @@ public final class MainActivity extends Activity {
     }
     private void exportBook(boolean csv) {
         try {
-            exportPayload=csv?makeCsv():ledger.exportJson();
             Intent save=new Intent(Intent.ACTION_CREATE_DOCUMENT);
             save.addCategory(Intent.CATEGORY_OPENABLE);
             save.setType(csv?"text/csv":"application/json");
             save.putExtra(Intent.EXTRA_TITLE,"raschet-"+LocalDate.now()+(csv?".csv":".json"));
+            // Keep only the format while SAF is open. The data is rendered at save time,
+            // so rotating Android cannot silently discard a prepared JSON payload.
+            pendingExport=true;
+            pendingExportCsv=csv;
             startActivityForResult(save,REQUEST_EXPORT);
-        }catch(Exception e){exportPayload=null;message("Не удалось подготовить копию: "+e.getMessage());}
+        }catch(Exception e){
+            pendingExport=false;
+            message("Не удалось открыть выбор файла: "+e.getMessage());
+        }
     }
     private String makeCsv() {
         StringBuilder out=new StringBuilder("\uFEFFКлиент;Телефон;Дата;Тип;Сумма (руб);Срок;Комментарий;ID;Отменяет ID\r\n");
@@ -609,12 +636,23 @@ public final class MainActivity extends Activity {
     @Override protected void onActivityResult(int request,int result,Intent data) {
         super.onActivityResult(request,result,data);
         if(request==REQUEST_EXPORT){
-            String body=exportPayload;exportPayload=null;
-            if(result!=RESULT_OK||data==null||data.getData()==null||body==null)return;
-            try(OutputStream out=getContentResolver().openOutputStream(data.getData(),"wt")){
-                if(out==null)throw new IOException("Нет доступа к файлу.");
-                out.write(body.getBytes(StandardCharsets.UTF_8));
+            boolean canExport=pendingExport;
+            boolean csv=pendingExportCsv;
+            pendingExport=false;
+            if(result!=RESULT_OK||data==null||data.getData()==null||!canExport)return;
+            try {
+                String body=csv?makeCsv():ledger.exportJson();
+                try(OutputStream out=getContentResolver().openOutputStream(data.getData(),"wt")){
+                    if(out==null)throw new IOException("Нет доступа к файлу.");
+                    out.write(body.getBytes(StandardCharsets.UTF_8));
+                    out.flush();
+                }
+                if(!csv){
+                    getPreferences(MODE_PRIVATE).edit()
+                            .putLong("last_json_export",System.currentTimeMillis()).apply();
+                }
                 message("Резервная копия сохранена.");
+                if(tab.equals("Настройки")||tab.equals("Главная"))render();
             }catch(Exception ex){message("Ошибка сохранения: "+ex.getMessage());}
         }else if(request==REQUEST_IMPORT && result==RESULT_OK && data!=null && data.getData()!=null){
             try(InputStream in=getContentResolver().openInputStream(data.getData())){
@@ -630,6 +668,8 @@ public final class MainActivity extends Activity {
                 form.addView(label("Текущие клиенты и операции будут полностью заменены содержимым JSON-файла. Сохраните свою копию перед продолжением.",15,ALERT,false));
                 showDialog("Восстановить книгу?",form,()->{
                     int[] count=ledger.importJson(backup);
+                    // A backup of the previous book is not a backup of this restored book.
+                    getPreferences(MODE_PRIVATE).edit().remove("last_json_export").apply();
                     selectedClient=null;tab="Клиенты";
                     message("Восстановлено: "+count[0]+" клиентов, "+count[1]+" операций.");
                     return true;

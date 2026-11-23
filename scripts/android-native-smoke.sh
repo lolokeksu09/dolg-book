@@ -5,6 +5,8 @@ gradle -p android assembleDebug --no-daemon
 APK=android/app/build/outputs/apk/debug/app-debug.apk
 PACKAGE=dev.ventry.raschet.nativev031
 adb install -r "$APK"
+# Real instrumented SQLite tests execute against the test APK's isolated context.
+gradle -p android connectedDebugAndroidTest --no-daemon
 adb logcat -c
 adb shell am start -W -n "$PACKAGE/dev.ventry.raschet.SplashActivity"
 sleep 4
@@ -91,6 +93,19 @@ sleep 1
 dump_ui
 grep -Fq 'ОБЩАЯ ЗАДОЛЖЕННОСТЬ' android/build/native-ui.xml
 adb exec-out screencap -p > android/build/native-home.png
+tap_text 'История'
+sleep 0.5
+dump_ui
+grep -Fq 'История пока пустая' android/build/native-ui.xml
+adb exec-out screencap -p > android/build/native-history.png
+tap_text 'Настройки'
+sleep 0.5
+dump_ui
+grep -Fq 'Восстановить из JSON' android/build/native-ui.xml
+grep -Fq 'JSON-копия ещё не сохранена' android/build/native-ui.xml
+adb exec-out screencap -p > android/build/native-settings.png
+tap_text 'Главная'
+sleep 0.4
 
 # Reopen: the onboarding must not be shown twice.
 adb shell am force-stop "$PACKAGE"
