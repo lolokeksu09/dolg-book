@@ -33,16 +33,40 @@ PY
 dump_ui
 grep -Fq 'Записывайте долги быстро' android/build/native-ui.xml
 adb exec-out screencap -p > android/build/native-intro-1.png
+tap_text 'Добавить пример клиента'
+sleep 0.4
+dump_ui
+grep -Fq 'Клиент добавлен · остаток 0 ₽' android/build/native-ui.xml
+tap_text 'Записать долг · 1 200 ₽'
+sleep 0.4
+dump_ui
+grep -Fq 'Долг: 1 200 ₽' android/build/native-ui.xml
+adb exec-out screencap -p > android/build/native-intro-1-practice.png
 tap_text 'Далее'
 sleep 1
 dump_ui
 grep -Fq 'Принимайте оплаты без путаницы' android/build/native-ui.xml
 adb exec-out screencap -p > android/build/native-intro-2.png
+tap_text 'Внести 400 ₽'
+sleep 0.4
+dump_ui
+grep -Fq '800 ₽' android/build/native-ui.xml
+tap_text 'Погасить полностью'
+sleep 0.4
+dump_ui
+grep -Fq 'Долг погашен.' android/build/native-ui.xml
+adb exec-out screencap -p > android/build/native-intro-2-practice.png
 tap_text 'Далее'
 sleep 1
 dump_ui
 grep -Fq 'Ваша книга всегда под рукой' android/build/native-ui.xml
 adb exec-out screencap -p > android/build/native-intro-3.png
+tap_text 'Показать состав JSON'
+sleep 0.4
+dump_ui
+grep -Fq 'Клиенты и контакты' android/build/native-ui.xml
+grep -Fq 'Здесь файл не создаётся' android/build/native-ui.xml
+adb exec-out screencap -p > android/build/native-intro-3-practice.png
 tap_text 'Начать работу'
 sleep 2
 dump_ui
