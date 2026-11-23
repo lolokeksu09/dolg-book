@@ -10,6 +10,7 @@ import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.RippleDrawable;
 import android.os.Build;
 import android.os.Bundle;
 import android.text.Editable;
@@ -133,9 +134,10 @@ public final class MainActivity extends Activity {
         LinearLayout header=row();
         header.setGravity(Gravity.CENTER_VERTICAL);
         header.setPadding(dp(20),dp(12),dp(20),dp(12));
-        TextView insignia=label("Р",25,INK,true);
-        insignia.setGravity(Gravity.CENTER);
-        insignia.setBackground(shape(ACCENT,16,0));
+        android.widget.ImageView insignia=new android.widget.ImageView(this);
+        insignia.setImageResource(R.drawable.ic_ventry);
+        insignia.setContentDescription("Ventry");
+        insignia.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
         header.addView(insignia,new LinearLayout.LayoutParams(dp(46),dp(46)));
         LinearLayout heading=stack(2);
         heading.addView(label("Расчёт",21,TEXT,true));
@@ -173,13 +175,14 @@ public final class MainActivity extends Activity {
             LinearLayout item=tablet?row():stack(4);
             item.setGravity(Gravity.CENTER);
             item.setPadding(dp(tablet?14:2),dp(tablet?11:5),dp(tablet?10:2),dp(tablet?11:5));
-            item.setBackground(shape(destination.equals(tab)?ELEVATED:PANEL,14, destination.equals(tab)?BORDER:0));
+            item.setBackground(ripple(shape(destination.equals(tab)?ELEVATED:PANEL,
+                    14,destination.equals(tab)?BORDER:0)));
             android.widget.ImageView icon=new android.widget.ImageView(this);
             icon.setImageResource(ICONS[i]);
             icon.setColorFilter(destination.equals(tab)?ACCENT:MUTED);
             icon.setContentDescription(null);
             item.addView(icon,new LinearLayout.LayoutParams(dp(23),dp(23)));
-            TextView name=label(destination,tablet?14:11,destination.equals(tab)?TEXT:MUTED,destination.equals(tab));
+            TextView name=label(destination,tablet?14:12,destination.equals(tab)?TEXT:MUTED,destination.equals(tab));
             name.setGravity(Gravity.CENTER);
             name.setSingleLine(true);
             name.setIncludeFontPadding(false);
@@ -389,7 +392,7 @@ public final class MainActivity extends Activity {
             LinearLayout card=row();
             card.setPadding(dp(16),dp(15),dp(15),dp(15));
             card.setGravity(Gravity.CENTER_VERTICAL);
-            card.setBackground(shape(PANEL,18,BORDER));
+            card.setBackground(ripple(shape(PANEL,18,BORDER)));
             TextView badge=label(customer.name.substring(0,1).toUpperCase(new Locale("ru","RU")),19,ACCENT,true);
             badge.setGravity(Gravity.CENTER);badge.setBackground(shape(ELEVATED,16,0));
             card.addView(badge,new LinearLayout.LayoutParams(dp(44),dp(44)));
@@ -1106,7 +1109,7 @@ public final class MainActivity extends Activity {
     private void actionRow(LinearLayout into,String icon,String title,String subtitle,Runnable action) {
         LinearLayout block=row();block.setGravity(Gravity.CENTER_VERTICAL);
         block.setPadding(dp(15),dp(16),dp(15),dp(16));
-        block.setBackground(shape(PANEL,17,BORDER));
+        block.setBackground(ripple(shape(PANEL,17,BORDER)));
         TextView emblem=label(icon,23,ACCENT,true);
         emblem.setGravity(Gravity.CENTER);
         emblem.setBackground(shape(ELEVATED,13,0));
@@ -1132,7 +1135,7 @@ public final class MainActivity extends Activity {
         TextView button=label(text,14,filled?INK:TEXT,true);
         button.setGravity(Gravity.CENTER);
         button.setPadding(dp(6),dp(9),dp(6),dp(9));
-        button.setBackground(shape(filled?ACCENT:ELEVATED,14,filled?0:BORDER));
+        button.setBackground(ripple(shape(filled?ACCENT:ELEVATED,14,filled?0:BORDER)));
         button.setClickable(true);
         button.setFocusable(true);
         button.setContentDescription(text);
@@ -1171,6 +1174,10 @@ public final class MainActivity extends Activity {
         if(bold)textView.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));
         textView.setGravity(Gravity.CENTER_VERTICAL);
         return textView;
+    }
+    private RippleDrawable ripple(GradientDrawable background) {
+        return new RippleDrawable(android.content.res.ColorStateList.valueOf(0x33ffffff),
+                background,null);
     }
     private GradientDrawable shape(int color,int radius,int outline) {
         GradientDrawable shape=new GradientDrawable();
