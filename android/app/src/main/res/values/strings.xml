@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Расчёт</string>
+    <string name="open_book">Открыть общую книгу</string>
+    <string name="book_description">Долги и оплаты вашего магазина. Для работы нужен интернет.</string>
+    <string name="browser_missing">Установите браузер, чтобы открыть книгу.</string>
+    <string name="address_missing">Сборка проверочная. Адрес сервера пока не задан.</string>
+    <style name="RaschetTheme" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">#A9D8BA</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:windowBackground">#0C1310</item>
+    </style>
+</resources>
