@@ -20,12 +20,22 @@ test('splash is launcher; onboarding/main are non-exported and remain offline',(
   assert.ok(splash.includes('removeCallbacksAndMessages(null)'));
 });
 
-test('intro shows three real steps and completes only after action',()=>{
+test('intro first presents Ventry then preserves three interactive lessons',()=>{
   const intro=read('android/app/src/main/java/dev/ventry/raschet/IntroActivity.java');
-  for(const text of ['Записывайте долги быстро','Принимайте оплаты без путаницы',
+  for(const text of ['Знакомьтесь, Ventry','Ventry — проект цифровых продуктов',
+    'ПЕРВЫЙ ПРОДУКТ VENTRY','Долговая книга для небольшого магазина.',
+    'Записывайте долги быстро','Принимайте оплаты без путаницы',
     'Ваша книга всегда под рукой','Далее','Начать работу','Пропустить'])
     assert.ok(intro.includes(text), 'Missing introduction text: '+text);
   assert.match(intro,/if\s*\(state\s*!=\s*null\)/);
+  assert.ok(intro.includes('R.drawable.ic_ventry'));
+  assert.ok(intro.includes('step == 0) practice = ventryIntroduction()'));
+  assert.ok(intro.includes('step == 1) practice = debtPractice()'));
+  assert.ok(intro.includes('step == 2) practice = paymentPractice()'));
+  assert.ok(intro.includes('brandDetailsExpanded = !brandDetailsExpanded'));
+  assert.ok(intro.includes('out.putBoolean("brandDetailsExpanded", brandDetailsExpanded)'));
+  assert.ok(intro.includes('step == TITLES.length - 1'));
+  assert.ok(read('android/app/src/main/res/drawable/ic_ventry.xml').includes('Faithful Android vector'));
   assert.ok(intro.includes('finishOnboarding()'));
   assert.ok(intro.includes('putBoolean(KEY_COMPLETED,true)'));
   assert.match(intro,/getSharedPreferences\(PREFS,\s*MODE_PRIVATE\)/);

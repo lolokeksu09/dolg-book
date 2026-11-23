@@ -45,6 +45,19 @@ PY
   return 1
 }
 dump_ui
+grep -Fq 'Знакомьтесь, Ventry' android/build/native-ui.xml
+grep -Fq 'ПЕРВЫЙ ПРОДУКТ VENTRY' android/build/native-ui.xml
+grep -Fq 'Долговая книга для небольшого магазина' android/build/native-ui.xml
+adb exec-out screencap -p > android/build/native-intro-ventry.png
+tap_text 'Посмотреть возможности'
+sleep 0.35
+dump_ui
+grep -Fq 'Скрыть возможности' android/build/native-ui.xml
+grep -Fq 'Принимайте оплаты и проверяйте остаток' android/build/native-ui.xml
+adb exec-out screencap -p > android/build/native-intro-ventry-expanded.png
+tap_text 'Как это работает'
+sleep 0.5
+dump_ui
 grep -Fq 'Записывайте долги быстро' android/build/native-ui.xml
 adb exec-out screencap -p > android/build/native-intro-1.png
 tap_text 'Добавить пример клиента'
@@ -167,7 +180,7 @@ adb shell am force-stop "$PACKAGE"
 adb shell am start -W -n "$PACKAGE/dev.ventry.raschet.SplashActivity"
 sleep 3
 dump_ui
-if grep -Fq 'Записывайте долги быстро' android/build/native-ui.xml; then
+if grep -Fq 'Знакомьтесь, Ventry' android/build/native-ui.xml || grep -Fq 'Записывайте долги быстро' android/build/native-ui.xml; then
     echo 'Onboarding shown again after completion'
     exit 1
 fi

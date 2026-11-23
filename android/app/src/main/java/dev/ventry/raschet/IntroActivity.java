@@ -19,7 +19,7 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
-/** Three native first-launch pages, shown only until the user finishes or skips them. */
+/** Four first-launch pages: Ventry introduction followed by three interactive product lessons. */
 public final class IntroActivity extends Activity {
     private static final String PREFS = "raschet_intro";
     private static final String KEY_COMPLETED = "completed";
@@ -32,17 +32,19 @@ public final class IntroActivity extends Activity {
     private static final int BORDER = 0xff314137;
 
     private static final String[] TITLES = {
+            "Знакомьтесь, Ventry",
             "Записывайте долги быстро",
             "Принимайте оплаты без путаницы",
             "Ваша книга всегда под рукой"
     };
     private static final String[] DESCRIPTIONS = {
+            "Ventry — проект цифровых продуктов для предпринимателей и небольших команд.",
             "Добавьте клиента и запишите покупку в долг за пару касаний.",
             "Принимайте полные и частичные оплаты. Остаток пересчитывается автоматически.",
             "Записи остаются на устройстве. Сохраняйте JSON-копии, чтобы не потерять книгу."
     };
     private static final int[] ICONS = {
-            R.drawable.ic_nav_people, R.drawable.ic_nav_history, R.drawable.ic_intro_backup
+            R.drawable.ic_ventry, R.drawable.ic_nav_people, R.drawable.ic_nav_history, R.drawable.ic_intro_backup
     };
     private int step;
     private LinearLayout root;
@@ -52,6 +54,7 @@ public final class IntroActivity extends Activity {
     private boolean exampleDebtAdded;
     private int examplePaid;
     private boolean exampleBackupExpanded;
+    private boolean brandDetailsExpanded;
 
     public static boolean isCompleted(Context context) {
         return context.getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_COMPLETED, false);
@@ -67,11 +70,12 @@ public final class IntroActivity extends Activity {
             return;
         }
         if (state != null) {
-            step = Math.max(0, Math.min(2, state.getInt("step", 0)));
+            step = Math.max(0, Math.min(TITLES.length - 1, state.getInt("step", 0)));
             exampleClientAdded = state.getBoolean("exampleClientAdded");
             exampleDebtAdded = state.getBoolean("exampleDebtAdded");
             examplePaid = Math.max(0, Math.min(1200, state.getInt("examplePaid", 0)));
             exampleBackupExpanded = state.getBoolean("exampleBackupExpanded");
+            brandDetailsExpanded = state.getBoolean("brandDetailsExpanded");
         }
         root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -97,6 +101,7 @@ public final class IntroActivity extends Activity {
         out.putBoolean("exampleDebtAdded", exampleDebtAdded);
         out.putInt("examplePaid", examplePaid);
         out.putBoolean("exampleBackupExpanded", exampleBackupExpanded);
+        out.putBoolean("brandDetailsExpanded", brandDetailsExpanded);
         super.onSaveInstanceState(out);
     }
 
@@ -107,10 +112,10 @@ public final class IntroActivity extends Activity {
         heading.setGravity(Gravity.CENTER_VERTICAL);
         heading.setPadding(dp(24), dp(22), dp(24), dp(8));
         ImageView mark = new ImageView(this);
-        mark.setImageResource(R.drawable.ic_book);
+        mark.setImageResource(step == 0 ? R.drawable.ic_ventry : R.drawable.ic_book);
         mark.setContentDescription(null);
         heading.addView(mark, new LinearLayout.LayoutParams(dp(38), dp(38)));
-        TextView brand = label("Расчёт", 19, TEXT, true);
+        TextView brand = label(step == 0 ? "Ventry" : "Расчёт", 19, TEXT, true);
         LinearLayout.LayoutParams brandParams = new LinearLayout.LayoutParams(-2, -2);
         brandParams.leftMargin = dp(12);
         heading.addView(brand, brandParams);
@@ -139,13 +144,14 @@ public final class IntroActivity extends Activity {
         glyphFrame.setBackground(shape(PANEL, 30));
         ImageView glyph = new ImageView(this);
         glyph.setImageResource(ICONS[step]);
-        glyph.setColorFilter(ACCENT);
+        if (step != 0) glyph.setColorFilter(ACCENT);
         glyph.setContentDescription(null);
         FrameLayout.LayoutParams glyphParams = new FrameLayout.LayoutParams(dp(44), dp(44), Gravity.CENTER);
         glyphFrame.addView(glyph, glyphParams);
         content.addView(glyphFrame, new LinearLayout.LayoutParams(dp(78), dp(78)));
 
-        TextView number = label("ШАГ " + (step + 1) + " ИЗ 3", 12, ACCENT, true);
+        TextView number = label(step == 0 ? "ЦИФРОВЫЕ ПРОДУКТЫ" :
+                "УРОК " + step + " ИЗ 3", 12, ACCENT, true);
         number.setLetterSpacing(0.16f);
         LinearLayout.LayoutParams noParams = new LinearLayout.LayoutParams(-1, -2);
         noParams.topMargin = dp(16);
@@ -175,10 +181,12 @@ public final class IntroActivity extends Activity {
         LinearLayout footer = new LinearLayout(this);
         footer.setOrientation(LinearLayout.VERTICAL);
         footer.setPadding(dp(24), dp(12), dp(24), dp(20));
-        TextView next = button(step == 2 ? "Начать работу" : "Далее", true);
-        next.setContentDescription(step == 2 ? "Начать работу" : "Далее");
+        String nextLabel = step == TITLES.length - 1 ? "Начать работу" :
+                step == 0 ? "Как это работает" : "Далее";
+        TextView next = button(nextLabel, true);
+        next.setContentDescription(nextLabel);
         next.setOnClickListener(v -> {
-            if (step < 2) {
+            if (step < TITLES.length - 1) {
                 step++;
                 renderStep();
             } else {
@@ -187,7 +195,7 @@ public final class IntroActivity extends Activity {
         });
         footer.addView(next, new LinearLayout.LayoutParams(-1, dp(56)));
 
-        if (step < 2) {
+        if (step < TITLES.length - 1) {
             TextView skip = button("Пропустить", false);
             skip.setContentDescription("Пропустить знакомство");
             LinearLayout.LayoutParams skipParams = new LinearLayout.LayoutParams(-1, dp(48));
@@ -203,10 +211,42 @@ public final class IntroActivity extends Activity {
         if (previewHost == null) return;
         previewHost.removeAllViews();
         LinearLayout practice;
-        if (step == 0) practice = debtPractice();
-        else if (step == 1) practice = paymentPractice();
+        if (step == 0) practice = ventryIntroduction();
+        else if (step == 1) practice = debtPractice();
+        else if (step == 2) practice = paymentPractice();
         else practice = backupPractice();
         previewHost.addView(practice, new FrameLayout.LayoutParams(-1, -2));
+    }
+
+    /** Brand introduction uses real Ventry identity, not a simulated accounting entry. */
+    private LinearLayout ventryIntroduction() {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(20), dp(19), dp(20), dp(19));
+        GradientDrawable bg = shape(PANEL, 22);
+        bg.setStroke(dp(1), BORDER);
+        card.setBackground(bg);
+
+        TextView eyebrow = label("ПЕРВЫЙ ПРОДУКТ VENTRY", 11, ACCENT, true);
+        eyebrow.setLetterSpacing(0.1f);
+        card.addView(eyebrow);
+
+        TextView productName = label("Расчёт", 26, TEXT, true);
+        LinearLayout.LayoutParams productMargin = new LinearLayout.LayoutParams(-1, -2);
+        productMargin.topMargin = dp(9);
+        card.addView(productName, productMargin);
+        practiceText(card, "Долговая книга для небольшого магазина.", 15, TEXT, 5);
+        practiceText(card, "Клиенты, долги, частичные оплаты и история — в одном приложении. " +
+                "Эта версия работает без интернета и хранит записи на устройстве.", 13, MUTED, 11);
+        practiceButton(card, brandDetailsExpanded ? "Скрыть возможности" :
+                "Посмотреть возможности", false,
+                () -> brandDetailsExpanded = !brandDetailsExpanded);
+        if (brandDetailsExpanded) {
+            practiceText(card, "• Записывайте покупки в долг", 14, TEXT, 12);
+            practiceText(card, "• Принимайте оплаты и проверяйте остаток", 14, TEXT, 7);
+            practiceText(card, "• Сохраняйте резервную JSON-копию", 14, TEXT, 7);
+        }
+        return card;
     }
 
     private LinearLayout practiceCard(String heading) {

@@ -43,6 +43,8 @@ jobs:
         with:
           name: Raschet-native-emulator-captures
           path: |
+            android/build/native-intro-ventry.png
+            android/build/native-intro-ventry-expanded.png
             android/build/native-intro-1.png
             android/build/native-intro-1-practice.png
             android/build/native-intro-2.png

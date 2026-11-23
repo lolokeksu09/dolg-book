@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Faithful Android vector of the official Ventry brand mark from Ventry/site/favicon.svg. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="64dp"
+    android:height="64dp"
+    android:viewportWidth="64"
+    android:viewportHeight="64">
+    <path android:fillColor="#0a392d"
+        android:pathData="M14,0 L50,0 A14,14 0,0 1,64 14 L64,50 A14,14 0,0 1,50 64 L14,64 A14,14 0,0 1,0 50 L0,14 A14,14 0,0 1,14 0 Z" />
+    <path android:fillColor="#fff1d2"
+        android:pathData="M12 19h9a2 2 0 0 1 2 1l13 28 8-22-6 2 1-4 9-4a1 1 0 0 1 1 1l-3 14 3-3 3-14-6 2 1-4 10-5a1 1 0 0 1 1 1l-4 16-17 27a2 2 0 0 1-2 1h-7a2 2 0 0 1-2-1L12 20a1 1 0 0 1 0-1Z" />
+    <path android:fillColor="#fff1d2"
+        android:pathData="m31 39 2-10a3 3 0 0 1 2-2l7-2-4 18-2 6Z" />
+</vector>
