@@ -55,7 +55,7 @@ public final class MainActivity extends Activity {
     private static final int BG=0xff090e0c, PANEL=0xff141c18, ELEVATED=0xff1b2820;
     private static final int BORDER=0xff2b3b32, TEXT=0xfff4f7f3, MUTED=0xff9eb4a6;
     private static final int ACCENT=0xffb9efd0, INK=0xff12271b, ALERT=0xffffca97, RED=0xffffacac;
-    private static final int REQUEST_IMPORT=101, REQUEST_EXPORT=102, MAX_IMPORT=5*1024*1024;
+    private static final int REQUEST_IMPORT=101, REQUEST_EXPORT=102, REQUEST_PDF=103, MAX_IMPORT=5*1024*1024;
     private static final String RECOVERY_PREFS="raschet_local_recovery";
     private static final ExecutorService RECOVERY_WORK=Executors.newSingleThreadExecutor();
     public static final String EXTRA_FIRST_START = "dev.ventry.raschet.FIRST_START";
@@ -72,6 +72,7 @@ public final class MainActivity extends Activity {
     private boolean clientsAmountFirst;
     private String shopName="Мой магазин";
     private boolean pendingExport, pendingExportCsv;
+    private String pendingPdfClientId;
     private boolean tablet=false, largeText=false, saving=false;
     private final int pad=18;
 
@@ -91,6 +92,7 @@ public final class MainActivity extends Activity {
             clientsAmountFirst=state.getBoolean("clients_amount_first",false);
             pendingExport=state.getBoolean("pending_export");
             pendingExportCsv=state.getBoolean("pending_export_csv");
+            pendingPdfClientId=state.getString("pending_pdf_client");
         }
         else if(getIntent().getBooleanExtra(EXTRA_FIRST_START,false)&&ledger.clients().isEmpty())tab="Клиенты";
         tablet=getResources().getConfiguration().screenWidthDp>=720;
@@ -104,6 +106,7 @@ public final class MainActivity extends Activity {
         out.putBoolean("clients_amount_first",clientsAmountFirst);
         out.putBoolean("pending_export",pendingExport);
         out.putBoolean("pending_export_csv",pendingExportCsv);
+        out.putString("pending_pdf_client",pendingPdfClientId);
         super.onSaveInstanceState(out);
     }
     private View createShell() {
@@ -441,6 +444,8 @@ public final class MainActivity extends Activity {
                     ()->showEntryForm(id,"payment",amount),1);
         addButton(extraActions,"Поделиться сводкой",false,
                 ()->shareClientSummary(current,amount,overdue),1);
+        addButton(extraActions,"Сохранить выписку PDF",false,
+                ()->exportCustomerPdf(current.id),1);
         view.addView(extraActions,margin(-1,-2,6));
         view.addView(label("Сводка содержит данные о долге. Перед отправкой проверьте получателя.",
                 12,MUTED,false),margin(-1,-2,12));
@@ -790,6 +795,16 @@ public final class MainActivity extends Activity {
             return true;
         });
     }
+    private void exportCustomerPdf(String clientId) {
+        Intent save=new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        save.addCategory(Intent.CATEGORY_OPENABLE);
+        save.setType("application/pdf");
+        save.putExtra(Intent.EXTRA_TITLE,"raschet-statement-"+LocalDate.now()+".pdf");
+        try{
+            pendingPdfClientId=clientId;
+            startActivityForResult(save,REQUEST_PDF);
+        }catch(Exception ex){pendingPdfClientId=null;message("Нет выбора файла PDF: "+ex.getMessage());}
+    }
     private void shareClientSummary(LedgerStore.Client client,long amount,long overdue) {
         // Explicit user action: Sharesheet does not auto-send or access contacts.
         // The phone number is intentionally excluded from the generated text.
@@ -915,6 +930,19 @@ public final class MainActivity extends Activity {
                 message("Резервная копия сохранена.");
                 if(tab.equals("Настройки")||tab.equals("Главная"))render();
             }catch(Exception ex){message("Ошибка сохранения: "+ex.getMessage());}
+        }else if(request==REQUEST_PDF){
+            String id=pendingPdfClientId;
+            pendingPdfClientId=null;
+            if(id==null||result!=RESULT_OK||data==null||data.getData()==null)return;
+            LedgerStore.Client client=null;
+            for(LedgerStore.Client item:ledger.clients())if(item.id.equals(id)){client=item;break;}
+            if(client==null){message("Клиент не найден.");return;}
+            try(OutputStream out=getContentResolver().openOutputStream(data.getData(),"wt")){
+                if(out==null)throw new IOException("Не удалось открыть PDF-файл.");
+                CustomerStatementPdf.write(out,shopName,client,ledger.entries());
+                out.flush();
+                message("Выписка PDF сохранена.");
+            }catch(Exception ex){message("Ошибка PDF: "+ex.getMessage());}
         }else if(request==REQUEST_IMPORT && result==RESULT_OK && data!=null && data.getData()!=null){
             try(InputStream in=getContentResolver().openInputStream(data.getData())){
                 if(in==null)throw new IOException("Не удалось прочитать файл.");
