@@ -107,7 +107,7 @@ public final class MainActivity extends Activity {
         heading.addView(shopLabel);
         LinearLayout.LayoutParams headingParams=new LinearLayout.LayoutParams(0,-2,1);
         headingParams.leftMargin=dp(12);header.addView(heading,headingParams);
-Remove dev badge        root.addView(header);
+        root.addView(header);
 
         LinearLayout body=row();
         if(tablet) {
@@ -354,7 +354,7 @@ Remove dev badge        root.addView(header);
         warning.addView(label("Важно о резервных копиях",15,ALERT,true));
         warning.addView(label("При удалении приложения локальная книга будет потеряна. JSON-копия содержит имена, телефоны и суммы без шифрования.",13,MUTED,false),margin(-1,-2,7));
         view.addView(warning,margin(-1,-2,10));
-Remove development links        return scroll(view);
+        return scroll(view);
     }
     private LinearLayout entryCard(LedgerStore.Entry e,String clientName,boolean canceled) {
         LinearLayout card=row();
