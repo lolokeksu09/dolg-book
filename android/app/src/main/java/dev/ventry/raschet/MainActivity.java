@@ -77,6 +77,7 @@ public final class MainActivity extends Activity {
     private boolean pendingExport, pendingExportCsv;
     private String pendingPdfClientId;
     private boolean tablet=false, largeText=false, saving=false;
+    private int historyVisibleLimit=100, detailVisibleLimit=80;
     private final int pad=18;
 
     @Override protected void onCreate(Bundle state) {
@@ -93,6 +94,8 @@ public final class MainActivity extends Activity {
             search=state.getString("search","");
             clientFilter=state.getString("client_filter",CollectionsInsights.ALL);
             clientsAmountFirst=state.getBoolean("clients_amount_first",false);
+            historyVisibleLimit=state.getInt("history_visible_limit",100);
+            detailVisibleLimit=state.getInt("detail_visible_limit",80);
             pendingExport=state.getBoolean("pending_export");
             pendingExportCsv=state.getBoolean("pending_export_csv");
             pendingPdfClientId=state.getString("pending_pdf_client");
@@ -107,6 +110,8 @@ public final class MainActivity extends Activity {
         out.putString("search",search);
         out.putString("client_filter",clientFilter);
         out.putBoolean("clients_amount_first",clientsAmountFirst);
+        out.putInt("history_visible_limit",historyVisibleLimit);
+        out.putInt("detail_visible_limit",detailVisibleLimit);
         out.putBoolean("pending_export",pendingExport);
         out.putBoolean("pending_export_csv",pendingExportCsv);
         out.putString("pending_pdf_client",pendingPdfClientId);
@@ -193,7 +198,10 @@ public final class MainActivity extends Activity {
         }
         page.removeAllViews();
         try {
-            View contents=selectedClient!=null?detailView(selectedClient):
+            View contents=tablet
+                    &&getResources().getConfiguration().screenWidthDp>=1100
+                    &&tab.equals("Клиенты")?tabletClientsView():
+                    selectedClient!=null?detailView(selectedClient):
                     tab.equals("Главная")?homeView():
                     tab.equals("Клиенты")?clientsView():
                     tab.equals("История")?historyView():settingsView();
@@ -306,6 +314,22 @@ public final class MainActivity extends Activity {
         block.addView(label(caption,12,MUTED,false));
         return block;
     }
+    private View tabletClientsView() {
+        LinearLayout columns=row();
+        columns.setBackgroundColor(BG);
+        View list=clientsView();
+        columns.addView(list,new LinearLayout.LayoutParams(0,-1,43f));
+        View divider=new View(this);
+        divider.setBackgroundColor(BORDER);
+        columns.addView(divider,new LinearLayout.LayoutParams(dp(1),-1));
+        View detail=selectedClient==null?
+                scroll(emptyState(R.drawable.ic_nav_people,
+                        "Выберите клиента",
+                        "Слева список клиентов и фильтры. Здесь появятся остаток, операции и быстрые действия.",
+                        null,null)):detailView(selectedClient);
+        columns.addView(detail,new LinearLayout.LayoutParams(0,-1,57f));
+        return columns;
+    }
     private void openClientFilter(String filter) {
         clientFilter=filter;search="";selectedClient=null;tab="Клиенты";render();
     }
@@ -347,17 +371,18 @@ public final class MainActivity extends Activity {
         sort.setOnClickListener(v->{clientsAmountFirst=!clientsAmountFirst;render();});
         view.addView(sort,margin(-1,dp(48),10));
         LinearLayout results=stack(8);view.addView(results);
-        Runnable fill=()->fillClients(results);
+        // Build due/balance projections once per render, not on every typed character.
+        List<CollectionsInsights.CustomerStatus> cached=
+                CollectionsInsights.analyze(ledger.clients(),ledger.entries(),LocalDate.now());
+        Runnable fill=()->fillClients(results,cached);
         searchInput.addTextChangedListener(watcher(value->{search=value;fill.run();}));
         fill.run();
         return scroll(view);
     }
-    private void fillClients(LinearLayout rows) {
+    private void fillClients(LinearLayout rows,List<CollectionsInsights.CustomerStatus> cached) {
         rows.removeAllViews();
-        List<LedgerStore.Client> customers=ledger.clients();
         List<CollectionsInsights.CustomerStatus> visible=CollectionsInsights.visible(
-                CollectionsInsights.analyze(customers,ledger.entries(),LocalDate.now()),
-                clientFilter,clientsAmountFirst,search);
+                cached,clientFilter,clientsAmountFirst,search);
         for(CollectionsInsights.CustomerStatus status:visible){
             LedgerStore.Client customer=status.client;
             long amount=status.balance;
@@ -388,7 +413,7 @@ public final class MainActivity extends Activity {
             rows.addView(card,margin(-1,-2,5));
         }
         if(visible.isEmpty()){
-            if(customers.isEmpty())rows.addView(emptyState(R.drawable.ic_nav_people,
+            if(cached.isEmpty())rows.addView(emptyState(R.drawable.ic_nav_people,
                     "Пока нет клиентов","Добавьте первого клиента, затем записывайте долги и оплаты.",
                     "Добавить первого клиента",()->showClientForm(null)));
             else if(!search.trim().isEmpty())rows.addView(emptyState(R.drawable.ic_nav_people,
