@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 mkdir -p android/build
-gradle -p android assembleDebug --no-daemon 
+gradle -p android assembleDebug --no-daemon
 adb install -r android/app/build/outputs/apk/debug/app-debug.apk
 adb shell am start -W -n dev.ventry.raschet.nativev031/dev.ventry.raschet.MainActivity
 sleep 6
