@@ -1,10 +1,12 @@
 const find = id => document.getElementById(id);
 const shops = find('shops');
 const newShop = find('new-shop');
+const shopCreate = find('shop-create');
 const newClient = find('new-client');
 const entry = find('entry');
 const rubles = new Intl.NumberFormat('ru-RU', {style:'currency', currency:'RUB'});
 const date = new Intl.DateTimeFormat('ru-RU', {dateStyle:'medium', timeStyle:'short'});
+const subscriptionDate = new Intl.DateTimeFormat('ru-RU', {dateStyle:'medium', timeStyle:'short', timeZone:'Europe/Moscow'});
 let selected;
 let busy = false;
 let lastWrite;
@@ -46,7 +48,9 @@ async function run(action) {
 }
 
 function rows(id, items, empty) {
-  find(id).replaceChildren(...(items.length ? items : [empty]).map(text => {
+  const list = find(id);
+  list.classList.toggle('empty-list', !items.length);
+  list.replaceChildren(...(items.length ? items : [empty]).map(text => {
     const row = document.createElement('li');
     row.textContent = text;
     return row;
@@ -54,16 +58,18 @@ function rows(id, items, empty) {
 }
 
 async function showBook(id) {
-  if (selected !== id) hideBook();
+  const switching = selected !== id;
+  if (switching) hideBook();
   const path = '/shops/' + encodeURIComponent(id);
   const [book, {entries}] = await Promise.all([api(path), api(path + '/entries')]);
   selected = book.id;
   find('book-title').textContent = book.name;
   find('shop-id').textContent = book.id;
   find('subscription').textContent = {pending:'Ожидает активации',active:'Активна',expired:'Истекла'}[book.status];
-  find('expiry').textContent = book.paidUntil ? date.format(new Date(book.paidUntil)) : '—';
+  find('expiry').textContent = book.paidUntil ? subscriptionDate.format(new Date(book.paidUntil)) + ' МСК' : '—';
   const active = book.status === 'active';
   find('activation-help').hidden = active;
+  if (switching) find('book').querySelector('.shop-info').open = !active;
   newClient.hidden = !active;
   entry.hidden = !active || !book.clients.length;
   entry.elements.client.replaceChildren(...book.clients.map(client => new Option(client.name,client.id)));
@@ -85,6 +91,7 @@ async function listShops(id) {
   const data = await api('/shops');
   shops.elements.shop.replaceChildren(...data.shops.map(shop => new Option(shop.name,shop.id)));
   shops.hidden = !data.shops.length;
+  shopCreate.open = !data.shops.length;
   if (id) shops.elements.shop.value = id;
   if (data.shops.length) await showBook(shops.elements.shop.value);
 }

@@ -2,7 +2,7 @@
 <resources>
     <string name="app_name">Расчёт</string>
     <string name="open_book">Открыть общую книгу</string>
-    <string name="book_description">Долги и оплаты вашего магазина. Для работы нужен интернет.</string>
+    <string name="book_description">Долги, оплаты и остатки по клиентам. Книга открывается в браузере.</string>
     <string name="browser_missing">Установите браузер, чтобы открыть книгу.</string>
     <string name="address_missing">Сборка проверочная. Адрес сервера пока не задан.</string>
     <style name="RaschetTheme" parent="android:style/Theme.Material.NoActionBar">
@@ -11,5 +11,9 @@
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:windowLightNavigationBar">false</item>
         <item name="android:windowBackground">#0C1310</item>
+    </style>
+    <style name="RaschetButton" parent="android:style/Theme.Material">
+        <item name="android:colorButtonNormal">#CFE8D5</item>
+        <item name="android:textColorPrimary">#11251A</item>
     </style>
 </resources>

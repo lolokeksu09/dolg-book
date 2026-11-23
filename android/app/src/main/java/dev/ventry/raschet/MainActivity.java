@@ -8,7 +8,9 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.view.WindowInsets;
+import android.view.ContextThemeWrapper;
 import android.widget.Button;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -34,32 +36,42 @@ public final class MainActivity extends Activity {
             return insets;
         });
 
+        ImageView icon = new ImageView(this);
+        icon.setImageResource(R.drawable.ic_book);
+        content.addView(icon, new LinearLayout.LayoutParams(dp(64), dp(64)));
+
         TextView title = new TextView(this);
         title.setText(R.string.app_name);
         title.setTextSize(40);
         title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         title.setTextColor(0xfff1f3ea);
-        content.addView(title);
+        LinearLayout.LayoutParams titlePlacement = new LinearLayout.LayoutParams(-1, -2);
+        titlePlacement.topMargin = dp(18);
+        content.addView(title, titlePlacement);
 
         TextView description = new TextView(this);
         description.setText(R.string.book_description);
         description.setTextSize(18);
         description.setTextColor(0xffc0d8c7);
-        content.addView(description);
+        LinearLayout.LayoutParams descriptionPlacement = new LinearLayout.LayoutParams(-1, -2);
+        descriptionPlacement.topMargin = dp(6);
+        content.addView(description, descriptionPlacement);
 
-        Button open = new Button(this);
+        Button open = new Button(new ContextThemeWrapper(this, R.style.RaschetButton));
         open.setText(R.string.open_book);
         open.setAllCaps(false);
         open.setOnClickListener(view -> openBook());
-        LinearLayout.LayoutParams action = new LinearLayout.LayoutParams(-2, -2);
-        action.topMargin = dp(16);
+        LinearLayout.LayoutParams action = new LinearLayout.LayoutParams(-1, -2);
+        action.topMargin = dp(26);
         content.addView(open, action);
 
         status = new TextView(this);
         status.setAccessibilityLiveRegion(TextView.ACCESSIBILITY_LIVE_REGION_POLITE);
         status.setTextColor(0xffc0d8c7);
         status.setVisibility(TextView.GONE);
-        content.addView(status);
+        LinearLayout.LayoutParams statusPlacement = new LinearLayout.LayoutParams(-1, -2);
+        statusPlacement.topMargin = dp(10);
+        content.addView(status, statusPlacement);
         if (!hasServer()) {
             open.setEnabled(false);
             showStatus(R.string.address_missing);
