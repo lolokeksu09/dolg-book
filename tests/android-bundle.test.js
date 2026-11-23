@@ -11,6 +11,7 @@ test('Android UI is native and does not contain web UI runtime',()=>{
   const activity=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
   const manifest=read('android/app/src/main/AndroidManifest.xml');
   assert.ok(gradle.includes('versionName = "0.3.0"'));
+  assert.ok(gradle.includes('applicationIdSuffix = ".nativepreview"'));
   assert.ok(!gradle.includes('webkit')&&!gradle.includes('syncOfflineBook'));
   assert.ok(!gradle.includes('index.html')&&!gradle.includes('app.js'));
   assert.ok(!activity.includes('android.webkit')&&!activity.includes('WebView'));
