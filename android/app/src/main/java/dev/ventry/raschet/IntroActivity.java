@@ -2,9 +2,11 @@ package dev.ventry.raschet;
 
 import android.app.Activity;
 import android.content.Context;
+import android.content.res.ColorStateList;
 import android.content.Intent;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.RippleDrawable;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.Gravity;
@@ -44,6 +46,12 @@ public final class IntroActivity extends Activity {
     };
     private int step;
     private LinearLayout root;
+    private FrameLayout previewHost;
+    // First-use practice state is memory-only: never written to LedgerStore or exports.
+    private boolean exampleClientAdded;
+    private boolean exampleDebtAdded;
+    private int examplePaid;
+    private boolean exampleBackupExpanded;
 
     public static boolean isCompleted(Context context) {
         return context.getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_COMPLETED, false);
@@ -58,7 +66,13 @@ public final class IntroActivity extends Activity {
             finish();
             return;
         }
-        if (state != null) step = Math.max(0, Math.min(2, state.getInt("step", 0)));
+        if (state != null) {
+            step = Math.max(0, Math.min(2, state.getInt("step", 0)));
+            exampleClientAdded = state.getBoolean("exampleClientAdded");
+            exampleDebtAdded = state.getBoolean("exampleDebtAdded");
+            examplePaid = Math.max(0, Math.min(1200, state.getInt("examplePaid", 0)));
+            exampleBackupExpanded = state.getBoolean("exampleBackupExpanded");
+        }
         root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(BG);
@@ -79,6 +93,10 @@ public final class IntroActivity extends Activity {
 
     @Override protected void onSaveInstanceState(Bundle out) {
         out.putInt("step", step);
+        out.putBoolean("exampleClientAdded", exampleClientAdded);
+        out.putBoolean("exampleDebtAdded", exampleDebtAdded);
+        out.putInt("examplePaid", examplePaid);
+        out.putBoolean("exampleBackupExpanded", exampleBackupExpanded);
         super.onSaveInstanceState(out);
     }
 
@@ -144,6 +162,13 @@ public final class IntroActivity extends Activity {
         LinearLayout.LayoutParams descParams = new LinearLayout.LayoutParams(-1, -2);
         descParams.topMargin = dp(18);
         content.addView(description, descParams);
+
+        previewHost = new FrameLayout(this);
+        previewHost.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
+        LinearLayout.LayoutParams previewParams = new LinearLayout.LayoutParams(-1, -2);
+        previewParams.topMargin = dp(30);
+        content.addView(previewHost, previewParams);
+        updatePracticePreview();
         scroll.addView(content);
         root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1f));
 
@@ -171,6 +196,127 @@ public final class IntroActivity extends Activity {
             skip.setOnClickListener(v -> finishOnboarding());
         }
         root.addView(footer);
+    }
+
+    /** Rebuild just the example card so taps never reset the scroll or step state. */
+    private void updatePracticePreview() {
+        if (previewHost == null) return;
+        previewHost.removeAllViews();
+        LinearLayout practice;
+        if (step == 0) practice = debtPractice();
+        else if (step == 1) practice = paymentPractice();
+        else practice = backupPractice();
+        previewHost.addView(practice, new FrameLayout.LayoutParams(-1, -2));
+    }
+
+    private LinearLayout practiceCard(String heading) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(18), dp(18), dp(18), dp(18));
+        GradientDrawable background = shape(PANEL, 22);
+        background.setStroke(dp(1), BORDER);
+        card.setBackground(background);
+        card.addView(label(heading, 17, TEXT, true));
+        TextView note = label("ИНТЕРАКТИВНЫЙ ПРИМЕР · НЕ СОХРАНЯЕТСЯ", 10, MUTED, true);
+        note.setLetterSpacing(0.055f);
+        LinearLayout.LayoutParams noteParams = new LinearLayout.LayoutParams(-1, -2);
+        noteParams.topMargin = dp(5);
+        card.addView(note, noteParams);
+        return card;
+    }
+
+    private void practiceText(LinearLayout card, String value, int textSize, int color, int top) {
+        TextView text = label(value, textSize, color, false);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
+        params.topMargin = dp(top);
+        card.addView(text, params);
+    }
+
+    private void practiceButton(LinearLayout card, String name, boolean primary, Runnable action) {
+        TextView button = label(name, 14, primary ? INK : ACCENT, true);
+        button.setGravity(Gravity.CENTER);
+        button.setMinHeight(dp(48));
+        button.setPadding(dp(10), dp(12), dp(10), dp(12));
+        GradientDrawable background = shape(primary ? ACCENT : PANEL, 13);
+        if (!primary) background.setStroke(dp(1), BORDER);
+        button.setBackground(new RippleDrawable(ColorStateList.valueOf(0x4489bda2),
+                background, null));
+        button.setClickable(true);
+        button.setFocusable(true);
+        button.setContentDescription(name);
+        button.setOnClickListener(v -> {
+            action.run();
+            updatePracticePreview();
+        });
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
+        params.topMargin = dp(12);
+        card.addView(button, params);
+    }
+
+    private LinearLayout debtPractice() {
+        LinearLayout card = practiceCard("Попробуйте записать долг");
+        practiceText(card, exampleClientAdded ? "Покупатель · пример" : "Список пока пуст",
+                14, MUTED, 18);
+        if (exampleDebtAdded) {
+            practiceText(card, "Долг: 1 200 ₽", 24, ACCENT, 5);
+            practiceText(card, "Покупка записана. Перейдите к оплатам на следующем шаге.",
+                    12, MUTED, 8);
+            practiceButton(card, "Повторить пример", false, () -> {
+                exampleClientAdded = false;
+                exampleDebtAdded = false;
+            });
+        } else if (exampleClientAdded) {
+            practiceText(card, "Клиент добавлен · остаток 0 ₽", 16, TEXT, 5);
+            practiceButton(card, "Записать долг · 1 200 ₽", true,
+                    () -> exampleDebtAdded = true);
+        } else {
+            practiceText(card, "Добавьте покупателя, затем его покупку.", 13, TEXT, 5);
+            practiceButton(card, "Добавить пример клиента", true,
+                    () -> exampleClientAdded = true);
+        }
+        return card;
+    }
+
+    private LinearLayout paymentPractice() {
+        LinearLayout card = practiceCard("Попробуйте принять оплату");
+        int remaining = 1200 - examplePaid;
+        practiceText(card, "Остаток долга", 13, MUTED, 18);
+        practiceText(card, money(remaining), 27, remaining == 0 ? ACCENT : TEXT, 2);
+        practiceText(card, "Уже оплачено: " + money(examplePaid), 13, MUTED, 5);
+        if (remaining > 0) {
+            practiceButton(card, "Внести 400 ₽", true,
+                    () -> examplePaid = Math.min(1200, examplePaid + 400));
+            practiceButton(card, "Погасить полностью", false, () -> examplePaid = 1200);
+        } else {
+            practiceText(card, "Долг погашен. Остаток обновился автоматически.",
+                    13, ACCENT, 12);
+            practiceButton(card, "Повторить пример", false, () -> examplePaid = 0);
+        }
+        return card;
+    }
+
+    private LinearLayout backupPractice() {
+        LinearLayout card = practiceCard("Что сохраняется в копии?");
+        practiceText(card, "raschet-backup.json", 17, ACCENT, 17);
+        practiceText(card, "Вся книга в одном файле. Нажмите, чтобы изучить состав.",
+                13, MUTED, 5);
+        practiceButton(card, exampleBackupExpanded ? "Свернуть состав" :
+                "Показать состав JSON", true,
+                () -> exampleBackupExpanded = !exampleBackupExpanded);
+        if (exampleBackupExpanded) {
+            practiceText(card, "Клиенты и контакты", 14, TEXT, 15);
+            practiceText(card, "Долги, оплаты и отмены", 14, TEXT, 8);
+            practiceText(card, "Суммы, даты и история операций", 14, TEXT, 8);
+            practiceText(card, "Здесь файл не создаётся. Настоящий экспорт — в Настройках. " +
+                    "JSON не зашифрован: храните копию в безопасном месте.",
+                    12, MUTED, 14);
+        }
+        return card;
+    }
+
+    private String money(int rubles) {
+        if (rubles == 1200) return "1 200 ₽";
+        return rubles + " ₽";
     }
 
     private void finishOnboarding() {
