@@ -23,6 +23,7 @@ import android.widget.Toast;
 public final class IntroActivity extends Activity {
     private static final String PREFS = "raschet_intro";
     private static final String KEY_COMPLETED = "completed";
+    private static final String KEY_VENTRY_SHOWN = "ventry_shown";
     private static final int BG = 0xff090e0c;
     private static final int PANEL = 0xff17231c;
     private static final int TEXT = 0xfff4f7f3;
@@ -55,9 +56,14 @@ public final class IntroActivity extends Activity {
     private int examplePaid;
     private boolean exampleBackupExpanded;
     private boolean brandDetailsExpanded;
+    // Existing installations that finished the former three-step onboarding see
+    // only the new brand introduction once; real ledger data is untouched.
+    private boolean brandOnlyForExisting;
 
     public static boolean isCompleted(Context context) {
-        return context.getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_COMPLETED, false);
+        return context.getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_COMPLETED, false)
+                && context.getSharedPreferences(PREFS, MODE_PRIVATE)
+                        .getBoolean(KEY_VENTRY_SHOWN, false);
     }
 
     @Override protected void onCreate(Bundle state) {
@@ -69,8 +75,11 @@ public final class IntroActivity extends Activity {
             finish();
             return;
         }
+        brandOnlyForExisting = getSharedPreferences(PREFS, MODE_PRIVATE)
+                .getBoolean(KEY_COMPLETED, false);
         if (state != null) {
-            step = Math.max(0, Math.min(TITLES.length - 1, state.getInt("step", 0)));
+            step = brandOnlyForExisting ? 0 :
+                    Math.max(0, Math.min(TITLES.length - 1, state.getInt("step", 0)));
             exampleClientAdded = state.getBoolean("exampleClientAdded");
             exampleDebtAdded = state.getBoolean("exampleDebtAdded");
             examplePaid = Math.max(0, Math.min(1200, state.getInt("examplePaid", 0)));
@@ -181,12 +190,15 @@ public final class IntroActivity extends Activity {
         LinearLayout footer = new LinearLayout(this);
         footer.setOrientation(LinearLayout.VERTICAL);
         footer.setPadding(dp(24), dp(12), dp(24), dp(20));
-        String nextLabel = step == TITLES.length - 1 ? "Начать работу" :
+        String nextLabel = brandOnlyForExisting ? "Открыть книгу" :
+                step == TITLES.length - 1 ? "Начать работу" :
                 step == 0 ? "Как это работает" : "Далее";
         TextView next = button(nextLabel, true);
         next.setContentDescription(nextLabel);
         next.setOnClickListener(v -> {
-            if (step < TITLES.length - 1) {
+            if (brandOnlyForExisting) {
+                finishOnboarding();
+            } else if (step < TITLES.length - 1) {
                 step++;
                 renderStep();
             } else {
@@ -362,7 +374,8 @@ public final class IntroActivity extends Activity {
     private void finishOnboarding() {
         // Commit before navigation: an interrupted process must not replay onboarding.
         boolean saved = getSharedPreferences(PREFS, MODE_PRIVATE).edit()
-                .putBoolean(KEY_COMPLETED,true).commit();
+                .putBoolean(KEY_COMPLETED,true)
+                .putBoolean(KEY_VENTRY_SHOWN,true).commit();
         if (!saved) {
             Toast.makeText(this, "Не удалось сохранить настройку. Попробуйте ещё раз.", Toast.LENGTH_LONG).show();
             return;

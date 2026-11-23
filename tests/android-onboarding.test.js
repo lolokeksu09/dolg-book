@@ -35,6 +35,10 @@ test('intro first presents Ventry then preserves three interactive lessons',()=>
   assert.ok(intro.includes('brandDetailsExpanded = !brandDetailsExpanded'));
   assert.ok(intro.includes('out.putBoolean("brandDetailsExpanded", brandDetailsExpanded)'));
   assert.ok(intro.includes('step == TITLES.length - 1'));
+  assert.ok(intro.includes('KEY_VENTRY_SHOWN'));
+  assert.ok(intro.includes('brandOnlyForExisting ? "Открыть книгу"'));
+  assert.ok(intro.includes('.putBoolean(KEY_VENTRY_SHOWN,true)'));
+  assert.ok(intro.includes('step = brandOnlyForExisting ? 0'));
   assert.ok(read('android/app/src/main/res/drawable/ic_ventry.xml').includes('Faithful Android vector'));
   assert.ok(intro.includes('finishOnboarding()'));
   assert.ok(intro.includes('putBoolean(KEY_COMPLETED,true)'));
