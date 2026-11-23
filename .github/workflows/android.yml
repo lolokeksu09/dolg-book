@@ -34,7 +34,7 @@ jobs:
           node --test tests/ledger.test.js tests/android-bundle.test.js
       - name: Lint and assemble native APK
         run: |
-          if ! gradle -p android lintDebug assembleDebug --no-daemon "-PraschetOrigin=${RASCHET_ORIGIN:-https://raschet.135-106-227-179.sslip.io}"; then
+          if ! gradle -p android lintDebug assembleDebug --no-daemon; then
             cat android/app/build/reports/lint-results-debug.txt 2>/dev/null || true
             exit 1
           fi
