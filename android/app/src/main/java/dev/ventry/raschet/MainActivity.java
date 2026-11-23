@@ -693,6 +693,31 @@ public final class MainActivity extends Activity {
         EditText phone=field("Телефон (необязательно)",client==null?"":client.phone);
         phone.setInputType(InputType.TYPE_CLASS_PHONE);
         content.addView(formGroup("Имя",name));content.addView(formGroup("Телефон",phone));
+        TextView duplicateWarning=label("",13,ALERT,false);
+        duplicateWarning.setVisibility(View.GONE);
+        content.addView(duplicateWarning);
+        List<LedgerStore.Client> existing=ledger.clients();
+        Runnable detectDuplicates=()->{
+            String enteredName=name.getText().toString().trim();
+            String digits=phone.getText().toString().replaceAll("[^0-9]","");
+            String possible=null;
+            for(LedgerStore.Client other:existing){
+                if(client!=null&&other.id.equals(client.id))continue;
+                String phoneDigits=other.phone.replaceAll("[^0-9]","");
+                boolean samePhone=digits.length()>=7 && digits.equals(phoneDigits);
+                boolean sameName=!enteredName.isEmpty() && other.name.trim().equalsIgnoreCase(enteredName);
+                if(samePhone||sameName){possible=other.name;break;}
+            }
+            if(possible==null)duplicateWarning.setVisibility(View.GONE);
+            else{
+                duplicateWarning.setText("Похожий клиент уже есть: "+possible+
+                        ". Проверьте, не создаёте ли вы дубль.");
+                duplicateWarning.setVisibility(View.VISIBLE);
+            }
+        };
+        name.addTextChangedListener(watcher(value->detectDuplicates.run()));
+        phone.addTextChangedListener(watcher(value->detectDuplicates.run()));
+        detectDuplicates.run();
         showDialog(client==null?"Новый клиент":"Изменить клиента",content,()->{
             if(client==null){
                 ledger.addClient(name.getText().toString(),phone.getText().toString());
@@ -724,12 +749,17 @@ public final class MainActivity extends Activity {
         if(type.equals("payment")&&available<=0){message("Нет долга для оплаты.");return;}
         LinearLayout content=stack(12);
         content.addView(label(c.name+" · остаток "+money(available),13,MUTED,false));
+        LedgerDrafts drafts=new LedgerDrafts(this);
+        LedgerDrafts.Draft previous=drafts.get(clientId,type);
+        boolean savedDraft=drafts.has(clientId,type);
         String preset=suggestedCents>0&&type.equals("payment")
                 ? String.format(Locale.ROOT,"%d,%02d",suggestedCents/100,suggestedCents%100)
-                : null;
+                : savedDraft?previous.amount:null;
+        if(savedDraft&&suggestedCents==0)
+            content.addView(label("Незавершённый черновик восстановлен.",12,ACCENT,false));
         EditText amount=field("0,00",preset);amount.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);
         content.addView(formGroup("Сумма, ₽",amount));
-        EditText due=field("Без срока",null);
+        EditText due=field("Без срока",savedDraft?previous.due:null);
         due.setFocusable(false);due.setClickable(true);
         due.setOnClickListener(v->{
             LocalDate today=LocalDate.now();
@@ -737,12 +767,25 @@ public final class MainActivity extends Activity {
                     today.getYear(),today.getMonthValue()-1,today.getDayOfMonth()).show();
         });
         if(type.equals("debt"))content.addView(formGroup("Вернуть до (необязательно)",due));
-        EditText note=field("Комментарий",null);
+        EditText note=field("Комментарий",savedDraft?previous.note:null);
         content.addView(formGroup("Комментарий (необязательно)",note));
+        Runnable persist=()->drafts.save(clientId,type,
+                amount.getText().toString(),due.getText().toString(),note.getText().toString());
+        amount.addTextChangedListener(watcher(value->persist.run()));
+        due.addTextChangedListener(watcher(value->persist.run()));
+        note.addTextChangedListener(watcher(value->persist.run()));
+        if(savedDraft){
+            addButton(content,"Очистить черновик",false,()->{
+                amount.setText("");due.setText("");note.setText("");
+                drafts.clear(clientId,type);
+                message("Черновик очищен.");
+            },1);
+        }
         showDialog(type.equals("debt")?"Новый долг":"Принять оплату",content,()->{
             ledger.addEntry(clientId,type,LedgerStore.parseAmount(amount.getText().toString()),
                     type.equals("debt")?due.getText().toString():"",
                     note.getText().toString().trim());
+            drafts.clear(clientId,type);
             selectedClient=clientId;tab="Клиенты";
             return true;
         });
