@@ -14,7 +14,6 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -223,7 +222,10 @@ public final class LedgerStore extends SQLiteOpenHelper {
             String id=j.getString("id"),cid=j.getString("clientId"),type=j.getString("type"),
                     date=j.getString("date"),due=j.getString("due"),note=j.getString("note"),
                     reverses=j.optString("reverses","");
-            long amount=j.getLong("amount");
+            Object rawAmount=j.get("amount");
+            if(!(rawAmount instanceof Number) || !rawAmount.toString().matches("\\d{1,12}"))
+                throw new IllegalArgumentException("Сумма операции должна быть целым числом копеек.");
+            long amount=Long.parseLong(rawAmount.toString());
             if(id.isEmpty()||id.length()>100||!entryIds.add(id)||!sums.containsKey(cid)
                     ||!type.equals("debt")&&!type.equals("payment")&&!type.equals("reversal")
                     ||amount<=0||amount>MAX_AMOUNT||note.length()>200||date.length()>40
