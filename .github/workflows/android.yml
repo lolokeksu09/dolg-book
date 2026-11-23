@@ -8,6 +8,7 @@ on:
       - 'tests/android-bundle.test.js'
       - 'tests/android-onboarding.test.js'
       - 'tests/android-collections.test.js'
+      - 'tests/android-daily-ops.test.js'
   workflow_dispatch:
 
 permissions:
@@ -33,7 +34,7 @@ jobs:
           "$sdkmanager_bin" --install 'platforms;android-35' 'build-tools;35.0.0'
       - name: Проверить точность расчётов и нативный Android
         run: |
-          node --test tests/ledger.test.js tests/android-bundle.test.js tests/android-onboarding.test.js tests/android-collections.test.js
+          node --test tests/ledger.test.js tests/android-bundle.test.js tests/android-onboarding.test.js tests/android-collections.test.js tests/android-daily-ops.test.js
       - name: Lint and assemble native APK
         run: |
           if ! gradle -p android lintDebug assembleDebug --no-daemon; then
