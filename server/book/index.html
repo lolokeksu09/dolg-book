@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Общая книга · Расчёт</title>
+  <link rel="stylesheet" href="/admin/style.css">
+  <script src="/book/app.js" type="module"></script>
+</head>
+<body>
+<main>
+  <header><strong>Расчёт</strong><button id="signout" type="button" hidden>Выйти</button></header>
+  <h1>Общая книга</h1>
+  <p id="status" role="status">Проверяем вход…</p>
+  <p id="signin" hidden><a href="/signin">Войти в «Расчёт»</a></p>
+  <section id="workspace" hidden aria-label="Магазины">
+    <form id="shops">
+      <label>Магазин<select name="shop"></select></label>
+      <button type="submit">Открыть книгу</button>
+    </form>
+    <form id="new-shop">
+      <label>Название нового магазина<input name="name" required maxlength="80"></label>
+      <button type="submit">Создать магазин</button>
+    </form>
+  </section>
+  <section id="book" hidden aria-labelledby="book-title">
+    <h2 id="book-title"></h2>
+    <dl>
+      <div><dt>Номер магазина</dt><dd id="shop-id" class="wrap"></dd></div>
+      <div><dt>Доступ</dt><dd id="subscription"></dd></div>
+      <div><dt>Оплачен до</dt><dd id="expiry"></dd></div>
+    </dl>
+    <button id="copy" type="button">Скопировать номер магазина</button>
+    <p id="activation-help" hidden>Отправьте этот номер Ventry, чтобы активировать или продлить подписку. Пока доступна история книги.</p>
+    <form id="new-client" hidden>
+      <label>Имя клиента<input name="name" required maxlength="80"></label>
+      <button type="submit">Добавить клиента</button>
+    </form>
+    <form id="entry" hidden>
+      <label>Клиент<select name="client" required></select></label>
+      <label>Операция<select name="kind"><option value="debt">Долг</option><option value="payment">Оплата</option></select></label>
+      <label>Сумма, ₽<input name="amount" required inputmode="decimal" maxlength="13"></label>
+      <label>Комментарий<input name="note" maxlength="200"></label>
+      <button type="submit">Сохранить операцию</button>
+    </form>
+    <h3>Остатки по клиентам</h3>
+    <ul id="balances"></ul>
+    <h3>История операций</h3>
+    <ol id="history"></ol>
+  </section>
+</main>
+</body>
+</html>

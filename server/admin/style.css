@@ -13,7 +13,7 @@ h1 { font-size: clamp(1.7rem, 6vw, 2.4rem); line-height: 1.1; }
 form, section, dialog { border: 1px solid #3f5c4c; border-radius: 12px; padding: 16px; background: #13201a; }
 form { display: grid; gap: 12px; }
 label { display: grid; gap: 6px; }
-input, button { font: inherit; min-height: 44px; padding: 9px 12px; border-radius: 7px; border: 1px solid #50725e; }
+input, button, select { font: inherit; min-height: 44px; padding: 9px 12px; border-radius: 7px; border: 1px solid #50725e; }
 input { min-width: 0; width: 100%; background: #0b1510; color: inherit; }
 button { cursor: pointer; color: #11251a; background: #d3ead8; }
 button:disabled { opacity: .48; cursor: wait; }
@@ -26,3 +26,6 @@ li { margin-block: 8px; overflow-wrap: anywhere; }
 dialog { width: min(460px, calc(100% - 24px)); color: inherit; }
 dialog::backdrop { background: #000a; }
 .actions { flex-wrap: wrap; }
+
+.wrap { overflow-wrap: anywhere; }
+a { color: var(--accent, #9fe0ba); }

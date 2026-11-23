@@ -12,5 +12,15 @@ export function resolveRuntime(env){
  if (env.LEDGER_ADMIN_SUBJECT !== undefined && (!adminSubject || adminSubject.length > 100 || configured !== keys.length)) {
    throw new Error('LEDGER_ADMIN_SUBJECT requires a configured identity provider and a valid subject');
  }
- return {database,port,host:isAmvera?'0.0.0.0':'127.0.0.1',identityReady:configured===keys.length,...(adminSubject && {adminSubject})};
+ const browserOrigin = env.LEDGER_BROWSER_ORIGIN;
+ if (browserOrigin !== undefined) {
+   const origin = new URL(browserOrigin);
+   const issuer = new URL(env.IDENTITY_ISSUER || '');
+   if (!adminSubject || origin.origin !== browserOrigin || origin.protocol !== 'https:' ||
+       issuer.protocol !== 'https:' || issuer.username || issuer.password || issuer.search || issuer.hash ||
+       !/\/realms\/[^/]+$/.test(issuer.pathname) || issuer.href !== env.IDENTITY_ISSUER) {
+     throw new Error('LEDGER_BROWSER_ORIGIN requires HTTPS, a Keycloak realm issuer and an admin subject');
+   }
+ }
+ return {database,port,host:isAmvera?'0.0.0.0':'127.0.0.1',identityReady:configured===keys.length,...(adminSubject && {adminSubject}),...(browserOrigin && {browserOrigin})};
 }
