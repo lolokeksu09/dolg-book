@@ -669,11 +669,11 @@ public final class MainActivity extends Activity {
         // Explicit user action: Sharesheet does not auto-send or access contacts.
         // The phone number is intentionally excluded from the generated text.
         StringBuilder body=new StringBuilder("Расчёт · ").append(shopName)
-                .append("\\nКлиент: ").append(client.name)
-                .append("\\nОстаток долга: ").append(money(amount));
-        if(overdue>0)body.append("\\nПросрочено: ").append(money(overdue));
-        body.append("\\nСводка на ").append(LocalDate.now())
-                .append("\\nПроверьте данные и получателя перед отправкой.");
+                .append("\nКлиент: ").append(client.name)
+                .append("\nОстаток долга: ").append(money(amount));
+        if(overdue>0)body.append("\nПросрочено: ").append(money(overdue));
+        body.append("\nСводка на ").append(LocalDate.now())
+                .append("\nПроверьте данные и получателя перед отправкой.");
         Intent share=new Intent(Intent.ACTION_SEND);
         share.setType("text/plain");
         share.putExtra(Intent.EXTRA_TEXT,body.toString());
