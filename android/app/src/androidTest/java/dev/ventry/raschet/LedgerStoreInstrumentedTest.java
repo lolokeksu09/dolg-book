@@ -23,6 +23,12 @@ public class LedgerStoreInstrumentedTest {
 
     @Before public void prepare() {
         testContext = InstrumentationRegistry.getInstrumentation().getContext();
+        // The instrumentation APK has no databases/ directory on first launch.
+        // Create it only inside this isolated test package, never in the real app.
+        java.io.File databaseDirectory=testContext.getDatabasePath("raschet-ledger.db").getParentFile();
+        if(databaseDirectory==null || (!databaseDirectory.isDirectory() && !databaseDirectory.mkdirs())) {
+            throw new IllegalStateException("Cannot create isolated test database directory");
+        }
         testContext.deleteDatabase("raschet-ledger.db");
         book = new LedgerStore(testContext);
     }
