@@ -8,6 +8,7 @@ import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Build;
 import android.print.PrintManager;
 import android.content.Context;
 import android.view.Gravity;
@@ -54,8 +55,13 @@ public final class MainActivity extends Activity {
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(0xff0b1512);
         root.setOnApplyWindowInsetsListener((view, insets) -> {
-            var bars = insets.getInsets(WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
-            view.setPadding(bars.left, bars.top, bars.right, bars.bottom);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                var bars = insets.getInsets(WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
+                view.setPadding(bars.left, bars.top, bars.right, bars.bottom);
+            } else {
+                view.setPadding(insets.getSystemWindowInsetLeft(), insets.getSystemWindowInsetTop(),
+                        insets.getSystemWindowInsetRight(), insets.getSystemWindowInsetBottom());
+            }
             return insets;
         });
 
@@ -211,7 +217,7 @@ public final class MainActivity extends Activity {
                 return;
             }
             // Exactly two intended export types, never accept arbitrary file paths.
-            String type = "text/csv".equals(mime.split(";")[0]) ? "text/csv" : "application/json";
+            String type = mime != null && "text/csv".equals(mime.split(";")[0]) ? "text/csv" : "application/json";
             String safeName = filename == null ? "raschet-backup.json"
                     : filename.replaceAll("[^a-zA-Z0-9._-]", "_");
             if (safeName.isEmpty() || safeName.length() > 120) safeName = "raschet-backup.json";
