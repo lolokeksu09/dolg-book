@@ -1,19 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Расчёт</string>
-    <string name="open_book">Общая книга</string>
-    <string name="local_book">Локальная книга</string>
-    <string name="local_note">Записи сохраняются на устройстве · без синхронизации</string>
-    <string name="browser_missing">Не найден браузер для безопасного входа.</string>
-    <string name="address_missing">Сервер общей книги пока не настроен. Локальная книга работает без него.</string>
-    <string name="backup_size_error">Копия слишком большая для сохранения через приложение.</string>
-    <string name="backup_saved">Файл сохранён.</string>
-    <string name="backup_error">Не удалось сохранить файл. Попробуйте снова.</string>
-    <string name="pick_file_error">Не удалось открыть выбор файла.</string>
     <style name="RaschetTheme" parent="android:style/Theme.Material.NoActionBar">
         <item name="android:fontFamily">sans</item>
-        <item name="android:colorAccent">#8FD8B2</item>
+        <item name="android:colorAccent">#B9EFD0</item>
         <item name="android:windowLightStatusBar">false</item>
-        <item name="android:windowBackground">#0B1512</item>
+        <item name="android:windowBackground">#090E0C</item>
     </style>
 </resources>

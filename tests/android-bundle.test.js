@@ -10,11 +10,14 @@ test('Android UI is native and does not contain web UI runtime',()=>{
   const gradle=read('android/app/build.gradle.kts');
   const activity=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
   const manifest=read('android/app/src/main/AndroidManifest.xml');
-  assert.ok(gradle.includes('versionName = "0.3.0"'));
-  assert.ok(gradle.includes('applicationIdSuffix = ".nativepreview"'));
+  assert.ok(gradle.includes('versionName = "0.3.1"'));
+  assert.ok(gradle.includes('applicationIdSuffix = ".nativev031"'));
   assert.ok(!gradle.includes('webkit')&&!gradle.includes('syncOfflineBook'));
   assert.ok(!gradle.includes('index.html')&&!gradle.includes('app.js'));
   assert.ok(!activity.includes('android.webkit')&&!activity.includes('WebView'));
+  for (const unwanted of ['ЭКОНОМИКА', 'ЛОКАЛЬНАЯ КНИГА', '● ОФЛАЙН', 'Общая книга онлайн', 'Нативный Android'])
+    assert.ok(!activity.includes(unwanted),'Development or website section leaked into customer app: '+unwanted);
+  assert.ok(activity.includes('ic_nav_home')&&activity.includes('ic_nav_people'));
   assert.ok(!manifest.includes('android.permission.INTERNET'));
   for(const screen of ['homeView()', 'clientsView()', 'detailView(', 'historyView()', 'settingsView()'])
     assert.ok(activity.includes(screen),'Missing native view '+screen);

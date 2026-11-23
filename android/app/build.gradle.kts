@@ -2,11 +2,6 @@ plugins {
     id("com.android.application") version "8.9.2"
 }
 
-val origin = providers.gradleProperty("raschetOrigin").orElse("https://raschet.example.test").get()
-require(Regex("""https://[a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)+""").matches(origin)) {
-    "raschetOrigin must be an HTTPS origin without a path or trailing slash"
-}
-
 android {
     namespace = "dev.ventry.raschet"
     compileSdk = 35
@@ -14,13 +9,12 @@ android {
         applicationId = "dev.ventry.raschet"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "0.3.0"
-        resValue("string", "book_url", "$origin/book/")
+        versionCode = 4
+        versionName = "0.3.1"
     }
     buildTypes {
         getByName("debug") {
-            applicationIdSuffix = ".nativepreview"
+            applicationIdSuffix = ".nativev031"
         }
     }
     compileOptions {

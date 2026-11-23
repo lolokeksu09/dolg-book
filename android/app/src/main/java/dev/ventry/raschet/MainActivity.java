@@ -8,7 +8,6 @@ import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
-import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.text.Editable;
@@ -47,14 +46,14 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
-/** Native Android views with an offline database and explicitly separate browser login. */
+/** Native Android debt ledger, with platform views and SQLite persistence. */
 public final class MainActivity extends Activity {
     private static final int BG=0xff090e0c, PANEL=0xff141c18, ELEVATED=0xff1b2820;
     private static final int BORDER=0xff2b3b32, TEXT=0xfff4f7f3, MUTED=0xff9eb4a6;
     private static final int ACCENT=0xffb9efd0, INK=0xff12271b, ALERT=0xffffca97, RED=0xffffacac;
     private static final int REQUEST_IMPORT=101, REQUEST_EXPORT=102, MAX_IMPORT=5*1024*1024;
     private static final String[] TABS={"Главная","Клиенты","История","Настройки"};
-    private static final String[] SYMBOLS={"⌂","▤","↗","⚙"};
+    private static final int[] ICONS={R.drawable.ic_nav_home,R.drawable.ic_nav_people,R.drawable.ic_nav_history,R.drawable.ic_nav_settings};
     private final DateTimeFormatter dayFormat=DateTimeFormatter.ofPattern("d MMM yyyy",new Locale("ru","RU"));
     private LedgerStore ledger;
     private LinearLayout root, mainPanel, navigation;
@@ -101,15 +100,14 @@ public final class MainActivity extends Activity {
         insignia.setBackground(shape(ACCENT,16,0));
         header.addView(insignia,new LinearLayout.LayoutParams(dp(46),dp(46)));
         LinearLayout heading=stack(2);
-        heading.addView(label("РАСЧЁТ",18,TEXT,true));
-        heading.addView(label("ЛОКАЛЬНАЯ КНИГА",10,MUTED,true));
+        heading.addView(label("Расчёт",21,TEXT,true));
+        TextView shopLabel=label(shopName,12,MUTED,false);
+        shopLabel.setSingleLine(true);
+        shopLabel.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        heading.addView(shopLabel);
         LinearLayout.LayoutParams headingParams=new LinearLayout.LayoutParams(0,-2,1);
         headingParams.leftMargin=dp(12);header.addView(heading,headingParams);
-        TextView status=label("● ОФЛАЙН",10,ACCENT,true);
-        status.setBackground(shape(ELEVATED,100,BORDER));
-        status.setPadding(dp(10),dp(9),dp(10),dp(9));
-        header.addView(status);
-        root.addView(header);
+Remove dev badge        root.addView(header);
 
         LinearLayout body=row();
         if(tablet) {
@@ -138,8 +136,11 @@ public final class MainActivity extends Activity {
             item.setGravity(Gravity.CENTER);
             item.setPadding(dp(tablet?14:4),dp(11),dp(tablet?10:2),dp(11));
             item.setBackground(shape(destination.equals(tab)?ELEVATED:PANEL,14, destination.equals(tab)?BORDER:0));
-            TextView symbol=label(SYMBOLS[i],tablet?23:21,destination.equals(tab)?ACCENT:MUTED,false);
-            item.addView(symbol);
+            android.widget.ImageView icon=new android.widget.ImageView(this);
+            icon.setImageResource(ICONS[i]);
+            icon.setColorFilter(destination.equals(tab)?ACCENT:MUTED);
+            icon.setContentDescription(null);
+            item.addView(icon,new LinearLayout.LayoutParams(dp(23),dp(23)));
             TextView name=label(destination,tablet?14:11,destination.equals(tab)?TEXT:MUTED,destination.equals(tab));
             name.setGravity(Gravity.CENTER);
             LinearLayout.LayoutParams np=new LinearLayout.LayoutParams(-2,-2);
@@ -166,7 +167,7 @@ public final class MainActivity extends Activity {
         }
     }
     private View homeView() {
-        LinearLayout view=screen("Добро пожаловать","Ваш магазин · "+shopName);
+        LinearLayout view=screen("Обзор","Сегодня · "+dayFormat.format(LocalDate.now()));
         List<LedgerStore.Client> customers=ledger.clients();
         List<LedgerStore.Entry> entries=ledger.entries();
         long debt=0,overdue=0;int debtors=0;
@@ -353,10 +354,7 @@ public final class MainActivity extends Activity {
         warning.addView(label("Важно о резервных копиях",15,ALERT,true));
         warning.addView(label("При удалении приложения локальная книга будет потеряна. JSON-копия содержит имена, телефоны и суммы без шифрования.",13,MUTED,false),margin(-1,-2,7));
         view.addView(warning,margin(-1,-2,10));
-        section(view,"Ventry","Отдельная общая книга, не синхронизируется с локальной");
-        actionRow(view,"↗","Общая книга онлайн","Открыть защищённый вход в браузере",this::openSharedBook);
-        view.addView(label("Расчёт 0.3 · Нативный Android · Данные только на устройстве",12,MUTED,false),margin(-1,-2,20));
-        return scroll(view);
+Remove development links        return scroll(view);
     }
     private LinearLayout entryCard(LedgerStore.Entry e,String clientName,boolean canceled) {
         LinearLayout card=row();
@@ -555,16 +553,6 @@ public final class MainActivity extends Activity {
                 });
             }catch(Exception ex){message("Не удалось прочитать JSON: "+ex.getMessage());}
         }
-    }
-    private void openSharedBook() {
-        Uri origin=Uri.parse(getString(R.string.book_url));
-        if("raschet.example.test".equals(origin.getHost())){
-            message("Сервер общей книги ещё не настроен. Локальная книга работает.");
-            return;
-        }
-        Intent browser=new Intent(Intent.ACTION_VIEW,origin);
-        browser.addCategory(Intent.CATEGORY_BROWSABLE);
-        try{startActivity(browser);}catch(ActivityNotFoundException ex){message("Установите браузер для входа.");}
     }
     @Override public void onBackPressed() {
         if(selectedClient!=null){selectedClient=null;tab="Клиенты";render();}
