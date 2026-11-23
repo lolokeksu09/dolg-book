@@ -7,6 +7,9 @@ PACKAGE=dev.ventry.raschet.nativev031
 adb install -r "$APK"
 # Real instrumented SQLite tests execute against the test APK's isolated context.
 gradle -p android connectedDebugAndroidTest --no-daemon
+# Gradle may uninstall the target package after instrumentation on some runners.
+# Reinstall the identical debug APK before performing the end-to-end UI actions.
+adb install -r "$APK"
 adb logcat -c
 adb shell am start -W -n "$PACKAGE/dev.ventry.raschet.SplashActivity"
 sleep 4
