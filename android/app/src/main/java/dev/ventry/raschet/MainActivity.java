@@ -41,6 +41,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -62,6 +63,8 @@ public final class MainActivity extends Activity {
     private TextView shopCaption;
     private FrameLayout page;
     private String tab="Главная", selectedClient=null, search="", historyFilter="Все";
+    private String clientFilter=CollectionsInsights.ALL;
+    private boolean clientsAmountFirst;
     private String shopName="Мой магазин";
     private boolean pendingExport, pendingExportCsv;
     private boolean tablet=false, largeText=false, saving=false;
@@ -77,6 +80,9 @@ public final class MainActivity extends Activity {
         largeText=getPreferences(MODE_PRIVATE).getBoolean("large",false);
         if(state!=null){
             tab=state.getString("tab","Главная");selectedClient=state.getString("client");
+            search=state.getString("search","");
+            clientFilter=state.getString("client_filter",CollectionsInsights.ALL);
+            clientsAmountFirst=state.getBoolean("clients_amount_first",false);
             pendingExport=state.getBoolean("pending_export");
             pendingExportCsv=state.getBoolean("pending_export_csv");
         }
@@ -87,6 +93,9 @@ public final class MainActivity extends Activity {
     }
     @Override protected void onSaveInstanceState(Bundle out) {
         out.putString("tab",tab);out.putString("client",selectedClient);
+        out.putString("search",search);
+        out.putString("client_filter",clientFilter);
+        out.putBoolean("clients_amount_first",clientsAmountFirst);
         out.putBoolean("pending_export",pendingExport);
         out.putBoolean("pending_export_csv",pendingExportCsv);
         super.onSaveInstanceState(out);
@@ -187,11 +196,15 @@ public final class MainActivity extends Activity {
         LinearLayout view=screen("Обзор","Сегодня · "+dayFormat.format(LocalDate.now()));
         List<LedgerStore.Client> customers=ledger.clients();
         List<LedgerStore.Entry> entries=ledger.entries();
-        long debt=0,overdue=0;int debtors=0;
-        for(LedgerStore.Client c:customers){
-            long amount=LedgerStore.balance(entries,c.id);
-            debt+=amount;overdue+=LedgerStore.overdue(entries,c.id,LocalDate.now());
-            if(amount>0)debtors++;
+        List<CollectionsInsights.CustomerStatus> statuses=
+                CollectionsInsights.analyze(customers,entries,LocalDate.now());
+        long debt=0,overdue=0,upcoming=0;
+        int debtors=0,lateClients=0,soonClients=0;
+        for(CollectionsInsights.CustomerStatus status:statuses){
+            debt+=status.balance;overdue+=status.overdue;upcoming+=status.upcoming;
+            if(status.balance>0)debtors++;
+            if(status.overdue>0)lateClients++;
+            if(status.upcoming>0)soonClients++;
         }
         LinearLayout hero=stack(8);
         hero.setPadding(dp(19),dp(19),dp(19),dp(19));
@@ -225,7 +238,37 @@ public final class MainActivity extends Activity {
         late.addView(eyebrow("ПРОСРОЧЕННЫЕ ДОЛГИ"));
         late.addView(label(money(overdue),25,overdue>0?ALERT:TEXT,true),margin(-1,-2,5));
         late.addView(label(overdue>0?"Проверьте сроки возврата":"Просроченных долгов нет",13,MUTED,false),margin(-1,-2,4));
+        if(lateClients>0)
+            addButton(late,"Посмотреть просроченные · "+lateClients,
+                    false,()->openClientFilter(CollectionsInsights.LATE),1);
         view.addView(late,margin(-1,-2,10));
+        if(soonClients>0){
+            LinearLayout upcomingCard=card();
+            upcomingCard.addView(eyebrow("СРОК В БЛИЖАЙШИЕ 7 ДНЕЙ"));
+            upcomingCard.addView(label(money(upcoming),25,ALERT,true),margin(-1,-2,5));
+            upcomingCard.addView(label("Клиентов: "+soonClients,13,MUTED,false));
+            addButton(upcomingCard,"Посмотреть сроки",false,
+                    ()->openClientFilter(CollectionsInsights.SOON),1);
+            view.addView(upcomingCard,margin(-1,-2,10));
+        }
+        List<CollectionsInsights.CustomerStatus> attention=new ArrayList<>();
+        for(CollectionsInsights.CustomerStatus s:statuses)
+            if(s.overdue>0||s.upcoming>0)attention.add(s);
+        attention.sort(Comparator.comparingLong((CollectionsInsights.CustomerStatus s)->s.overdue)
+                .reversed().thenComparing(
+                        Comparator.comparingLong((CollectionsInsights.CustomerStatus s)->s.upcoming)
+                                .reversed()));
+        if(!attention.isEmpty()){
+            section(view,"Контроль долгов","Просрочки и сроки в ближайшие 7 дней");
+            for(int i=0;i<Math.min(attention.size(),3);i++){
+                CollectionsInsights.CustomerStatus s=attention.get(i);
+                String description=s.overdue>0
+                        ? "Просрочено "+money(s.overdue)+" · остаток "+money(s.balance)
+                        : "К возврату "+money(s.upcoming)+" · остаток "+money(s.balance);
+                actionRow(view,s.overdue>0?"!":"•",s.client.name,description,
+                        ()->{selectedClient=s.client.id;tab="Клиенты";render();});
+            }
+        }
 
         section(view,"Быстрые действия","Операции в несколько касаний");
         actionRow(view,"＋","Новый клиент","Добавить человека в книгу",()->showClientForm(null));
@@ -251,12 +294,46 @@ public final class MainActivity extends Activity {
         block.addView(label(caption,12,MUTED,false));
         return block;
     }
+    private void openClientFilter(String filter) {
+        clientFilter=filter;search="";selectedClient=null;tab="Клиенты";render();
+    }
     private View clientsView() {
         LinearLayout view=screen("Клиенты","Остатки и записи по каждому человеку");
         addButton(view,"+ Добавить клиента",true,()->showClientForm(null),1);
         EditText searchInput=field("Поиск по имени или телефону",search);
         searchInput.setSingleLine(true);
-        view.addView(searchInput,margin(-1,dp(54),14));
+        view.addView(searchInput,margin(-1,dp(54),12));
+        LinearLayout filterGrid=stack(7);
+        String[] options={CollectionsInsights.ALL,CollectionsInsights.OWING,
+                CollectionsInsights.LATE,CollectionsInsights.SOON};
+        for(int offset=0;offset<options.length;offset+=2){
+            LinearLayout filterRow=row();
+            for(int j=offset;j<offset+2;j++){
+                String choice=options[j];
+                boolean selected=choice.equals(clientFilter);
+                TextView chip=label(choice,13,selected?INK:TEXT,true);
+                chip.setGravity(Gravity.CENTER);
+                chip.setBackground(shape(selected?ACCENT:ELEVATED,13,selected?0:BORDER));
+                chip.setContentDescription("Фильтр клиентов: "+choice);
+                chip.setSelected(selected);
+                chip.setClickable(true);chip.setFocusable(true);
+                chip.setOnClickListener(v->{clientFilter=choice;render();});
+                LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(0,dp(48),1);
+                if(j>offset)params.leftMargin=dp(8);
+                filterRow.addView(chip,params);
+            }
+            filterGrid.addView(filterRow);
+        }
+        view.addView(filterGrid,margin(-1,-2,8));
+        TextView sort=label(clientsAmountFirst?
+                "Сортировка: по остатку ↓":"Сортировка: по имени",13,ACCENT,true);
+        sort.setGravity(Gravity.CENTER_VERTICAL);
+        sort.setPadding(dp(14),dp(4),dp(10),dp(4));
+        sort.setBackground(shape(PANEL,12,BORDER));
+        sort.setContentDescription("Изменить сортировку клиентов");
+        sort.setClickable(true);sort.setFocusable(true);
+        sort.setOnClickListener(v->{clientsAmountFirst=!clientsAmountFirst;render();});
+        view.addView(sort,margin(-1,dp(48),10));
         LinearLayout results=stack(8);view.addView(results);
         Runnable fill=()->fillClients(results);
         searchInput.addTextChangedListener(watcher(value->{search=value;fill.run();}));
@@ -266,41 +343,56 @@ public final class MainActivity extends Activity {
     private void fillClients(LinearLayout rows) {
         rows.removeAllViews();
         List<LedgerStore.Client> customers=ledger.clients();
-        List<LedgerStore.Entry> entries=ledger.entries();
-        String needle=search.toLowerCase(new Locale("ru","RU"));
-        int shown=0;
-        for(LedgerStore.Client c:customers){
-            if(!c.name.toLowerCase(new Locale("ru","RU")).contains(needle)&&!c.phone.contains(needle))continue;
-            shown++;
-            long b=LedgerStore.balance(entries,c.id);
+        List<CollectionsInsights.CustomerStatus> visible=CollectionsInsights.visible(
+                CollectionsInsights.analyze(customers,ledger.entries(),LocalDate.now()),
+                clientFilter,clientsAmountFirst,search);
+        for(CollectionsInsights.CustomerStatus status:visible){
+            LedgerStore.Client customer=status.client;
+            long amount=status.balance;
             LinearLayout card=row();
-            card.setPadding(dp(18),dp(17),dp(16),dp(17));
+            card.setPadding(dp(16),dp(15),dp(15),dp(15));
             card.setGravity(Gravity.CENTER_VERTICAL);
             card.setBackground(shape(PANEL,18,BORDER));
-            TextView badge=label(c.name.substring(0,1).toUpperCase(new Locale("ru","RU")),19,ACCENT,true);
+            TextView badge=label(customer.name.substring(0,1).toUpperCase(new Locale("ru","RU")),19,ACCENT,true);
             badge.setGravity(Gravity.CENTER);badge.setBackground(shape(ELEVATED,16,0));
-            card.addView(badge,new LinearLayout.LayoutParams(dp(46),dp(46)));
-            LinearLayout labels=stack(5);
-            labels.addView(label(c.name,16,TEXT,true));
-            labels.addView(label(c.phone.isEmpty()?"Открыть записи":c.phone,12,MUTED,false));
+            card.addView(badge,new LinearLayout.LayoutParams(dp(44),dp(44)));
+            LinearLayout labels=stack(4);
+            labels.addView(label(customer.name,16,TEXT,true));
+            labels.addView(label(customer.phone.isEmpty()?"Открыть записи":customer.phone,12,MUTED,false));
+            String statusText=status.overdue>0?"Просрочено: "+money(status.overdue):
+                    status.upcoming>0?"Срок до "+status.nextDue+" · "+money(status.upcoming):"";
+            if(!statusText.isEmpty())
+                labels.addView(label(statusText,12,status.overdue>0?ALERT:MUTED,false));
             LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-2,1);
             lp.leftMargin=dp(12);card.addView(labels,lp);
             LinearLayout right=stack(4);right.setGravity(Gravity.RIGHT);
-            right.addView(label(money(b),16,b>0?ACCENT:TEXT,true));
-            right.addView(label(b>0?"Должен":"Нет долга",11,MUTED,false));
+            right.addView(label(money(amount),16,amount>0?ACCENT:TEXT,true));
+            right.addView(label(amount>0?"Должен":"Нет долга",11,MUTED,false));
             card.addView(right);
-            card.setClickable(true);
-            card.setFocusable(true);
-            card.setOnClickListener(v->{selectedClient=c.id;render();});
-            card.setContentDescription(c.name+", остаток "+money(b));
-            rows.addView(card,margin(-1,-2,4));
+            card.setClickable(true);card.setFocusable(true);
+            card.setOnClickListener(v->{selectedClient=customer.id;render();});
+            card.setContentDescription(customer.name+", остаток "+money(amount)
+                    +(status.overdue>0?", просрочено "+money(status.overdue):""));
+            rows.addView(card,margin(-1,-2,5));
         }
-        if(shown==0){
-            if(customers.isEmpty()) rows.addView(emptyState(R.drawable.ic_nav_people,
-                    "Пока нет клиентов", "Добавьте первого клиента, затем записывайте долги и оплаты.",
-                    "Добавить первого клиента", ()->showClientForm(null)));
+        if(visible.isEmpty()){
+            if(customers.isEmpty())rows.addView(emptyState(R.drawable.ic_nav_people,
+                    "Пока нет клиентов","Добавьте первого клиента, затем записывайте долги и оплаты.",
+                    "Добавить первого клиента",()->showClientForm(null)));
+            else if(!search.trim().isEmpty())rows.addView(emptyState(R.drawable.ic_nav_people,
+                    "Никого не нашли","Попробуйте другое имя или номер телефона.",
+                    "Очистить поиск",()->{search="";render();}));
+            else if(clientFilter.equals(CollectionsInsights.LATE))rows.addView(emptyState(
+                    R.drawable.ic_nav_history,"Просроченных долгов нет",
+                    "Просрочка появится здесь, если срок возврата прошёл и долг не погашен.",
+                    "Показать всех",()->openClientFilter(CollectionsInsights.ALL)));
+            else if(clientFilter.equals(CollectionsInsights.SOON))rows.addView(emptyState(
+                    R.drawable.ic_nav_history,"Нет ближайших сроков",
+                    "Нет непогашенных долгов со сроком возврата в следующие 7 дней.",
+                    "Показать всех",()->openClientFilter(CollectionsInsights.ALL)));
             else rows.addView(emptyState(R.drawable.ic_nav_people,
-                    "Никого не нашли", "Попробуйте другое имя или номер телефона.", null, null));
+                    "Нет клиентов с долгом","Здесь будут клиенты с непогашенным остатком.",
+                    "Показать всех",()->openClientFilter(CollectionsInsights.ALL)));
         }
     }
     private View detailView(String id) {
@@ -318,8 +410,16 @@ public final class MainActivity extends Activity {
         total.addView(eyebrow("ОСТАТОК ДОЛГА"));
         total.addView(label(money(amount),36,TEXT,true),margin(-1,-2,8));
         long overdue=LedgerStore.overdue(all,id,LocalDate.now());
+        CollectionsInsights.CustomerStatus status=null;
+        for(CollectionsInsights.CustomerStatus item:CollectionsInsights.analyze(
+                ledger.clients(),all,LocalDate.now())){
+            if(item.client.id.equals(id)){status=item;break;}
+        }
         if(overdue>0)total.addView(label("Просрочено: "+money(overdue),13,ALERT,true));
         else total.addView(label("Все операции учтены",13,MUTED,false));
+        if(status!=null&&status.upcoming>0)
+            total.addView(label("К возврату до "+status.nextDue+": "+money(status.upcoming),
+                    13,MUTED,false));
         view.addView(total,margin(-1,-2,12));
         LinearLayout actions=row();
         addButton(actions,"+ Долг",true,()->showEntryForm(id,"debt"),1);
@@ -328,7 +428,16 @@ public final class MainActivity extends Activity {
         LinearLayout tools=row();
         addButton(tools,"Изменить",false,()->showClientForm(current),1);
         addButton(tools,"Отменить запись",false,()->showReversal(id),1);
-        view.addView(tools,margin(-1,dp(48),14));
+        view.addView(tools,margin(-1,dp(48),10));
+        LinearLayout extraActions=stack(7);
+        if(amount>0)
+            addButton(extraActions,"Погасить весь остаток",false,
+                    ()->showEntryForm(id,"payment",amount),1);
+        addButton(extraActions,"Поделиться сводкой",false,
+                ()->shareClientSummary(current,amount,overdue),1);
+        view.addView(extraActions,margin(-1,-2,6));
+        view.addView(label("Сводка содержит данные о долге. Перед отправкой проверьте получателя.",
+                12,MUTED,false),margin(-1,-2,12));
         section(view,"История клиента","Долги, оплаты и отмены");
         Set<String> canceled=LedgerStore.canceled(all);
         int shown=0;
@@ -523,6 +632,9 @@ public final class MainActivity extends Activity {
         });
     }
     private void showEntryForm(String clientId,String type) {
+        showEntryForm(clientId,type,0L);
+    }
+    private void showEntryForm(String clientId,String type,long suggestedCents) {
         LedgerStore.Client c=null;
         for(LedgerStore.Client person:ledger.clients())if(person.id.equals(clientId))c=person;
         if(c==null){message("Клиент не найден.");return;}
@@ -530,7 +642,10 @@ public final class MainActivity extends Activity {
         if(type.equals("payment")&&available<=0){message("Нет долга для оплаты.");return;}
         LinearLayout content=stack(12);
         content.addView(label(c.name+" · остаток "+money(available),13,MUTED,false));
-        EditText amount=field("0,00",null);amount.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        String preset=suggestedCents>0&&type.equals("payment")
+                ? String.format(Locale.ROOT,"%d,%02d",suggestedCents/100,suggestedCents%100)
+                : null;
+        EditText amount=field("0,00",preset);amount.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);
         content.addView(formGroup("Сумма, ₽",amount));
         EditText due=field("Без срока",null);
         due.setFocusable(false);due.setClickable(true);
@@ -549,6 +664,21 @@ public final class MainActivity extends Activity {
             selectedClient=clientId;tab="Клиенты";
             return true;
         });
+    }
+    private void shareClientSummary(LedgerStore.Client client,long amount,long overdue) {
+        // Explicit user action: Sharesheet does not auto-send or access contacts.
+        // The phone number is intentionally excluded from the generated text.
+        StringBuilder body=new StringBuilder("Расчёт · ").append(shopName)
+                .append("\\nКлиент: ").append(client.name)
+                .append("\\nОстаток долга: ").append(money(amount));
+        if(overdue>0)body.append("\\nПросрочено: ").append(money(overdue));
+        body.append("\\nСводка на ").append(LocalDate.now())
+                .append("\\nПроверьте данные и получателя перед отправкой.");
+        Intent share=new Intent(Intent.ACTION_SEND);
+        share.setType("text/plain");
+        share.putExtra(Intent.EXTRA_TEXT,body.toString());
+        try{startActivity(Intent.createChooser(share,"Поделиться сводкой клиента"));}
+        catch(ActivityNotFoundException e){message("Нет приложения для отправки сводки.");}
     }
     private void showReversal(String clientId) {
         LedgerStore.Entry last=ledger.lastActive(clientId);
