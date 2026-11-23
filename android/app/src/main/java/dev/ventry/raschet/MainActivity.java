@@ -57,6 +57,7 @@ public final class MainActivity extends Activity {
     private final DateTimeFormatter dayFormat=DateTimeFormatter.ofPattern("d MMM yyyy",new Locale("ru","RU"));
     private LedgerStore ledger;
     private LinearLayout root, mainPanel, navigation;
+    private TextView shopCaption;
     private FrameLayout page;
     private String tab="Главная", selectedClient=null, search="", historyFilter="Все";
     private String exportPayload=null, shopName="Мой магазин";
@@ -101,10 +102,10 @@ public final class MainActivity extends Activity {
         header.addView(insignia,new LinearLayout.LayoutParams(dp(46),dp(46)));
         LinearLayout heading=stack(2);
         heading.addView(label("Расчёт",21,TEXT,true));
-        TextView shopLabel=label(shopName,12,MUTED,false);
-        shopLabel.setSingleLine(true);
-        shopLabel.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        heading.addView(shopLabel);
+        shopCaption=label(shopName,12,MUTED,false);
+        shopCaption.setSingleLine(true);
+        shopCaption.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        heading.addView(shopCaption);
         LinearLayout.LayoutParams headingParams=new LinearLayout.LayoutParams(0,-2,1);
         headingParams.leftMargin=dp(12);header.addView(heading,headingParams);
         root.addView(header);
@@ -409,6 +410,7 @@ public final class MainActivity extends Activity {
             String s=field.getText().toString().trim();
             if(s.isEmpty()||s.length()>80)throw new IllegalArgumentException("Введите название до 80 знаков.");
             shopName=s;getPreferences(MODE_PRIVATE).edit().putString("shop",s).apply();
+            if(shopCaption!=null)shopCaption.setText(s);
             return true;
         });
     }
