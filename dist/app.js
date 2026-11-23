@@ -1,4 +1,4 @@
-import {today,moneyToCents,balance,overdue,validateBook,addEntry,demoBook,activeEntries} from './ledger.js';
+import {MAX_AMOUNT,today,moneyToCents,balance,overdue,validateBook,addEntry,demoBook,activeEntries} from './ledger.js';
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const blank=()=>({version:2,clients:[],entries:[]});
 let mode='own',book=blank(),filter='all',entryClient='',entryType='debt',detailId='',pending=null,loadBlocked=false,editClientId='',reverseEntryId='';
@@ -55,8 +55,107 @@ $('#client-form').onsubmit=e=>{e.preventDefault();try{
   const addDebt=!editClientId&&e.submitter?.id==='client-submit-debt';
   $('#client-dialog').close();if(editClientId)openDetail(editClientId);else if(addDebt)openEntry(newClientId,'debt');else toast('Карточка клиента создана.');
 }catch(err){toast(err.message);}};
-function openEntry(clientId,type){entryClient=clientId;entryType=type;const c=book.clients.find(c=>c.id===clientId);$('#entry-form').reset();$('#entry-dialog .dialog-error').hidden=true;$('#entry-client').textContent=c.name;$('#entry-title').textContent=type==='debt'?'Записать долг':'Принять оплату';$('#entry-balance').textContent='Текущий остаток: '+rub(balance(book,clientId));$('#due-label').hidden=type==='payment';$('#entry-submit').textContent=type==='debt'?'Записать долг':'Сохранить оплату';$('#entry-dialog').showModal();}
-$('#entry-form').onsubmit=e=>{e.preventDefault();try{const f=new FormData(e.target),amount=moneyToCents(f.get('amount'));if(entryType==='payment'&&amount>balance(book,entryClient))throw Error('Оплата превышает остаток долга.');save(addEntry(book,{id:id(),clientId:entryClient,type:entryType,amount,date:new Date().toISOString(),due:entryType==='debt'?f.get('due'):'',note:f.get('note').trim()}));$('#entry-dialog').close();toast(entryType==='debt'?'Долг записан.':'Оплата сохранена. Остаток пересчитан.');}catch(err){toast(err.message);}};
+const entryDialog = $('#entry-dialog');
+const entryForm = $('#entry-form');
+const entryAmount = entryForm.elements.amount;
+const entrySubmit = $('#entry-submit');
+const entryError = $('#entry-error');
+const paymentActions = $('#payment-actions');
+const paymentRemaining = $('#payment-remaining');
+const fullPayment = $('#full-payment');
+
+function paymentAmount(value, currentBalance) {
+  const amount = moneyToCents(value);
+  if (amount > currentBalance) throw Error('Оплата превышает остаток долга.');
+  return amount;
+}
+
+function updateEntryBalance() {
+  const current = balance(book, entryClient);
+  $('#entry-balance').textContent = 'Текущий остаток: ' + rub(current);
+  if (entryType !== 'payment') return;
+
+  fullPayment.disabled = current <= 0 || current > MAX_AMOUNT;
+  paymentRemaining.textContent = '';
+  entryAmount.removeAttribute('aria-invalid');
+  if (!entryAmount.value.trim()) return;
+  try {
+    const remaining = current - paymentAmount(entryAmount.value, current);
+    paymentRemaining.textContent = remaining === 0
+      ? 'После оплаты: долг закрыт.'
+      : 'После оплаты останется: ' + rub(remaining);
+  } catch (error) {
+    entryAmount.setAttribute('aria-invalid', 'true');
+    paymentRemaining.textContent = error.message;
+  }
+}
+
+function openEntry(clientId, type) {
+  entryClient = clientId;
+  entryType = type;
+  const client = book.clients.find(item => item.id === clientId);
+  entryForm.reset();
+  paymentRemaining.textContent = '';
+  entryError.hidden = true;
+  $('#entry-client').textContent = client.name;
+  $('#entry-title').textContent = type === 'debt' ? 'Записать долг' : 'Принять оплату';
+  $('#due-label').hidden = type === 'payment';
+  paymentActions.hidden = type !== 'payment';
+  entryAmount.removeAttribute('aria-invalid');
+  entrySubmit.textContent = type === 'debt' ? 'Записать долг' : 'Сохранить оплату';
+  updateEntryBalance();
+  entryDialog.showModal();
+  entryAmount.focus();
+}
+
+entryAmount.addEventListener('input', () => {
+  entryError.hidden = true;
+  updateEntryBalance();
+});
+
+fullPayment.onclick = () => {
+  const current = balance(book, entryClient);
+  if (current <= 0 || current > MAX_AMOUNT) return;
+  entryAmount.value = Math.floor(current / 100) + ',' + String(current % 100).padStart(2, '0');
+  entryError.hidden = true;
+  updateEntryBalance();
+};
+
+entryForm.onsubmit = event => {
+  event.preventDefault();
+  if (!entryDialog.open || entrySubmit.disabled) return;
+  entryError.hidden = true;
+
+  const fields = new FormData(entryForm);
+  let amount;
+  try {
+    amount = entryType === 'payment'
+      ? paymentAmount(fields.get('amount'), balance(book, entryClient))
+      : moneyToCents(fields.get('amount'));
+  } catch (error) {
+    entryAmount.setAttribute('aria-invalid', 'true');
+    entryError.textContent = error.message;
+    entryError.hidden = false;
+    entryAmount.focus();
+    return;
+  }
+
+  entrySubmit.disabled = true;
+  try {
+    save(addEntry(book, {
+      id: id(), clientId: entryClient, type: entryType, amount,
+      date: new Date().toISOString(), due: entryType === 'debt' ? fields.get('due') : '',
+      note: fields.get('note').trim(),
+    }));
+    entryDialog.close();
+    toast(entryType === 'debt' ? 'Долг записан.' : 'Оплата сохранена. Остаток пересчитан.');
+  } catch (error) {
+    entryError.textContent = error.message;
+    entryError.hidden = false;
+  } finally {
+    entrySubmit.disabled = false;
+  }
+};
 function openDetail(clientId){
   detailId=clientId;const c=book.clients.find(c=>c.id===clientId),last=activeEntries(book).filter(e=>e.clientId===clientId).at(-1);
   $('#detail-name').textContent=c.name;
@@ -86,7 +185,11 @@ $('#confirm-import').onclick=()=>{if(!pending)return;try{const wasBlocked=loadBl
 function calculate(){const price=Number($('#price').value),target=Number($('#target').value);if(!Number.isFinite(price)||!Number.isFinite(target)||price<1||price>1000000||target<1||target>1000000000){$('#needed').textContent='—';$('#calc-detail').textContent='Введите положительную цену до 1 млн ₽ и цель до 1 млрд ₽.';return;}const n=Math.ceil(target/price);$('#needed').textContent=new Intl.NumberFormat('ru-RU').format(n);$('#calc-detail').textContent=`${new Intl.NumberFormat('ru-RU').format(n)} × ${rub(Math.round(price*100))} = ${rub(Math.round(n*price*100))} выручки в месяц. Это масштаб требуемой базы, а не оценка спроса.`;}
 $('#price').oninput=calculate;$('#target').oninput=calculate;
 $('#copy-offer').onclick=async()=>{try{await navigator.clipboard.writeText($('#offer').textContent);toast('Текст скопирован.');}catch{toast('Браузер не разрешил копирование. Выделите текст вручную.');}};
-window.addEventListener('storage',e=>{if(e.key===key())load();});
+window.addEventListener('storage', e => {
+  if (e.key !== key()) return;
+  load();
+  if (entryDialog.open) updateEntryBalance();
+});
 let prefs={shop:'Мой магазин',tablet:false};
 try{const p=JSON.parse(localStorage.getItem('dolgbook-preferences')||'null');if(p){if(typeof p.shop==='string'&&p.shop.trim()&&p.shop.length<=80)prefs.shop=p.shop.trim();prefs.tablet=p.tablet===true;}}catch{}
 function applyPrefs(){document.body.classList.toggle('tablet-mode',prefs.tablet);$('#tablet-mode').setAttribute('aria-pressed',String(prefs.tablet));$('#tablet-mode').textContent=prefs.tablet?'Обычный режим':'Крупный режим';$('#shop-title').textContent=prefs.shop;$('#shop-name').value=prefs.shop;}
