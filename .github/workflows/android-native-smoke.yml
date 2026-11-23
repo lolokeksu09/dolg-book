@@ -55,6 +55,7 @@ jobs:
             android/build/native-clients.png
             android/build/native-history.png
             android/build/native-settings.png
+            android/build/native-tablet-clients.png
             android/build/native-settings-large.png
             android/build/native-ledger-800.png
             android/build/native-ui.xml
