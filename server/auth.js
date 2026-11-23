@@ -1,6 +1,6 @@
 // OAuth 2.0 token introspection: identity is accepted only from the configured provider.
 // Plain HTTP exists solely for loopback integration tests; production requires HTTPS.
-export function createIntrospector({endpoint, issuer, audience, clientId, clientSecret, allowLoopbackHttp=false}) {
+export function createIntrospector({endpoint, issuer, audience, clientId, clientSecret, allowLoopbackHttp=false, includeVerifiedEmail=false}) {
   const url = new URL(endpoint);
   if(url.username || url.password || url.hash || url.search) throw new Error('invalid identity endpoint');
   const loopback = url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '[::1]';
@@ -19,7 +19,10 @@ export function createIntrospector({endpoint, issuer, audience, clientId, client
       const data=JSON.parse(Buffer.concat(chunks.map(x=>Buffer.from(x))).toString('utf8'));
       const aud=Array.isArray(data.aud)?data.aud:[data.aud];
       if(data.active!==true || data.iss!==issuer || !aud.includes(audience) || typeof data.sub!=='string' || !data.sub.trim() || data.sub.length>100 || !Number.isSafeInteger(data.exp) || data.exp<=Math.floor(Date.now()/1000) || (data.nbf!==undefined && (!Number.isSafeInteger(data.nbf)||data.nbf>Math.floor(Date.now()/1000)))) return null;
-      return data.sub;
+      if (!includeVerifiedEmail) return data.sub;
+      const email = data.email_verified === true && typeof data.email === 'string' && data.email.length <= 254
+        ? data.email : null;
+      return {subject: data.sub, email};
     } catch { throw new Error('identity unavailable'); }
   };
 }

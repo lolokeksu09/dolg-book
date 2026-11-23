@@ -13,7 +13,7 @@ test('Amvera build contains only runtime files and actually runs',async()=>{
  const build=()=>{const r=spawnSync(process.execPath,['scripts/build-amvera.mjs'],{encoding:'utf8'});assert.equal(r.status,0,r.stderr);};
  build();writeFileSync('amvera-dist/stale.md','synthetic');build();
  const all=files('amvera-dist').filter(x=>x!=='.dolg-build-marker').sort();
- assert.deepEqual(all,['dist/app.js','dist/index.html','dist/ledger.js','dist/style.css','package.json','server/auth.js','server/config.js','server/http.js','server/start.js','server/store.js']);
+ assert.deepEqual(all,['dist/app.js','dist/index.html','dist/ledger.js','dist/style.css','package.json','server/admin/app.js','server/admin/index.html','server/admin/style.css','server/auth.js','server/config.js','server/http.js','server/start.js','server/store.js','server/subscriptions.js']);
  assert.equal(existsSync('amvera-dist/stale.md'),false);
  assert.match(readFileSync('amvera.yaml','utf8'),/additionalCommands: node scripts\/build-amvera\.mjs/);
  assert.match(readFileSync('amvera.yaml','utf8'),/"amvera-dist\/\*": \//);

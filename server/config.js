@@ -8,5 +8,9 @@ export function resolveRuntime(env){
  if(configured!==keys.length && (configured!==0||!isAmvera))throw new Error('Incomplete identity provider configuration');
  const port=Number(env.PORT||(isAmvera?80:3000));
  if(!Number.isInteger(port)||port<1||port>65535)throw new Error('invalid PORT');
- return {database,port,host:isAmvera?'0.0.0.0':'127.0.0.1',identityReady:configured===keys.length};
+ const adminSubject = env.LEDGER_ADMIN_SUBJECT?.trim() || '';
+ if (env.LEDGER_ADMIN_SUBJECT !== undefined && (!adminSubject || adminSubject.length > 100 || configured !== keys.length)) {
+   throw new Error('LEDGER_ADMIN_SUBJECT requires a configured identity provider and a valid subject');
+ }
+ return {database,port,host:isAmvera?'0.0.0.0':'127.0.0.1',identityReady:configured===keys.length,...(adminSubject && {adminSubject})};
 }
