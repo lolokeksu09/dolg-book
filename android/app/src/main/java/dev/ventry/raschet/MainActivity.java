@@ -477,6 +477,9 @@ public final class MainActivity extends Activity {
                 ()->shareClientSummary(current,amount,overdue),1);
         addButton(extraActions,"Сохранить выписку PDF",false,
                 ()->exportCustomerPdf(current.id),1);
+        if(ledger.lastActive(id)!=null)
+            addButton(extraActions,"Исправить последнюю запись",false,
+                    ()->showCorrection(id),1);
         view.addView(extraActions,margin(-1,-2,6));
         view.addView(label("Сводка содержит данные о долге. Перед отправкой проверьте получателя.",
                 12,MUTED,false),margin(-1,-2,12));
@@ -905,6 +908,36 @@ public final class MainActivity extends Activity {
         share.putExtra(Intent.EXTRA_TEXT,body.toString());
         try{startActivity(Intent.createChooser(share,"Поделиться сводкой клиента"));}
         catch(ActivityNotFoundException e){message("Нет приложения для отправки сводки.");}
+    }
+    private void showCorrection(String clientId) {
+        LedgerStore.Entry original=ledger.lastActive(clientId);
+        if(original==null){message("Нет действующей записи для исправления.");return;}
+        LinearLayout content=stack(10);
+        content.addView(label("Можно исправить только последнюю действующую запись. Старая сумма и причина останутся в истории.",13,MUTED,false));
+        String formatted=String.format(Locale.ROOT,"%d,%02d",
+                original.amount/100,original.amount%100);
+        EditText amount=field("Сумма",formatted);
+        amount.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        content.addView(formGroup("Исправленная сумма, ₽",amount));
+        EditText due=field("Без срока",original.due);
+        due.setFocusable(false);due.setClickable(true);
+        due.setOnClickListener(v->{
+            LocalDate today=LocalDate.now();
+            new DatePickerDialog(this,(picker,y,m,d)->due.setText(
+                    String.format(Locale.ROOT,"%04d-%02d-%02d",y,m+1,d)),
+                    today.getYear(),today.getMonthValue()-1,today.getDayOfMonth()).show();
+        });
+        if(original.type.equals("debt"))content.addView(formGroup("Вернуть до",due));
+        EditText note=field("Комментарий",original.note);
+        content.addView(formGroup("Комментарий",note));
+        EditText reason=field("Почему исправлено",null);
+        content.addView(formGroup("Причина исправления (обязательно)",reason));
+        showDialog("Исправить последнюю запись",content,()->{
+            ledger.correctLast(clientId,LedgerStore.parseAmount(amount.getText().toString()),
+                    original.type.equals("debt")?due.getText().toString():"",
+                    note.getText().toString().trim(),reason.getText().toString());
+            selectedClient=clientId;tab="Клиенты";return true;
+        });
     }
     private void showReversal(String clientId) {
         LedgerStore.Entry last=ledger.lastActive(clientId);
