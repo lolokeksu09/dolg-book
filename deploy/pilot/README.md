@@ -15,3 +15,16 @@ bash deploy/pilot/run.sh start
 Чтобы остановить пилот и убрать его маршруты из Caddy, выполните `bash deploy/pilot/run.sh stop`. Тома и учётные данные сохраняются. Повторный запуск использует существующее состояние. Обновление Ventry может заменить Caddyfile и изменить IP Caddy. После такого обновления повторите `run.sh start`, чтобы восстановить маршруты и обновить адрес доверенного прокси.
 
 Для реальных данных нужны проверка устойчивости VDS, резервные копии с проверенным восстановлением и отдельная настройка эксплуатации. Этот скрипт не предназначен для такого запуска.
+
+### Сквозная проверка с тестовыми данными
+
+Из checkout на VDS запустите:
+
+```sh
+image=$(docker inspect -f '{{.Image}}' raschet-pilot-raschet-api-1)
+docker run --rm -i --network ventry_default --user 0:0 \
+  --mount type=bind,source=/opt/raschet-pilot/state/accounts.txt,target=/run/raschet-pilot-accounts,readonly \
+  --entrypoint node "$image" --input-type=module - < deploy/pilot/verify.mjs
+```
+
+Скрипт использует стандартный вход через Keycloak. Запуск создаёт отдельный вымышленный магазин и сохраняет две тестовые операции. Пароли и параметры OAuth остаются внутри проверки. Успех отмечается строкой `PILOT_E2E_OK`.
