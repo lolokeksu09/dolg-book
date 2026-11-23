@@ -3,6 +3,8 @@ package dev.ventry.raschet;
 import android.app.Activity;
 import android.app.DatePickerDialog;
 import android.app.Dialog;
+import android.Manifest;
+import android.content.pm.PackageManager;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.graphics.Color;
@@ -57,6 +59,7 @@ public final class MainActivity extends Activity {
     private static final int ACCENT=0xffb9efd0, INK=0xff12271b, ALERT=0xffffca97, RED=0xffffacac;
     private static final int REQUEST_IMPORT=101, REQUEST_EXPORT=102, REQUEST_PDF=103, MAX_IMPORT=5*1024*1024;
     private static final String RECOVERY_PREFS="raschet_local_recovery";
+    private static final int NOTIFICATION_PERMISSION_REQUEST=104;
     private static final ExecutorService RECOVERY_WORK=Executors.newSingleThreadExecutor();
     public static final String EXTRA_FIRST_START = "dev.ventry.raschet.FIRST_START";
     private static final String[] TABS={"Главная","Клиенты","История","Настройки"};
@@ -507,6 +510,8 @@ public final class MainActivity extends Activity {
         section(view,"Магазин","Название показывается только в приложении");
         actionRow(view,"✎",shopName,"Изменить название",()->showShopName());
         view.addView(textSizeSetting(),margin(-1,-2,8));
+        section(view,"Напоминания о долгах","Проверка раз в сутки. Android может задерживать уведомления.");
+        view.addView(reminderSetting(),margin(-1,-2,14));
         section(view,"Сохранность данных","Рекомендуется копировать книгу регулярно");
         long lastExport=getPreferences(MODE_PRIVATE).getLong("last_json_export",0L);
         String lastExportText=lastExport==0L
@@ -591,6 +596,47 @@ public final class MainActivity extends Activity {
         return box;
     }
 
+    private LinearLayout reminderSetting() {
+        LinearLayout row=row();
+        row.setPadding(dp(16),dp(14),dp(16),dp(14));
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setBackground(shape(PANEL,16,BORDER));
+        LinearLayout details=stack(5);
+        details.addView(label("Ежедневно проверять сроки",15,TEXT,true));
+        details.addView(label("Без имён и сумм в уведомлении на экране блокировки. Нет SMS или отправки клиентам.",12,MUTED,false));
+        row.addView(details,new LinearLayout.LayoutParams(0,-2,1));
+        Switch toggle=new Switch(this);
+        toggle.setContentDescription("Ежедневные напоминания");
+        toggle.setChecked(DebtReminderService.enabled(this));
+        toggle.setOnCheckedChangeListener((button,checked)->{
+            if(checked&&!DebtReminderService.hasPermission(this)){
+                toggle.setChecked(false);
+                if(Build.VERSION.SDK_INT>=33)
+                    requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},
+                            NOTIFICATION_PERMISSION_REQUEST);
+                return;
+            }
+            if(!DebtReminderService.setEnabled(this,checked)){
+                toggle.setOnCheckedChangeListener(null);
+                toggle.setChecked(!checked);
+                message("Не удалось изменить расписание напоминаний.");
+            }else {
+                message(checked?"Ежедневная проверка сроков включена.":"Напоминания отключены.");
+            }
+        });
+        row.addView(toggle,new LinearLayout.LayoutParams(-2,dp(52)));
+        return row;
+    }
+    @Override public void onRequestPermissionsResult(int request,String[] permissions,int[] result) {
+        super.onRequestPermissionsResult(request,permissions,result);
+        if(request!=NOTIFICATION_PERMISSION_REQUEST)return;
+        if(result.length>0&&result[0]==PackageManager.PERMISSION_GRANTED){
+            if(DebtReminderService.setEnabled(this,true))
+                message("Напоминания включены. Android выберет время проверки.");
+            else message("Не удалось запланировать напоминания.");
+        }else message("Без разрешения уведомления остаются выключенными.");
+        if(tab.equals("Настройки"))render();
+    }
     private android.content.SharedPreferences recoveryPrefs() {
         return getSharedPreferences(RECOVERY_PREFS,MODE_PRIVATE);
     }
