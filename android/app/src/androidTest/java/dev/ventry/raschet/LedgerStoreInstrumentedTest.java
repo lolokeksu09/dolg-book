@@ -13,29 +13,25 @@ import java.util.List;
 import static org.junit.Assert.*;
 
 /**
- * Uses the instrumentation APK's own Context, never the target application's
- * production database. Only fictitious records are created and deleted.
+ * Uses a dedicated QA-only filename in the target sandbox; never opens,
+ * replaces or deletes raschet-ledger.db. Records are fictitious.
  */
 @RunWith(AndroidJUnit4.class)
 public class LedgerStoreInstrumentedTest {
+    private static final String ISOLATED_DB="raschet-qa-only.db";
     private Context testContext;
     private LedgerStore book;
 
     @Before public void prepare() {
-        testContext = InstrumentationRegistry.getInstrumentation().getContext();
-        // The instrumentation APK has no databases/ directory on first launch.
-        // Create it only inside this isolated test package, never in the real app.
-        java.io.File databaseDirectory=testContext.getDatabasePath("raschet-ledger.db").getParentFile();
-        if(databaseDirectory==null || (!databaseDirectory.isDirectory() && !databaseDirectory.mkdirs())) {
-            throw new IllegalStateException("Cannot create isolated test database directory");
-        }
-        testContext.deleteDatabase("raschet-ledger.db");
-        book = new LedgerStore(testContext);
+        testContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        // Tests use the target app's valid sandbox but NEVER the production DB name.
+        testContext.deleteDatabase(ISOLATED_DB);
+        book = new LedgerStore(testContext,ISOLATED_DB);
     }
 
     @After public void cleanup() {
         if (book != null) book.close();
-        if (testContext != null) testContext.deleteDatabase("raschet-ledger.db");
+        if (testContext != null) testContext.deleteDatabase(ISOLATED_DB);
     }
 
     private String addCustomer() {
@@ -56,7 +52,7 @@ public class LedgerStoreInstrumentedTest {
             assertEquals(count,book.entries().size());
         }
         book.close();
-        book = new LedgerStore(testContext);
+        book = new LedgerStore(testContext,ISOLATED_DB);
         assertEquals(80000L,LedgerStore.balance(book.entries(),id));
         book.addEntry(id,"payment",80000L,"","Закрытие");
         assertEquals(0L,LedgerStore.balance(book.entries(),id));

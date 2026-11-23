@@ -41,7 +41,10 @@ public final class LedgerStore extends SQLiteOpenHelper {
     public static final class Balance {
         public long amount, overdue;
     }
-    public LedgerStore(Context context) { super(context,"raschet-ledger.db",null,1); }
+    public LedgerStore(Context context) { this(context,"raschet-ledger.db"); }
+    // Package-private for instrumentation: a distinct database name prevents any
+    // test from overwriting or deleting real customer records.
+    LedgerStore(Context context,String databaseName) { super(context,databaseName,null,1); }
     @Override public void onCreate(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE clients (id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, phone TEXT NOT NULL)");
         db.execSQL("CREATE TABLE entries (seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE, client_id TEXT NOT NULL REFERENCES clients(id), type TEXT NOT NULL, amount INTEGER NOT NULL, date TEXT NOT NULL, due TEXT NOT NULL, note TEXT NOT NULL, reverses TEXT NOT NULL)");
