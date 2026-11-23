@@ -35,7 +35,10 @@ jobs:
         env:
           RASCHET_ORIGIN: ${{ vars.RASCHET_ORIGIN }}
         run: |
-          gradle -p android lintDebug assembleDebug --no-daemon "-PraschetOrigin=${RASCHET_ORIGIN:-https://raschet.135-106-227-179.sslip.io}"
+          if ! gradle -p android lintDebug assembleDebug --no-daemon "-PraschetOrigin=${RASCHET_ORIGIN:-https://raschet.135-106-227-179.sslip.io}"; then
+            cat android/app/build/reports/lint-results-debug.txt 2>/dev/null || true
+            exit 1
+          fi
           test -s android/app/build/outputs/apk/debug/app-debug.apk
           for name in index.html style.css app.js ledger.js; do
             unzip -l android/app/build/outputs/apk/debug/app-debug.apk | grep -Fq "assets/$name"
