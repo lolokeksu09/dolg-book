@@ -23,7 +23,7 @@ test('Native SQLite ledger implements balances, reversals and atomic JSON restor
   const store=read('android/app/src/main/java/dev/ventry/raschet/LedgerStore.java');
   for(const part of ['SQLiteOpenHelper','beginTransaction()','setTransactionSuccessful()',
     'importJson(', 'exportJson()', 'reverseLast(', 'overdue(', 'MAX_AMOUNT-available',
-    'payment")&&amount>available', 'rawAmount.toString().matches'])
+    '"payment".equals(type)&&amount>available', 'rawAmount.toString().matches'])
     assert.ok(store.includes(part),'Missing '+part);
 });
 
