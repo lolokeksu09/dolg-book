@@ -480,13 +480,17 @@ public final class MainActivity extends Activity {
         section(view,"История клиента","Долги, оплаты и отмены");
         Set<String> canceled=LedgerStore.canceled(all);
         int shown=0;
+        boolean more=false;
         for(int i=all.size()-1;i>=0;i--){
             LedgerStore.Entry e=all.get(i);
-            if(e.clientId.equals(id)){
-                view.addView(entryCard(e,null,canceled.contains(e.id)),margin(-1,-2,7));shown++;
-            }
+            if(!e.clientId.equals(id))continue;
+            if(shown>=detailVisibleLimit){more=true;break;}
+            view.addView(entryCard(e,null,canceled.contains(e.id)),margin(-1,-2,7));shown++;
         }
         if(shown==0)view.addView(label("Пока нет операций.",14,MUTED,false));
+        if(more)addButton(view,"Показать ещё операции",false,()->{
+            detailVisibleLimit=Math.min(detailVisibleLimit+80,100000);render();
+        },1);
         return scroll(view);
     }
     private View historyView() {
@@ -503,7 +507,7 @@ public final class MainActivity extends Activity {
             chip.setFocusable(true);
             chip.setSelected(choice.equals(historyFilter));
             chip.setContentDescription("Фильтр: "+choice);
-            chip.setOnClickListener(v->{historyFilter=choice;render();});
+            chip.setOnClickListener(v->{historyFilter=choice;historyVisibleLimit=100;render();});
         }
         view.addView(filters,margin(-1,-2,10));
         Map<String,String> names=new HashMap<>();
@@ -511,14 +515,19 @@ public final class MainActivity extends Activity {
         List<LedgerStore.Entry> all=ledger.entries();
         Set<String> canceled=LedgerStore.canceled(all);
         int shown=0;
+        boolean moreHistory=false;
         for(int i=all.size()-1;i>=0;i--){
             LedgerStore.Entry e=all.get(i);
             if(!historyFilter.equals("Все") && !(historyFilter.equals("Долги")&&e.type.equals("debt"))
                     &&!(historyFilter.equals("Оплаты")&&e.type.equals("payment"))
                     &&!(historyFilter.equals("Отмены")&&e.type.equals("reversal")))continue;
+            if(shown>=historyVisibleLimit){moreHistory=true;break;}
             view.addView(entryCard(e,names.get(e.clientId),canceled.contains(e.id)),margin(-1,-2,8));
             shown++;
         }
+        if(moreHistory)addButton(view,"Показать ещё операции",false,()->{
+            historyVisibleLimit=Math.min(historyVisibleLimit+100,100000);render();
+        },1);
         if(shown==0){
             if(all.isEmpty()) view.addView(emptyState(R.drawable.ic_nav_history,
                     "История пока пустая", "Когда вы запишете долг или оплату, они появятся здесь.",
@@ -751,9 +760,12 @@ public final class MainActivity extends Activity {
         List<LedgerStore.Client> customers=ledger.clients();
         if(customers.isEmpty()){showClientForm(null);return;}
         LinearLayout content=stack(8);
-        for(LedgerStore.Client c:customers){
-            if(type.equals("payment")&&LedgerStore.balance(ledger.entries(),c.id)<=0)continue;
-            TextView b=label(c.name+"     "+money(LedgerStore.balance(ledger.entries(),c.id)),16,TEXT,false);
+        List<CollectionsInsights.CustomerStatus> statuses=
+                CollectionsInsights.analyze(customers,ledger.entries(),LocalDate.now());
+        for(CollectionsInsights.CustomerStatus status:statuses){
+            LedgerStore.Client c=status.client;
+            if(type.equals("payment")&&status.balance<=0)continue;
+            TextView b=label(c.name+"     "+money(status.balance),16,TEXT,false);
             b.setPadding(dp(14),dp(16),dp(14),dp(16));
             b.setBackground(shape(ELEVATED,14,BORDER));
             content.addView(b);
