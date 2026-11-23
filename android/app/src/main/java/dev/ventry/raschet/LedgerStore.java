@@ -152,6 +152,55 @@ public final class LedgerStore extends SQLiteOpenHelper {
             db.setTransactionSuccessful();
         }finally{db.endTransaction();}
     }
+    /**
+     * Correct only the last active operation of a customer. A reversal and
+     * replacement are committed together; failures leave the book unchanged.
+     * This deliberately preserves the v2 JSON sequential reversal contract.
+     */
+    public synchronized void correctLast(String clientId,long amount,String due,
+            String note,String reason) {
+        if(reason==null||reason.trim().isEmpty()||reason.trim().length()>200)
+            throw new IllegalArgumentException("Укажите причину исправления.");
+        if(note==null||note.length()>200)
+            throw new IllegalArgumentException("Комментарий слишком длинный.");
+        if(amount<=0||amount>MAX_AMOUNT)
+            throw new IllegalArgumentException("Неверная сумма.");
+        SQLiteDatabase db=getWritableDatabase();
+        db.beginTransaction();
+        try {
+            Entry last=lastActive(clientId);
+            if(last==null)throw new IllegalArgumentException("Нет операции для исправления.");
+            if("debt".equals(last.type)){
+                if(due==null)due="";
+                if(!due.isEmpty())try{LocalDate.parse(due);}
+                    catch(Exception ex){throw new IllegalArgumentException("Неверный срок.");}
+            }else due="";
+            List<Entry> all=entries();
+            if(all.size()+2>MAX_ENTRIES)
+                throw new IllegalArgumentException("Недостаточно места в истории операций.");
+            long available=balance(all,clientId);
+            long withoutOld="debt".equals(last.type)
+                    ?available-last.amount:available+last.amount;
+            if(withoutOld<0)
+                throw new IllegalArgumentException(
+                        "Этот долг уже погашался. Сначала исправьте последнюю оплату.");
+            long updated="debt".equals(last.type)
+                    ?withoutOld+amount:withoutOld-amount;
+            if(updated<0||updated>MAX_AMOUNT)
+                throw new IllegalArgumentException("Исправление создаёт переплату или превышение.");
+            if(last.amount==amount&&last.due.equals(due)&&last.note.equals(note))
+                throw new IllegalArgumentException("Новые данные совпадают со старыми.");
+            String timestamp=Instant.now().toString();
+            Entry undo=new Entry(UUID.randomUUID().toString(),clientId,"reversal",
+                    last.amount,timestamp,"",reason.trim(),last.id);
+            Entry corrected=new Entry(UUID.randomUUID().toString(),clientId,last.type,
+                    amount,timestamp,due,note,"");
+            db.insertOrThrow("entries",null,values(undo));
+            db.insertOrThrow("entries",null,values(corrected));
+            db.setTransactionSuccessful();
+        }finally{db.endTransaction();}
+    }
+
     private static ContentValues values(Entry entry) {
         ContentValues row=new ContentValues();
         row.put("id",entry.id);row.put("client_id",entry.clientId);row.put("type",entry.type);
