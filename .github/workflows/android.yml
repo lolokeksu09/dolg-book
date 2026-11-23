@@ -24,12 +24,25 @@ jobs:
         with:
           gradle-version: '8.11.1'
       - name: Install Android SDK
-        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+        run: |
+          sdkmanager_bin="${ANDROID_HOME:-/usr/local/lib/android/sdk}/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$sdkmanager_bin"
+          "$sdkmanager_bin" --install 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Проверить точность расчётов и Android-экспорт
+        run: |
+          node --test tests/ledger.test.js tests/android-bundle.test.js
       - name: Lint and assemble
         env:
           RASCHET_ORIGIN: ${{ vars.RASCHET_ORIGIN }}
         run: |
-          gradle -p android lintDebug assembleDebug --no-daemon "-PraschetOrigin=${RASCHET_ORIGIN:-https://raschet.example.test}"
+          if ! gradle -p android lintDebug assembleDebug --no-daemon "-PraschetOrigin=${RASCHET_ORIGIN:-https://raschet.135-106-227-179.sslip.io}"; then
+            cat android/app/build/reports/lint-results-debug.txt 2>/dev/null || true
+            exit 1
+          fi
+          test -s android/app/build/outputs/apk/debug/app-debug.apk
+          for name in index.html style.css app.js ledger.js; do
+            unzip -l android/app/build/outputs/apk/debug/app-debug.apk | grep -Fq "assets/$name"
+          done
           sha256sum android/app/build/outputs/apk/debug/app-debug.apk
       - uses: actions/upload-artifact@v4
         with:
