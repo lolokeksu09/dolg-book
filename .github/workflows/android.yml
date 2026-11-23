@@ -5,6 +5,7 @@ on:
     paths:
       - 'android/**'
       - '.github/workflows/android.yml'
+      - 'tests/android-bundle.test.js'
   workflow_dispatch:
 
 permissions:
@@ -28,10 +29,10 @@ jobs:
           sdkmanager_bin="${ANDROID_HOME:-/usr/local/lib/android/sdk}/cmdline-tools/latest/bin/sdkmanager"
           test -x "$sdkmanager_bin"
           "$sdkmanager_bin" --install 'platforms;android-35' 'build-tools;35.0.0'
-      - name: Проверить точность расчётов и Android-экспорт
+      - name: Проверить точность расчётов и нативный Android
         run: |
           node --test tests/ledger.test.js tests/android-bundle.test.js
-      - name: Lint and assemble
+      - name: Lint and assemble native APK
         env:
           RASCHET_ORIGIN: ${{ vars.RASCHET_ORIGIN }}
         run: |
@@ -40,13 +41,13 @@ jobs:
             exit 1
           fi
           test -s android/app/build/outputs/apk/debug/app-debug.apk
-          for name in index.html style.css app.js ledger.js; do
-            unzip -l android/app/build/outputs/apk/debug/app-debug.apk | grep -Fq "assets/$name"
-          done
+          if unzip -l android/app/build/outputs/apk/debug/app-debug.apk | grep -Eq 'assets/(index.html|app.js|ledger.js|style.css)'; then
+            echo 'Unexpected web UI assets in native APK'; exit 1
+          fi
           sha256sum android/app/build/outputs/apk/debug/app-debug.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: Raschet-debug
+          name: Raschet-native-debug
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
