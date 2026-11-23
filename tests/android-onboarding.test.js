@@ -54,3 +54,25 @@ test('upgrade keeps native preview package and ledger persistence unchanged',()=
   assert.ok(store.includes('raschet-ledger.db'));
   assert.ok(!gradle.includes('webkit'));
 });
+
+test('interactive onboarding practices debt, partial payments and backup without ledger writes',()=> {
+  const intro=read('android/app/src/main/java/dev/ventry/raschet/IntroActivity.java');
+  for (const text of [
+    'Добавить пример клиента', 'Записать долг · 1 200 ₽',
+    'Внести 400 ₽', 'Погасить полностью',
+    'Показать состав JSON', 'Клиенты и контакты',
+    'Здесь файл не создаётся', 'ИНТЕРАКТИВНЫЙ ПРИМЕР · НЕ СОХРАНЯЕТСЯ'
+  ]) assert.ok(intro.includes(text), 'Missing practice control or disclosure: '+text);
+  assert.ok(intro.includes('examplePaid = Math.min(1200, examplePaid + 400)'));
+  assert.ok(intro.includes('examplePaid = 1200'));
+  assert.ok(intro.includes('examplePaid = 0'));
+  assert.ok(intro.includes('exampleBackupExpanded = !exampleBackupExpanded'));
+  assert.ok(intro.includes('previewHost.removeAllViews()'), 'practice controls must update in place');
+  for (const state of ['exampleClientAdded','exampleDebtAdded','examplePaid','exampleBackupExpanded']) {
+    assert.ok(intro.includes('out.put') && intro.includes('"' + state + '"'), 'rotation state missing: '+state);
+  }
+  assert.ok(intro.includes('ACCESSIBILITY_LIVE_REGION_POLITE'));
+  assert.ok(intro.includes('setMinHeight(dp(48))'));
+  assert.ok(!intro.includes('LedgerStore') && !intro.includes('SQLiteDatabase'),
+    'onboarding demo must not persist sample debt or customers');
+});
