@@ -6,6 +6,7 @@ on:
       - 'android/**'
       - '.github/workflows/android-release-candidate.yml'
       - 'tests/android-bundle.test.js'
+      - 'tests/android-collections.test.js'
   workflow_dispatch:
 
 permissions:
@@ -29,7 +30,7 @@ jobs:
           sdkmanager_bin="${ANDROID_HOME:-/usr/local/lib/android/sdk}/cmdline-tools/latest/bin/sdkmanager"
           "$sdkmanager_bin" --install 'platforms;android-35' 'build-tools;35.0.0'
       - name: Verify release configuration and ledger
-        run: node --test tests/ledger.test.js tests/android-bundle.test.js tests/android-onboarding.test.js
+        run: node --test tests/ledger.test.js tests/android-bundle.test.js tests/android-onboarding.test.js tests/android-collections.test.js
       - name: Validate unsigned release variant (PR only)
         if: github.event_name == 'pull_request'
         run: |

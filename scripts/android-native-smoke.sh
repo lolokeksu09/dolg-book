@@ -169,11 +169,36 @@ tap_text 'Сохранить'
 sleep 0.5
 dump_ui
 grep -Fq '800,00' android/build/native-ui.xml
+tap_text 'Погасить весь остаток'
+sleep 0.4
+dump_ui
+python3 - <<'PY'
+import xml.etree.ElementTree as ET
+fields=[n.attrib.get('text','') for n in ET.parse('android/build/native-ui.xml').iter('node')
+        if n.attrib.get('class')=='android.widget.EditText']
+assert '800,00' in fields, 'Full repayment form must be prefilled, not executed automatically'
+PY
+tap_text 'Закрыть'
+sleep 0.4
 tap_text 'Главная'
 sleep 0.4
 dump_ui
 grep -Fq '800,00' android/build/native-ui.xml
 adb exec-out screencap -p > android/build/native-ledger-800.png
+tap_text 'Клиенты'
+sleep 0.4
+tap_text 'С долгом'
+sleep 0.4
+dump_ui
+grep -Fq 'TestBuyer' android/build/native-ui.xml
+tap_text 'Просрочка'
+sleep 0.4
+dump_ui
+grep -Fq 'Просроченных долгов нет' android/build/native-ui.xml
+adb exec-out screencap -p > android/build/native-clients-filtered.png
+tap_text 'Все'
+sleep 0.4
+tap_text 'Главная'
 
 # Reopen: the onboarding must not be shown twice and the remaining debt persists.
 adb shell am force-stop "$PACKAGE"
