@@ -568,6 +568,8 @@ public final class MainActivity extends Activity {
                     Instant.ofEpochMilli(vault.latestTime())
                             .atZone(ZoneId.systemDefault()).toLocalDate());
         vaultCard.addView(label(status,13,MUTED,false));
+        if(recoveryPrefs().contains("last_error"))
+            vaultCard.addView(label("Автозащита не смогла создать последнюю копию. Сохраните JSON вручную.",13,RED,false));
         vaultCard.addView(label("Зашифрованы на этом устройстве. После удаления приложения или сброса устройства восстановить их нельзя.",12,ALERT,false));
         addButton(vaultCard,"Создать защищённую точку",false,
                 this::createRecoveryPoint,1);
