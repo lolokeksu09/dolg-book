@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <application
         android:label="@string/app_name"
         android:icon="@drawable/ic_book"
@@ -18,5 +21,9 @@
         </activity>
         <activity android:name=".IntroActivity" android:exported="false" />
         <activity android:name=".MainActivity" android:exported="false" />
+        <service
+            android:name=".DebtReminderService"
+            android:permission="android.permission.BIND_JOB_SERVICE"
+            android:exported="true" />
     </application>
 </manifest>
