@@ -3,7 +3,7 @@ set -euo pipefail
 mkdir -p android/build
 gradle -p android assembleDebug --no-daemon -PraschetOrigin=https://raschet.135-106-227-179.sslip.io
 adb install -r android/app/build/outputs/apk/debug/app-debug.apk
-adb shell am start -W -n dev.ventry.raschet.debug/dev.ventry.raschet.MainActivity
+adb shell am start -W -n dev.ventry.raschet.nativepreview/dev.ventry.raschet.MainActivity
 sleep 6
 adb shell uiautomator dump /sdcard/raschet-ui.xml
 adb exec-out cat /sdcard/raschet-ui.xml > android/build/native-ui.xml
