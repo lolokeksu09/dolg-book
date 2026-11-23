@@ -105,4 +105,41 @@ public class LedgerStoreInstrumentedTest {
         assertEquals("Исправленное имя",book.clients().get(0).name);
         assertEquals(1010L,LedgerStore.balance(book.entries(),id));
     }
+
+    @Test public void correctingLastEntryIsAtomicAndExportsValidV2History() throws Exception {
+        String id=addCustomer();
+        book.addEntry(id,"debt",12000L,"","Старая сумма");
+        String oldId=book.lastActive(id).id;
+        book.correctLast(id,14000L,"","Новая сумма","Ошибочно указана сумма");
+        assertEquals(14000L,LedgerStore.balance(book.entries(),id));
+        assertEquals(3,book.entries().size());
+        assertEquals(oldId,book.entries().get(1).reverses);
+        assertEquals("reversal",book.entries().get(1).type);
+        String exported=book.exportJson();
+        int[] loaded=book.importJson(exported);
+        assertArrayEquals(new int[]{1,3},loaded);
+        assertEquals(14000L,LedgerStore.balance(book.entries(),id));
+        book.addEntry(id,"payment",6000L,"","");
+        String before=book.exportJson();
+        try{
+            book.correctLast(id,25000L,"","","Неверная оплата");
+            fail("Cannot correct to an overpayment");
+        }catch(IllegalArgumentException expected){
+            assertEquals(before,book.exportJson());
+        }
+        book.correctLast(id,5000L,"","","Исправлена оплата");
+        assertEquals(9000L,LedgerStore.balance(book.entries(),id));
+    }
+
+    @Test public void alreadyPartiallyPaidDebtCannotBeCorrectedOutOfOrder() {
+        String id=addCustomer();
+        book.addEntry(id,"debt",12000L,"","Долг");
+        book.addEntry(id,"payment",5000L,"","Погашение");
+        try{
+            book.correctLast(id,1000L,"","","Нельзя менять первый долг через последнюю оплату");
+            // The last payment is corrected above, so an amount of 1000 is valid.
+            assertEquals(11000L,LedgerStore.balance(book.entries(),id));
+        }catch(IllegalArgumentException e){fail("Last payment correction must be allowed: "+e);}
+    }
+
 }
