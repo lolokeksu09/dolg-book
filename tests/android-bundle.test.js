@@ -34,6 +34,7 @@ test('The platform export bridge preserves the browser download fallback and nat
 test('Offline private data is not transported by a default network API', () => {
   const manifest=read('android/app/src/main/AndroidManifest.xml');
   assert.ok(manifest.includes('android:allowBackup="false"'));
+  assert.ok(manifest.includes('android:dataExtractionRules="@xml/data_extraction_rules"'));
   assert.ok(manifest.includes('android:usesCleartextTraffic="false"'));
   const activity=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
   assert.ok(activity.includes('return deny();'));
