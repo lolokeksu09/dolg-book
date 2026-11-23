@@ -1,0 +1,79 @@
+name: Android release candidate
+
+on:
+  pull_request:
+    paths:
+      - 'android/**'
+      - '.github/workflows/android-release-candidate.yml'
+      - 'tests/android-bundle.test.js'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Install SDK
+        run: |
+          sdkmanager_bin="${ANDROID_HOME:-/usr/local/lib/android/sdk}/cmdline-tools/latest/bin/sdkmanager"
+          "$sdkmanager_bin" --install 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Verify release configuration and ledger
+        run: node --test tests/ledger.test.js tests/android-bundle.test.js tests/android-onboarding.test.js
+      - name: Validate unsigned release variant (PR only)
+        if: github.event_name == 'pull_request'
+        run: |
+          gradle -p android lintRelease assembleRelease --no-daemon
+          test -s android/app/build/outputs/apk/release/app-release-unsigned.apk
+          echo 'Unsigned release variant compiled; not publishable.'
+      - name: Decode configured signing keystore (manual only)
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          SIGNING_KEYSTORE_BASE64: ${{ secrets.RASCHET_SIGNING_KEYSTORE_BASE64 }}
+          RASCHET_SIGNING_STORE_PASSWORD: ${{ secrets.RASCHET_SIGNING_STORE_PASSWORD }}
+          RASCHET_SIGNING_KEY_ALIAS: ${{ secrets.RASCHET_SIGNING_KEY_ALIAS }}
+          RASCHET_SIGNING_KEY_PASSWORD: ${{ secrets.RASCHET_SIGNING_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for name in SIGNING_KEYSTORE_BASE64 RASCHET_SIGNING_STORE_PASSWORD RASCHET_SIGNING_KEY_ALIAS RASCHET_SIGNING_KEY_PASSWORD; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "Missing signing secret: $name"
+              exit 1
+            fi
+          done
+          printf '%s' "$SIGNING_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/raschet-signing.jks"
+          chmod 600 "$RUNNER_TEMP/raschet-signing.jks"
+      - name: Build and verify signed candidate (manual only)
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          RASCHET_SIGNING_STORE_FILE: ${{ runner.temp }}/raschet-signing.jks
+          RASCHET_SIGNING_STORE_PASSWORD: ${{ secrets.RASCHET_SIGNING_STORE_PASSWORD }}
+          RASCHET_SIGNING_KEY_ALIAS: ${{ secrets.RASCHET_SIGNING_KEY_ALIAS }}
+          RASCHET_SIGNING_KEY_PASSWORD: ${{ secrets.RASCHET_SIGNING_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          gradle -p android lintRelease assembleRelease --no-daemon
+          apk=android/app/build/outputs/apk/release/app-release.apk
+          test -s "$apk"
+          "${ANDROID_HOME}/build-tools/35.0.0/apksigner" verify --verbose "$apk"
+          mkdir -p android/build/release-candidate
+          cp "$apk" android/build/release-candidate/Raschet-release-candidate.apk
+          (cd android/build/release-candidate && sha256sum Raschet-release-candidate.apk > SHA256SUMS)
+      - name: Upload signed release candidate (manual only)
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Raschet-signed-release-candidate
+          path: android/build/release-candidate/
+          if-no-files-found: error
+          retention-days: 14

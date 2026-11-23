@@ -28,3 +28,20 @@ dependencies {
     androidTestImplementation("androidx.test:runner:1.6.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
 }
+
+// The preview/debug package stays isolated from the future signed release.
+val signingStorePath = System.getenv("RASCHET_SIGNING_STORE_FILE")
+val signingStorePassword = System.getenv("RASCHET_SIGNING_STORE_PASSWORD")
+val signingKeyAlias = System.getenv("RASCHET_SIGNING_KEY_ALIAS")
+val signingKeyPassword = System.getenv("RASCHET_SIGNING_KEY_PASSWORD")
+if (listOf(signingStorePath, signingStorePassword, signingKeyAlias, signingKeyPassword)
+        .all { !it.isNullOrBlank() }) {
+    android.signingConfigs.create("raschetRelease") {
+        storeFile = file(signingStorePath!!)
+        storePassword = signingStorePassword!!
+        keyAlias = signingKeyAlias!!
+        keyPassword = signingKeyPassword!!
+    }
+    android.buildTypes.getByName("release").signingConfig =
+        android.signingConfigs.getByName("raschetRelease")
+}

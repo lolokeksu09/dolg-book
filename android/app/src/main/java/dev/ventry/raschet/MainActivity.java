@@ -287,8 +287,10 @@ public final class MainActivity extends Activity {
             lp.leftMargin=dp(12);card.addView(labels,lp);
             LinearLayout right=stack(4);right.setGravity(Gravity.RIGHT);
             right.addView(label(money(b),16,b>0?ACCENT:TEXT,true));
-            right.addView(label(b>0?"Должен":"Оплачено",11,MUTED,false));
+            right.addView(label(b>0?"Должен":"Нет долга",11,MUTED,false));
             card.addView(right);
+            card.setClickable(true);
+            card.setFocusable(true);
             card.setOnClickListener(v->{selectedClient=c.id;render();});
             card.setContentDescription(c.name+", остаток "+money(b));
             rows.addView(card,margin(-1,-2,4));
@@ -349,6 +351,10 @@ public final class MainActivity extends Activity {
             chip.setBackground(shape(choice.equals(historyFilter)?ACCENT:ELEVATED,13,0));
             LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,-2,1);p.rightMargin=dp(5);
             filters.addView(chip,p);
+            chip.setClickable(true);
+            chip.setFocusable(true);
+            chip.setSelected(choice.equals(historyFilter));
+            chip.setContentDescription("Фильтр: "+choice);
             chip.setOnClickListener(v->{historyFilter=choice;render();});
         }
         view.addView(filters,margin(-1,-2,10));
@@ -742,6 +748,8 @@ public final class MainActivity extends Activity {
         LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,-2,1);p.leftMargin=dp(13);
         block.addView(details,p);
         block.addView(label("›",24,MUTED,false));
+        block.setClickable(true);
+        block.setFocusable(true);
         block.setOnClickListener(v->action.run());
         block.setContentDescription(title);
         into.addView(block,margin(-1,-2,8));
@@ -756,6 +764,9 @@ public final class MainActivity extends Activity {
         button.setGravity(Gravity.CENTER);
         button.setPadding(dp(6),dp(9),dp(6),dp(9));
         button.setBackground(shape(filled?ACCENT:ELEVATED,14,filled?0:BORDER));
+        button.setClickable(true);
+        button.setFocusable(true);
+        button.setContentDescription(text);
         button.setOnClickListener(v->action.run());
         boolean horizontal=parent.getOrientation()==LinearLayout.HORIZONTAL;
         LinearLayout.LayoutParams param=horizontal

@@ -38,3 +38,12 @@ test('No automatic off-device backup of financial data',()=>{
   assert.ok(manifest.includes('android:dataExtractionRules="@xml/data_extraction_rules"'));
   assert.ok(rules.includes('cloud-backup')&&rules.includes('device-transfer'));
 });
+
+test('release signing is opt-in and test package does not change',()=>{
+  const gradle=read('android/app/build.gradle.kts');
+  assert.ok(gradle.includes('applicationId = "dev.ventry.raschet"'));
+  assert.ok(gradle.includes('applicationIdSuffix = ".nativev031"'));
+  assert.ok(gradle.includes('RASCHET_SIGNING_STORE_FILE'));
+  assert.ok(gradle.includes('signingConfigs.create("raschetRelease")'));
+  assert.ok(!gradle.includes('storePassword = "'));
+});
