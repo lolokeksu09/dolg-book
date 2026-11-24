@@ -5,6 +5,7 @@
 pub mod collections;
 pub mod historical;
 pub mod projection;
+pub mod report;
 
 pub const MAX_AMOUNT: i64 = 100_000_000_000;
 
