@@ -244,6 +244,23 @@ if grep -Fq 'Знакомьтесь, Ventry' android/build/native-ui.xml || grep
 fi
 grep -Fq 'ОБЩАЯ ЗАДОЛЖЕННОСТЬ' android/build/native-ui.xml
 grep -Fq '800,00' android/build/native-ui.xml
+tap_text 'Финансовый отчёт'
+sleep 0.5
+dump_ui
+grep -Fq 'ОСТАТОК НА КОНЕЦ' android/build/native-ui.xml
+grep -Fq '800,00' android/build/native-ui.xml
+adb exec-out screencap -p > android/build/native-period-report.png
+tap_text 'Период отчёта'
+sleep 0.3
+tap_text 'Сегодня'
+sleep 0.4
+dump_ui
+grep -Fq '800,00' android/build/native-ui.xml
+tap_text 'Операции периода'
+sleep 0.4
+tap_text 'Сбросить даты'
+sleep 0.3
+tap_text 'Главная'
 
 adb logcat -d -s AndroidRuntime:E > android/build/android-runtime-errors.txt
 if grep -F 'FATAL EXCEPTION' android/build/android-runtime-errors.txt; then
