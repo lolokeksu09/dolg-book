@@ -1,6 +1,8 @@
 #![forbid(unsafe_code)]
 
-//! Pure financial arithmetic. The first slice deliberately has no JNI or database I/O.
+//! Pure financial arithmetic. No JNI or database I/O in this crate yet.
+
+pub mod projection;
 
 pub const MAX_AMOUNT: i64 = 100_000_000_000;
 
