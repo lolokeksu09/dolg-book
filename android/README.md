@@ -204,3 +204,8 @@ PR собирает unsigned release для проверок, без досту�
 ## 0.15.0-beta.1 — AMOLED ledger
 
 Shared LedgerTheme across work screens, introduction and launch. Black workspace, restrained emerald actions, semantic deadline colors. Compact single-row brand header, 56dp bottom navigation (68dp large text), balance band, actionable metric rows, compact client filters, date headers and aligned ledger entries, focus-visible fields, compact onboarding and report. Money comes from existing LedgerStore / CollectionsInsights only; no mock data in the working book. Preserve logos, tab routes, 48dp touch targets, SQLite, JSON, signing/package identity and financial behavior. Emulator acceptance required on this revision before stable release.
+
+
+## 0.16.0-beta.1 — Книга по датам
+
+Главная вкладка «Книга»: раскрывающиеся дни (новые сверху), сумма действующих записей долга за день, отменённые записи остаются зачёркнутыми. Оплаты не стирают исходные записи; текущий остаток в карточке клиента. Быстрое добавление: имя, необязательный телефон, сумма, дата (сегодня по умолчанию, прошлые дни разрешены). Явный выбор существующего клиента; совпадения требуют подтверждения создания отдельного. Новый клиент и долг в одной транзакции. Используется существующее поле date в ISO timestamp, схема SQLite/JSON неизменна. Дата записи не срок возврата. Порядок бухгалтерских операций по seq сохранён. Расширенные сроки и комментарии остаются в карточке клиента. CI обязательна.

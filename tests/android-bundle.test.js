@@ -10,7 +10,7 @@ test('Android UI is native and does not contain web UI runtime',()=>{
   const gradle=read('android/app/build.gradle.kts');
   const activity=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
   const manifest=read('android/app/src/main/AndroidManifest.xml');
-  assert.ok(gradle.includes('versionName = "0.15.0-beta.1"'));
+  assert.ok(gradle.includes('versionName = "0.16.0-beta.1"'));
   assert.ok(gradle.includes('applicationIdSuffix = ".nativev031"'));
   assert.ok(!gradle.includes('webkit')&&!gradle.includes('syncOfflineBook'));
   assert.ok(!gradle.includes('index.html')&&!gradle.includes('app.js'));
@@ -150,4 +150,16 @@ test('AMOLED ledger uses shared semantic palette and real metric rows',()=>{
   assert.ok(ui.includes('metricRow(due,"Должников",debtors'));
   assert.ok(ui.includes('android.R.attr.state_focused'));
   assert.ok(ui.includes('STRIKE_THRU_TEXT_FLAG'));
+});
+
+
+test('book starts directly with a dated debt form and expandable daily journal',()=>{
+  const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
+  const store=read('android/app/src/main/java/dev/ventry/raschet/LedgerStore.java');
+  assert.ok(ui.includes('this::showQuickDebt'));
+  assert.ok(ui.includes('BookDays.group(entries,ZoneId.systemDefault())'));
+  assert.ok(ui.includes('expandedBookDays.add(key)'));
+  assert.ok(ui.includes('formGroup("Дата записи",date)'));
+  assert.ok(ui.includes('hasExactCustomer('));
+  assert.ok(store.includes('insertEntry(db,id,"debt",amount,due,note,null,timestamp)'));
 });
