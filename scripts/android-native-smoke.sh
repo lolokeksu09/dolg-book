@@ -657,6 +657,31 @@ dump_ui
 grep -Fq 'Выполнено · получено 100,00' android/build/native-ui.xml
 tap_text 'Книга'
 
+# A payment draft must not post on close, and reopening keeps the entered amount.
+tap_text 'Клиенты'
+sleep 0.4
+tap_text 'Поиск по имени или телефону'
+adb shell input text DraftBuyer
+adb shell input keyevent 4
+sleep 0.4
+tap_text 'DraftBuyer'
+sleep 0.4
+tap_text 'Оплата'
+sleep 0.4
+fill_form_input 0 10
+tap_text 'Закрыть'
+sleep 0.4
+tap_text 'Оплата'
+sleep 0.4
+dump_ui
+grep -Fq 'Незавершённый черновик восстановлен' android/build/native-ui.xml
+grep -Fq 'Остаток после записи: 13,00' android/build/native-ui.xml
+tap_text 'Сохранить'
+sleep 0.5
+dump_ui
+grep -Fq '13,00' android/build/native-ui.xml
+tap_text 'Книга'
+
 adb logcat -d -s AndroidRuntime:E > android/build/android-runtime-errors.txt
 if grep -F 'FATAL EXCEPTION' android/build/android-runtime-errors.txt; then
   echo 'Android crash observed during onboarding smoke test'

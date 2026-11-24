@@ -445,6 +445,8 @@ public final class MainActivity extends Activity {
         EditText promised=field("Без обещанной суммы",old!=null&&old.amount>0?amountInput(old.amount):null);
         promised.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);
         form.addView(formGroup("Обещанная сумма, ₽ (необязательно)",promised));
+        CheckBox restartPromise=new CheckBox(this);restartPromise.setText("Начать новое обещание (сбросить отсчёт)");restartPromise.setTextColor(TEXT);
+        if(old!=null&&old.amount>0)form.addView(restartPromise);
         EditText note=field("О чём договорились",old==null?null:old.note);
         form.addView(formGroup("Комментарий (необязательно)",note));
         form.addView(label("Без суммы это обычный план контакта. Оплаты после создания обещания учитываются автоматически. Изменение суммы начинает новый отсчёт. План не меняет долг или срок возврата и хранится локально.",12,MUTED,false));
@@ -461,7 +463,7 @@ public final class MainActivity extends Activity {
                 if(balance<=0)throw new IllegalArgumentException("Долг уже погашен.");
                 directory.setFollowUp(person.id,day[0],comment);return true;
             }
-            boolean keep=old!=null&&old.amount==target&&!old.anchor.isEmpty()&&PaymentPromises.calculate(entries,person.id,old,LocalDate.now(),ZoneId.systemDefault()).valid;
+            boolean keep=!restartPromise.isChecked()&&old!=null&&old.amount==target&&!old.anchor.isEmpty()&&PaymentPromises.calculate(entries,person.id,old,LocalDate.now(),ZoneId.systemDefault()).valid;
             if(!keep&&(target>balance||day[0].isBefore(LocalDate.now())))
                 throw new IllegalArgumentException("Новое обещание: сумма не выше остатка, дата не раньше сегодняшней.");
             String anchor=keep?old.anchor:PaymentPromises.lastEntryId(entries,person.id);
@@ -1294,7 +1296,7 @@ public final class MainActivity extends Activity {
         showDialog("Восстановить точку?",form,()->{
             vault.create(ledger); // Fail closed: do not replace if recovery point cannot be created.
             ledger.importJson(snapshot);
-            directory.clearAfterRestore();new QuickDebtDrafts(this).clear();
+            directory.clearAfterRestore();new QuickDebtDrafts(this).clear();new LedgerDrafts(this).clearAll();
             getPreferences(MODE_PRIVATE).edit().remove("last_json_export").apply();
             selectedClient=null;tab="Клиенты";
             return true;
@@ -1571,6 +1573,7 @@ public final class MainActivity extends Activity {
             }else tab="Главная";
             selectedClient=null;return true;
         });
+        if(chooser!=null)chooser.setOnDismissListener(v->{if(!saving&&unlocked)render();});
     }
     private void addRecentAmount(LinearLayout into,EditText amount,long cents){
         if(cents>0)addButton(into,"Повторить сумму: "+money(cents),false,()->amount.setText(amountInput(cents)),1);
@@ -1823,12 +1826,12 @@ public final class MainActivity extends Activity {
         content.addView(label(c.name+" · остаток "+money(available),13,MUTED,false));
         LedgerDrafts drafts=new LedgerDrafts(this);
         LedgerDrafts.Draft previous=drafts.get(clientId,type);
-        boolean savedDraft=drafts.has(clientId,type);
-        String preset=suggestedCents>0&&type.equals("payment")
-                ? String.format(Locale.ROOT,"%d,%02d",suggestedCents/100,suggestedCents%100)
-                : savedDraft?previous.amount:null;
-        if(savedDraft&&suggestedCents==0)
-            content.addView(label("Незавершённый черновик восстановлен.",12,ACCENT,false));
+        if(previous!=null&&ledger.hasEntryId(previous.id)){drafts.clear(clientId,type);previous=null;}
+        boolean savedDraft=previous!=null;
+        final String[] operationId={savedDraft?previous.id:java.util.UUID.randomUUID().toString()};
+        String preset=savedDraft?previous.amount:suggestedCents>0&&type.equals("payment")?amountInput(suggestedCents):null;
+        if(savedDraft)
+            content.addView(label("Незавершённый черновик восстановлен. Проверьте сумму перед записью.",12,ACCENT,false));
         EditText amount=field("0,00",preset);amount.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);
         content.addView(formGroup("Сумма, ₽",amount));
         final LimitNotice notice=type.equals("debt")?new LimitNotice(content):null;
@@ -1857,13 +1860,15 @@ public final class MainActivity extends Activity {
                 long cents=LedgerStore.parseAmount(amount.getText().toString());
                 long next=type.equals("payment")?available-cents:available+cents;
                 if(next<0){projected.setText("Оплата превышает остаток");projected.setTextColor(RED);}
+                else if(next>LedgerStore.MAX_AMOUNT){projected.setText("Превышен максимальный остаток");projected.setTextColor(RED);}
                 else{projected.setText("Остаток после записи: "+money(next));projected.setTextColor(ACCENT);}
             }catch(Exception e){projected.setText("Остаток после записи: —");projected.setTextColor(MUTED);}
         };
         amount.addTextChangedListener(watcher(v->updateProjection.run()));
         updateProjection.run();
-        LocalDate[] entryDay={LocalDate.now()};
-        if(type.equals("debt"))content.addView(formGroup("Дата записи",debtDateField(entryDay)));
+        LocalDate[] entryDay={savedDraft&&type.equals("debt")?previous.day:LocalDate.now()};
+        TextView entryDate=debtDateField(entryDay);
+        if(type.equals("debt"))content.addView(formGroup("Дата записи",entryDate));
         EditText due=field("Без срока",savedDraft?previous.due:null);
         due.setFocusable(false);due.setClickable(true);
         due.setOnClickListener(v->{
@@ -1881,14 +1886,18 @@ public final class MainActivity extends Activity {
         }
         EditText note=field("Комментарий",savedDraft?previous.note:null);
         content.addView(formGroup("Комментарий (необязательно)",note));
-        Runnable persist=()->drafts.save(clientId,type,
+        Runnable persist=()->drafts.save(clientId,type,operationId[0],entryDay[0],
                 amount.getText().toString(),due.getText().toString(),note.getText().toString());
         amount.addTextChangedListener(watcher(value->persist.run()));
         due.addTextChangedListener(watcher(value->persist.run()));
         note.addTextChangedListener(watcher(value->persist.run()));
+        entryDate.addTextChangedListener(watcher(value->persist.run()));
         if(savedDraft){
             addButton(content,"Очистить черновик",false,()->{
                 amount.setText("");due.setText("");note.setText("");
+                entryDay[0]=LocalDate.now();entryDate.setText(bookDateFormat.format(entryDay[0]));
+                entryDate.setContentDescription("Дата записи: "+bookDateFormat.format(entryDay[0]));
+                operationId[0]=java.util.UUID.randomUUID().toString();
                 drafts.clear(clientId,type);
                 message("Черновик очищен.");
             },1);
@@ -1902,11 +1911,11 @@ public final class MainActivity extends Activity {
                 for(BookDays.Day existing:BookDays.group(ledger.entries(),ZoneId.systemDefault()))
                     if(existing.date.isAfter(entryDay[0]))rank++;
                 notice.verify(clientId,cents);
-                ledger.recordDatedDebt(clientId,"","",cents,entryDay[0],due.getText().toString(),note.getText().toString().trim());
+                ledger.recordDatedDebt(clientId,"","",cents,entryDay[0],due.getText().toString(),note.getText().toString().trim(),operationId[0]);
                 bookPayments=false;clearBookFilters();bookDayLimit=Math.max(bookDayLimit,rank);
                 expandedBookDays.add(entryDay[0].toString());
             }else{
-                ledger.addEntry(clientId,type,cents,"",note.getText().toString().trim());
+                ledger.addDraftPayment(clientId,cents,note.getText().toString().trim(),operationId[0]);
                 if(cents==available)try{
                     ClientDirectory.FollowUp plan=directory.followUp(clientId);
                     if(plan!=null&&plan.amount==0)directory.setFollowUp(clientId,null,"");
@@ -2199,7 +2208,7 @@ public final class MainActivity extends Activity {
                     // If creating this point fails, abort before touching SQLite.
                     vault.create(ledger);
                     int[] count=ledger.importJson(backup);
-                    directory.clearAfterRestore();new QuickDebtDrafts(this).clear();
+                    directory.clearAfterRestore();new QuickDebtDrafts(this).clear();new LedgerDrafts(this).clearAll();
                     // A backup of the previous book is not a backup of this restored book.
                     getPreferences(MODE_PRIVATE).edit().remove("last_json_export").apply();
                     selectedClient=null;tab="Клиенты";

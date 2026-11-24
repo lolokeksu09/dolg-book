@@ -367,4 +367,27 @@ public class LedgerStoreInstrumentedTest {
             directory.setFollowUp(id,null,"");assertNull(directory.followUp(id));
         }finally{directory.clearAfterRestore();}
     }
+
+    @Test public void existingClientDraftKeepsDateAndCannotRepeatPayment() throws Exception {
+        String client=addCustomer();
+        LocalDate day=LocalDate.now().minusDays(3);
+        String storage="raschet-qa-entry-draft-"+java.util.UUID.randomUUID();
+        LedgerDrafts drafts=new LedgerDrafts(testContext,storage);
+        String debtId=java.util.UUID.randomUUID().toString(),paymentId=java.util.UUID.randomUUID().toString();
+        try{
+            drafts.save(client,"debt",debtId,day,"100","", "Хлеб");
+            LedgerDrafts.Draft restored=new LedgerDrafts(testContext,storage).get(client,"debt");
+            assertEquals(day,restored.day);assertEquals(debtId,restored.id);
+            book.recordDatedDebt(client,"","",10000L,restored.day,"",restored.note,restored.id);
+            assertEquals(day,PeriodReport.dateOf(book.entries().get(0),java.time.ZoneId.systemDefault()));
+            try{book.recordDatedDebt(client,"","",10000L,day,"","",debtId);fail("Duplicate debt accepted");}
+            catch(IllegalArgumentException expected){}
+            drafts.save(client,"payment",paymentId,LocalDate.now(),"40","","");
+            book.addDraftPayment(client,4000L,"",paymentId);
+            try{book.addDraftPayment(client,4000L,"",paymentId);fail("Duplicate payment accepted");}
+            catch(IllegalArgumentException expected){}
+            assertEquals(2,book.entries().size());assertEquals(6000L,LedgerStore.balance(book.entries(),client));
+            drafts.clearAll();assertNull(drafts.get(client,"payment"));assertNull(drafts.get(client,"debt"));
+        }finally{drafts.clearAll();}
+    }
 }

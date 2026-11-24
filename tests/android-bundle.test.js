@@ -10,7 +10,7 @@ test('Android UI is native and does not contain web UI runtime',()=>{
   const gradle=read('android/app/build.gradle.kts');
   const activity=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
   const manifest=read('android/app/src/main/AndroidManifest.xml');
-  assert.ok(gradle.includes('versionName = "0.24.0-beta.1"'));
+  assert.ok(gradle.includes('versionName = "0.24.1-beta.1"'));
   assert.ok(gradle.includes('applicationIdSuffix = ".nativev031"'));
   assert.ok(!gradle.includes('webkit')&&!gradle.includes('syncOfflineBook'));
   assert.ok(!gradle.includes('index.html')&&!gradle.includes('app.js'));
@@ -170,7 +170,7 @@ test('client creation routes to the shared optional debt form and existing clien
   assert.ok(ui.includes('if(client==null){showQuickDebt(true);return;}'));
   assert.ok(ui.includes('fromClients&&amount.getText().toString().trim().isEmpty()'));
   assert.ok(ui.includes('ledger.recordDatedDebt(selected[0]'));
-  assert.ok(ui.includes('formGroup("Дата записи",debtDateField(entryDay))'));
+  assert.ok(ui.includes('formGroup("Дата записи",entryDate)'));
   assert.ok(ui.includes('ledger.recordDatedDebt(clientId,"","",cents,entryDay[0]'));
 });
 
@@ -271,4 +271,14 @@ test('payment promises calculate progress from active receipts after the promise
  assert.ok(ui.includes('()->amount.setText(amountInput(outstanding))'));
  assert.ok(model.includes('canceled.contains(e.id)'));
  assert.ok(model.includes('e.id.equals(plan.anchor)'));
+});
+
+
+test('client drafts keep operation identity and original date across reopening',()=>{
+ const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
+ const draft=read('android/app/src/main/java/dev/ventry/raschet/LedgerDrafts.java');
+ assert.ok(ui.includes('previous.day:LocalDate.now()'));
+ assert.ok(ui.includes('ledger.addDraftPayment(clientId,cents'));
+ assert.ok(ui.includes('new LedgerDrafts(this).clearAll()'));
+ assert.ok(draft.includes('json.put("day",day.toString())'));
 });

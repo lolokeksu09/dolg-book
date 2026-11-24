@@ -184,6 +184,16 @@ public final class LedgerStore extends SQLiteOpenHelper {
         if(purchase==null)throw new IllegalArgumentException("Добавьте товары.");
         addEntry(clientId,"debt",purchase.total,due,note,purchase);
     }
+    /** Existing-client draft submission uses an immutable operation ID, just like quick debt. */
+    synchronized void addDraftPayment(String clientId,long amount,String note,String entryId){
+        SQLiteDatabase db=getWritableDatabase();
+        db.beginTransaction();
+        try{
+            if(hasEntryId(entryId))throw new IllegalArgumentException("Этот черновик уже сохранён. Откройте историю.");
+            insertEntry(db,clientId,"payment",amount,"",note,null,Instant.now().toString(),entryId);
+            db.setTransactionSuccessful();
+        }finally{db.endTransaction();}
+    }
     private synchronized void addEntry(String clientId,String type,long amount,String due,String note,Purchase purchase) {
         SQLiteDatabase db=getWritableDatabase();
         db.beginTransaction();
