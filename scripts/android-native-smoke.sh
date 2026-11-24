@@ -293,6 +293,36 @@ sleep 0.4
 dump_ui
 grep -Fq '800,00' android/build/native-ui.xml
 
+# Record an itemized debt and verify both its balance and immutable details.
+tap_text 'Клиенты'
+sleep 0.4
+tap_text 'TestBuyer'
+sleep 0.4
+tap_text 'Долг по товарам'
+sleep 0.4
+tap_text 'Название товара'
+adb shell input text QA-Apple
+adb shell input keyevent 4
+sleep 0.4
+tap_text '0,00'
+adb shell input text 150
+adb shell input keyevent 4
+sleep 0.4
+adb exec-out screencap -p > android/build/native-purchase-form.png
+tap_text 'Сохранить'
+sleep 0.6
+dump_ui
+grep -Fq '950,00' android/build/native-ui.xml
+tap_text 'Состав покупки · 1 поз.'
+sleep 0.4
+dump_ui
+grep -Fq 'QA-Apple' android/build/native-ui.xml
+grep -Fq '150,00' android/build/native-ui.xml
+adb exec-out screencap -p > android/build/native-purchase-details.png
+tap_text 'Закрыть'
+sleep 0.3
+tap_text 'Главная'
+
 adb logcat -d -s AndroidRuntime:E > android/build/android-runtime-errors.txt
 if grep -F 'FATAL EXCEPTION' android/build/android-runtime-errors.txt; then
   echo 'Android crash observed during onboarding smoke test'
