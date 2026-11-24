@@ -35,7 +35,9 @@ test('PDF export uses user-selected file and drafts clear after saving',()=>{
   const pdf=read('android/app/src/main/java/dev/ventry/raschet/CustomerStatementPdf.java');
   assert.ok(activity.includes('pendingPdfClientId'));
   assert.ok(activity.includes('Intent.ACTION_CREATE_DOCUMENT'));
-  assert.ok(activity.includes('drafts.clear(clientId,type)'));
+  const service=read('android/app/src/main/kotlin/dev/ventry/raschet/ClientWriteService.kt');
+  assert.ok(service.includes('drafts.get(clientId, kind)?.id == id'));
+  assert.ok(service.includes('drafts.clear(clientId, kind)'));
   assert.ok(draft.includes('raschet_operation_drafts'));
   assert.ok(pdf.includes('PdfDocument'));
   assert.ok(pdf.includes('MAX_LINES'));
