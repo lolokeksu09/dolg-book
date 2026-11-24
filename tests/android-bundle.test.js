@@ -170,7 +170,7 @@ test('client creation routes to the shared optional debt form and existing clien
   assert.ok(ui.includes('if(client==null){showQuickDebt(true);return;}'));
   assert.ok(ui.includes('fromClients&&amount.getText().toString().trim().isEmpty()'));
   assert.ok(ui.includes('ledger.recordDatedDebt(selected[0]'));
-  assert.ok(ui.includes('formGroup("Дата записи",entryDate)'));
+  assert.ok(ui.includes('formGroup(type.equals("debt")?"Дата записи":"Дата оплаты",entryDate)'));
   assert.ok(ui.includes('ledger.recordDatedDebt(clientId,"","",cents,entryDay[0]'));
 });
 

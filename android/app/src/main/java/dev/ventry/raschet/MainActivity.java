@@ -1909,16 +1909,18 @@ public final class MainActivity extends Activity {
         content.addView(formGroup(type.equals("debt")?"Дата записи":"Дата оплаты",entryDate));
         if(type.equals("payment")){
             TextView dateLimit=label("",12,MUTED,false);content.addView(dateLimit);
+            long[] historicalMaximum={available};
+            Runnable colorCheck=()->dateLimit.setTextColor(historicalMaximum[0]==0||previewAmount(amount)>historicalMaximum[0]?RED:MUTED);
             Runnable dateCheck=()->{
                 LocalDate today=LocalDate.now();
                 if(entryDay[0].equals(today)){dateLimit.setVisibility(View.GONE);return;}
-                long maximum=DatedPayments.maximum(ledger.entries(),clientId,entryDay[0],today,ZoneId.systemDefault());
+                historicalMaximum[0]=DatedPayments.maximum(ledger.entries(),clientId,entryDay[0],today,ZoneId.systemDefault());
                 dateLimit.setVisibility(View.VISIBLE);
-                dateLimit.setText("На эту дату можно принять до "+money(maximum)+". Проверьте дату фактической оплаты.");
-                dateLimit.setTextColor(maximum==0||previewAmount(amount)>maximum?RED:MUTED);
+                dateLimit.setText("На эту дату можно принять до "+money(historicalMaximum[0])+". Проверьте дату фактической оплаты.");
+                colorCheck.run();
             };
             entryDate.addTextChangedListener(watcher(v->dateCheck.run()));
-            amount.addTextChangedListener(watcher(v->dateCheck.run()));dateCheck.run();
+            amount.addTextChangedListener(watcher(v->colorCheck.run()));dateCheck.run();
         }
         EditText due=field("Без срока",savedDraft?previous.due:null);
         due.setFocusable(false);due.setClickable(true);
