@@ -55,9 +55,10 @@ import java.util.concurrent.Executors;
 
 /** Native Android debt ledger, with platform views and SQLite persistence. */
 public final class MainActivity extends Activity {
-    private static final int BG=0xff090e0c, PANEL=0xff141c18, ELEVATED=0xff1b2820;
-    private static final int BORDER=0xff2b3b32, TEXT=0xfff4f7f3, MUTED=0xff9eb4a6;
-    private static final int ACCENT=0xffb9efd0, INK=0xff12271b, ALERT=0xffffca97, RED=0xffffacac;
+    // Shared visual vocabulary; domain calculations remain in the ledger classes.
+    private static final int BG=LedgerTheme.BG, PANEL=LedgerTheme.PANEL, ELEVATED=LedgerTheme.ELEVATED;
+    private static final int BORDER=LedgerTheme.BORDER, TEXT=LedgerTheme.TEXT, MUTED=LedgerTheme.MUTED;
+    private static final int ACCENT=LedgerTheme.ACCENT, INK=LedgerTheme.INK, ALERT=LedgerTheme.ALERT, RED=LedgerTheme.RED;
     private static final int REQUEST_IMPORT=101, REQUEST_EXPORT=102, REQUEST_PDF=103, REQUEST_REPORT=105, MAX_IMPORT=5*1024*1024;
     private static final String RECOVERY_PREFS="raschet_local_recovery";
     private static final int NOTIFICATION_PERMISSION_REQUEST=104;
@@ -87,11 +88,13 @@ public final class MainActivity extends Activity {
     private LocalDate historyFrom,historyTo,pendingReportFrom,pendingReportTo;
     private int reportDaysLimit=14;
     private boolean tablet=false, largeText=false, saving=false;
-    private int historyVisibleLimit=100, detailVisibleLimit=80;
+    private int historyVisibleLimit=100, detailVisibleLimit=80, bookDayLimit=30;
+    private final Set<String> expandedBookDays=new java.util.HashSet<>();
+    private final DateTimeFormatter bookDateFormat=DateTimeFormatter.ofPattern("dd.MM.yy",new Locale("ru","RU"));
     private final int pad=14;
     private String settingsExpanded="";
     private int controlHeight(){return largeText?54:48;}
-    private int navHeight(){return largeText?72:64;}
+    private int navHeight(){return largeText?68:56;}
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
@@ -116,6 +119,9 @@ public final class MainActivity extends Activity {
             clientsAmountFirst=state.getBoolean("clients_amount_first",false);
             historyVisibleLimit=state.getInt("history_visible_limit",100);
             detailVisibleLimit=state.getInt("detail_visible_limit",80);
+            bookDayLimit=state.getInt("book_day_limit",30);
+            ArrayList<String> expanded=state.getStringArrayList("expanded_book_days");
+            if(expanded!=null)expandedBookDays.addAll(expanded);
             pendingExport=state.getBoolean("pending_export");
             pendingExportCsv=state.getBoolean("pending_export_csv");
             pendingPdfClientId=state.getString("pending_pdf_client");
@@ -143,6 +149,8 @@ public final class MainActivity extends Activity {
         out.putBoolean("clients_amount_first",clientsAmountFirst);
         out.putInt("history_visible_limit",historyVisibleLimit);
         out.putInt("detail_visible_limit",detailVisibleLimit);
+        out.putInt("book_day_limit",bookDayLimit);
+        out.putStringArrayList("expanded_book_days",new ArrayList<>(expandedBookDays));
         out.putBoolean("pending_export",pendingExport);
         out.putBoolean("pending_export_csv",pendingExportCsv);
         out.putString("pending_pdf_client",pendingPdfClientId);
@@ -168,21 +176,24 @@ public final class MainActivity extends Activity {
         });
         LinearLayout header=row();
         header.setGravity(Gravity.CENTER_VERTICAL);
-        header.setPadding(dp(14),dp(5),dp(14),dp(5));
+        header.setPadding(dp(14),dp(4),dp(14),dp(4));
         android.widget.ImageView insignia=new android.widget.ImageView(this);
         insignia.setImageResource(R.drawable.ic_ventry);
         insignia.setContentDescription("Ventry");
         insignia.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
-        header.addView(insignia,new LinearLayout.LayoutParams(dp(32),dp(32)));
-        LinearLayout heading=stack(0);
-        heading.addView(label("Расчёт",17,TEXT,true));
+        header.addView(insignia,new LinearLayout.LayoutParams(dp(24),dp(24)));
+        LinearLayout heading=row();heading.setGravity(Gravity.CENTER_VERTICAL);
+        heading.addView(label("Расчёт",16,TEXT,true));
         shopCaption=label(shopName,12,MUTED,false);
         shopCaption.setSingleLine(true);
         shopCaption.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        heading.addView(shopCaption);
+        shopCaption.setGravity(Gravity.END|Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams shopParams=new LinearLayout.LayoutParams(0,-2,1);
+        shopParams.leftMargin=dp(12);heading.addView(shopCaption,shopParams);
         LinearLayout.LayoutParams headingParams=new LinearLayout.LayoutParams(0,-2,1);
         headingParams.leftMargin=dp(8);header.addView(heading,headingParams);
-        root.addView(header);
+        header.setMinimumHeight(dp(44));root.addView(header);
+        addListDivider(root);
 
         LinearLayout body=row();
         if(tablet) {
@@ -199,6 +210,7 @@ public final class MainActivity extends Activity {
             navigation.setGravity(Gravity.CENTER_VERTICAL);
             navigation.setPadding(dp(6),dp(3),dp(6),dp(3));
             navigation.setBackgroundColor(PANEL);
+            addListDivider(root);
             root.addView(navigation,new LinearLayout.LayoutParams(-1,dp(navHeight())));
         }
         return root;
@@ -210,17 +222,17 @@ public final class MainActivity extends Activity {
         navigation.removeAllViews();
         for(int i=0;i<TABS.length;i++){
             final String destination=TABS[i];
+            String caption=destination.equals("Главная")?"Книга":destination;
             LinearLayout item=tablet?row():stack(2);
             item.setGravity(Gravity.CENTER);
             item.setPadding(dp(tablet?10:2),dp(tablet?6:2),dp(tablet?6:2),dp(tablet?6:2));
-            item.setBackground(ripple(shape(destination.equals(tab)?ELEVATED:PANEL,
-                    10,0)));
+            item.setBackground(ripple(shape(destination.equals(tab)?LedgerTheme.SELECTED:PANEL,8,0)));
             android.widget.ImageView icon=new android.widget.ImageView(this);
             icon.setImageResource(ICONS[i]);
             icon.setColorFilter(destination.equals(tab)?ACCENT:MUTED);
             icon.setContentDescription(null);
             item.addView(icon,new LinearLayout.LayoutParams(dp(20),dp(20)));
-            TextView name=label(destination,tablet?14:12,destination.equals(tab)?TEXT:MUTED,destination.equals(tab));
+            TextView name=label(caption,tablet?14:11,destination.equals(tab)?ACCENT:MUTED,destination.equals(tab));
             name.setGravity(Gravity.CENTER);
             name.setSingleLine(true);
             name.setIncludeFontPadding(false);
@@ -228,7 +240,7 @@ public final class MainActivity extends Activity {
             LinearLayout.LayoutParams np=new LinearLayout.LayoutParams(-2,-2);
             if(tablet)np.leftMargin=dp(12);
             item.addView(name,np);
-            item.setContentDescription(destination);
+            item.setContentDescription(caption);
             item.setSelected(destination.equals(tab));
             item.setFocusable(true);
             item.setOnClickListener(v->{tab=destination;selectedClient=null;settingsExpanded="";render();});
@@ -268,40 +280,32 @@ public final class MainActivity extends Activity {
             if(status.overdue>0)lateClients++;
             if(status.upcoming>0)soonClients++;
         }
-        LinearLayout hero=stack(4);
-        hero.addView(label("Общая задолженность",13,MUTED,false));
-        hero.addView(label(money(debt),largeText?34:30,TEXT,true));
-        hero.addView(label("Должников: "+debtors+" из "+customers.size(),13,MUTED,false));
+        LinearLayout hero=balancePanel("Общая задолженность",debt);
         boolean stacked=getResources().getConfiguration().screenWidthDp<365
                 ||getResources().getConfiguration().fontScale>1.2f||largeText;
         LinearLayout quick=stacked?stack(8):row();
-        addButton(quick,"+ Записать долг",true,()->chooseClient("debt"),1);
+        addButton(quick,"+ Записать долг",true,this::showQuickDebt,1);
         addButton(quick,"Принять оплату",true,()->chooseClient("payment"),1);
         hero.addView(quick,margin(-1,dp(stacked?2*controlHeight()+8:controlHeight()),0));
         view.addView(hero,margin(-1,-2,8));
         addListDivider(view);
 
-        LinearLayout due=stack(6);
-        actionRow(due,"!","Просроченные долги",
-                overdue>0?money(overdue)+" · клиентов: "+lateClients:"Просроченных долгов нет",
+        section(view,"Записи по датам","Суммы записанных долгов, не текущие остатки");
+        Map<String,LedgerStore.Client> people=new HashMap<>();
+        for(LedgerStore.Client customer:customers)people.put(customer.id,customer);
+        List<BookDays.Day> days=BookDays.group(entries,ZoneId.systemDefault());
+        LinearLayout dayList=stack(0);view.addView(dayList);
+        if(days.isEmpty())view.addView(label("Пока нет долгов. Нажмите «Записать долг», чтобы начать.",14,MUTED,false));
+        else fillBookDays(dayList,days,people);
+        LinearLayout due=stack(0);
+        section(due,"Контроль задолженности","");
+        metricRow(due,"Просрочено",money(overdue),overdue>0?RED:MUTED,
                 ()->openClientFilter(CollectionsInsights.LATE));
-        if(soonClients>0)actionRow(due,"◷","Срок в ближайшие 7 дней",
-                money(upcoming)+" · клиентов: "+soonClients,()->openClientFilter(CollectionsInsights.SOON));
-        view.addView(due);
-        section(view,"Последние операции","");
-        if(entries.isEmpty()){
-            view.addView(label("Здесь появятся ваши записи.",15,MUTED,false),margin(-1,-2,6));
-            if(customers.isEmpty())addButton(view,"Новый клиент",false,()->showClientForm(null),1);
-        }else{
-            Map<String,String> names=new HashMap<>();
-            for(LedgerStore.Client customer:customers)names.put(customer.id,customer.name);
-            Set<String> canceled=LedgerStore.canceled(entries);
-            for(int i=entries.size()-1;i>=0&&i>=entries.size()-3;i--){
-                LedgerStore.Entry e=entries.get(i);
-                view.addView(entryCard(e,names.get(e.clientId),canceled.contains(e.id)),margin(-1,-2,5));
-            }
-            addButton(view,"Вся история",false,()->{tab="История";selectedClient=null;render();},1);
-        }
+        metricRow(due,"В ближайшие 7 дней",money(upcoming),upcoming>0?ALERT:MUTED,
+                ()->openClientFilter(CollectionsInsights.SOON));
+        metricRow(due,"Должников",debtors+" / "+customers.size(),TEXT,
+                ()->openClientFilter(CollectionsInsights.OWING));
+        view.addView(due,margin(-1,-2,8));
         actionRow(view,"↗","Финансовый отчёт","Долги и оплаты за выбранные даты",()->{tab="Отчёт";selectedClient=null;render();});
         if(!entries.isEmpty()&&getPreferences(MODE_PRIVATE).getLong("last_json_export",0L)==0L){
             actionRow(view,"↓","Создать JSON-копию","Сохраните книгу перед сменой устройства",()->exportBook(false));
@@ -309,6 +313,63 @@ public final class MainActivity extends Activity {
         return scroll(view);
     }
 
+    private void fillBookDays(LinearLayout into,List<BookDays.Day> days,Map<String,LedgerStore.Client> people){
+        into.removeAllViews();
+        int count=0;
+        for(BookDays.Day day:days){
+            if(count++>=bookDayLimit)break;
+            String key=day.date.toString();
+            LinearLayout header=row();header.setGravity(Gravity.CENTER_VERTICAL);
+            header.setMinimumHeight(dp(controlHeight()));header.setPadding(dp(5),dp(6),dp(5),dp(6));
+            header.setBackground(ripple(shape(PANEL,6,0)));
+            LinearLayout left=stack(2);
+            left.addView(label(bookDateFormat.format(day.date),16,TEXT,true));
+            left.addView(label("Записей: "+day.entries.size(),12,MUTED,false));
+            header.addView(left,new LinearLayout.LayoutParams(0,-2,1));
+            TextView amount=label(money(day.recorded),16,TEXT,true);amount.setGravity(Gravity.END);
+            header.addView(amount);
+            TextView arrow=label("⌄",20,MUTED,true);
+            arrow.setPadding(dp(10),0,dp(3),0);header.addView(arrow);
+            LinearLayout body=stack(0);
+            Runnable sync=()->{
+                boolean open=expandedBookDays.contains(key);
+                arrow.setText(open?"⌃":"⌄");header.setSelected(open);
+                header.setContentDescription(bookDateFormat.format(day.date)+", записей "+day.entries.size()+", "+money(day.recorded)+(open?", свернуть":", раскрыть"));
+                body.setVisibility(open?View.VISIBLE:View.GONE);
+                if(open&&body.getChildCount()==0)fillBookDayRows(body,day,people,60);
+            };
+            header.setFocusable(true);header.setOnClickListener(v->{
+                if(!expandedBookDays.add(key))expandedBookDays.remove(key);
+                sync.run();
+            });
+            into.addView(header);into.addView(body);addListDivider(into);sync.run();
+        }
+        if(days.size()>bookDayLimit)addButton(into,"Показать более ранние даты",false,()->{bookDayLimit+=30;fillBookDays(into,days,people);},1);
+    }
+    private void fillBookDayRows(LinearLayout body,BookDays.Day day,Map<String,LedgerStore.Client> people,int limit){
+        body.removeAllViews();
+        int shown=0;
+        for(LedgerStore.Entry e:day.entries){
+            if(shown++>=limit)break;
+            LedgerStore.Client person=people.get(e.clientId);
+            if(person==null)continue;
+            boolean canceled=day.canceled.contains(e.id);
+            LinearLayout item=row();item.setGravity(Gravity.CENTER_VERTICAL);
+            item.setMinimumHeight(dp(48));item.setPadding(dp(12),dp(6),dp(4),dp(6));
+            item.setBackground(ripple(shape(BG,6,0)));
+            LinearLayout description=stack(1);
+            description.addView(label(person.name,15,TEXT,true));
+            if(canceled)description.addView(label("Отменено",12,MUTED,false));
+            else if(!e.note.isEmpty())description.addView(label(e.note,12,MUTED,false));
+            item.addView(description,new LinearLayout.LayoutParams(0,-2,1));
+            TextView sum=label(money(e.amount),15,canceled?MUTED:TEXT,true);
+            if(canceled)sum.setPaintFlags(sum.getPaintFlags()|android.graphics.Paint.STRIKE_THRU_TEXT_FLAG);
+            item.addView(sum);
+            item.setFocusable(true);item.setOnClickListener(v->{selectedClient=e.clientId;tab="Клиенты";render();});
+            body.addView(item);addListDivider(body);
+        }
+        if(day.entries.size()>limit)addButton(body,"Показать ещё записи",false,()->fillBookDayRows(body,day,people,limit+60),1);
+    }
     private View tabletClientsView() {
         LinearLayout columns=row();
         columns.setBackgroundColor(BG);
@@ -355,8 +416,8 @@ public final class MainActivity extends Activity {
             addButton(view,"+ Добавить клиента",true,()->showClientForm(null),1);
             view.addView(searchInput,margin(-1,dp(controlHeight()),6));
         }
-        actionRow(view,"≡","Фильтры клиентов",clientScope+" · "+clientFilter+
-                (clientsAmountFirst?" · по остатку":" · по имени"),this::showClientFilters);
+        metricRow(view,"Фильтры клиентов",clientScope+" · "+clientFilter+
+                (clientsAmountFirst?" · по остатку":" · по имени"),MUTED,this::showClientFilters);
         LinearLayout results=stack(0);view.addView(results);
         // Build due/balance projections once per render, not on every typed character.
         List<CollectionsInsights.CustomerStatus> cached=
@@ -391,10 +452,10 @@ public final class MainActivity extends Activity {
             LedgerStore.Client customer=status.client;
             long amount=status.balance;
             LinearLayout card=row();
-            card.setPadding(dp(10),dp(8),dp(10),dp(8));
+            card.setPadding(dp(4),dp(7),dp(4),dp(7));
             card.setMinimumHeight(dp(48));
             card.setGravity(Gravity.CENTER_VERTICAL);
-            card.setBackground(ripple(shape(customer.id.equals(selectedClient)?ELEVATED:BG,8,0)));
+            card.setBackground(ripple(shape(customer.id.equals(selectedClient)?LedgerTheme.SELECTED:BG,6,0)));
             card.setSelected(customer.id.equals(selectedClient));
             LinearLayout labels=stack(1);
             labels.addView(label(customer.name,15,TEXT,true));
@@ -402,13 +463,16 @@ public final class MainActivity extends Activity {
             String statusText=status.overdue>0?"Просрочено: "+money(status.overdue):
                     status.upcoming>0?"Ближайший срок: "+status.nextDue+" · за 7 дней: "+money(status.upcoming):"";
             if(!statusText.isEmpty())
-                labels.addView(label(statusText,12,status.overdue>0?ALERT:MUTED,false));
+                labels.addView(label(statusText,12,status.overdue>0?RED:ALERT,false));
             LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-2,1);
             lp.leftMargin=dp(8);lp.rightMargin=dp(8);card.addView(labels,lp);
             LinearLayout right=stack(1);right.setGravity(Gravity.END);
-            right.addView(label(money(amount),15,amount>0?TEXT:MUTED,true));
+            right.addView(label(money(amount),16,TEXT,true));
             if(amount==0)right.addView(label("Нет долга",11,MUTED,false));
             card.addView(right);
+            TextView chevron=label("›",19,MUTED,false);
+            LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(-2,-2);cp.leftMargin=dp(8);
+            card.addView(chevron,cp);
             card.setClickable(true);card.setFocusable(true);
             card.setOnClickListener(v->{selectedClient=customer.id;render();});
             card.setContentDescription(customer.name+", остаток "+money(amount)
@@ -457,17 +521,15 @@ public final class MainActivity extends Activity {
         LinearLayout context=row();context.setGravity(Gravity.CENTER_VERTICAL);
         context.addView(back,new LinearLayout.LayoutParams(0,dp(controlHeight()),1));
         view.addView(context,0);
-        LinearLayout total=stack(3);
-        total.addView(label("Остаток долга",13,MUTED,false));
-        total.addView(label(money(amount),largeText?34:30,TEXT,true),margin(-1,-2,2));
+        LinearLayout total=balancePanel("Остаток долга",amount);
         long overdue=LedgerStore.overdue(all,id,LocalDate.now());
         CollectionsInsights.CustomerStatus status=null;
         for(CollectionsInsights.CustomerStatus item:CollectionsInsights.analyze(
                 ledger.clients(),all,LocalDate.now())){
             if(item.client.id.equals(id)){status=item;break;}
         }
-        if(overdue>0)total.addView(label("Просрочено: "+money(overdue),13,ALERT,true));
-        else total.addView(label("Все операции учтены",13,MUTED,false));
+        if(overdue>0)total.addView(label("Просрочено: "+money(overdue),13,RED,true));
+        else total.addView(label(amount==0?"Долга нет":"Нет просрочки",13,MUTED,false));
         if(status!=null&&status.upcoming>0)
             total.addView(label("Ближайший срок: "+status.nextDue+" · за 7 дней: "+money(status.upcoming),
                     13,MUTED,false));
@@ -475,10 +537,11 @@ public final class MainActivity extends Activity {
         boolean archived=directory.archived(id,amount);
         if(archived)view.addView(label("Клиент в архиве. История сохранена.",14,MUTED,true));
         if(!archived){
-            LinearLayout actions=largeText?stack(8):row();
+            boolean stackedActions=largeText||getResources().getConfiguration().fontScale>1.2f;
+            LinearLayout actions=stackedActions?stack(6):row();
             addButton(actions,"+ Долг",true,()->showEntryForm(id,"debt"),1);
             addButton(actions,"Оплата",true,()->showEntryForm(id,"payment"),1);
-            view.addView(actions,margin(-1,dp(largeText?2*controlHeight()+8:controlHeight()),5));
+            view.addView(actions,margin(-1,dp(stackedActions?2*controlHeight()+6:controlHeight()),5));
         }else{
             addButton(view,"Вернуть из архива",true,()->changeClientArchive(id,true),1);
         }
@@ -619,11 +682,9 @@ public final class MainActivity extends Activity {
         LinearLayout view=screen("Финансовый отчёт","Движение задолженности, не выручка и не прибыль");
         actionRow(view,"▤","Период отчёта",dayFormat.format(reportFrom)+" — "+dayFormat.format(reportTo),
                 ()->choosePeriod(true));
-        LinearLayout summary=card();
-        summary.addView(eyebrow("ОСТАТОК НА КОНЕЦ"));
-        summary.addView(label(money(report.closing),32,ACCENT,true));
+        LinearLayout summary=balancePanel("Остаток на конец",report.closing);
         reportLine(summary,"Остаток на начало",report.opening,TEXT);
-        reportLine(summary,"ИЗМЕНЕНИЕ ЗАДОЛЖЕННОСТИ",report.totals.net(),TEXT);
+        reportLine(summary,"Изменение задолженности",report.totals.net(),TEXT);
         summary.addView(label("Операций: "+report.totals.count+" · клиентов: "+report.activeCustomers,13,MUTED,false));
         view.addView(summary,margin(-1,-2,10));
         LinearLayout actions=stack(8);
@@ -633,7 +694,7 @@ public final class MainActivity extends Activity {
         },1);
         addButton(actions,"Экспорт отчёта CSV",false,this::exportReport,1);
         view.addView(actions,margin(-1,-2,12));
-        LinearLayout flow=card();
+        LinearLayout flow=stack(4);
         flow.addView(label("Движение за период",18,TEXT,true));
         reportLine(flow,"Записано долгов",report.totals.debts,TEXT);
         reportLine(flow,"Получено оплат",report.totals.payments,ACCENT);
@@ -647,12 +708,12 @@ public final class MainActivity extends Activity {
         for(Map.Entry<LocalDate,PeriodReport.Totals> day:report.daily.entrySet()){
             if(shown++>=reportDaysLimit)break;
             PeriodReport.Totals t=day.getValue();
-            LinearLayout item=card();
+            LinearLayout item=stack(3);
             item.addView(label(dayFormat.format(day.getKey()),15,TEXT,true));
             item.addView(label("Долги "+money(t.debts)+" · оплаты "+money(t.payments),13,MUTED,false));
             item.addView(label("Отмены долгов "+money(t.debtReversals)+" · отмены оплат "+money(t.paymentReversals),13,MUTED,false));
             item.addView(label("Изменение: "+money(t.net()),16,ACCENT,true));
-            view.addView(item,margin(-1,-2,7));
+            view.addView(item,margin(-1,-2,7));addListDivider(view);
         }
         if(report.daily.size()>reportDaysLimit)addButton(view,"Показать ещё дни",false,()->{reportDaysLimit+=14;render();},1);
         return scroll(view);
@@ -679,7 +740,8 @@ public final class MainActivity extends Activity {
             TextView chip=label(choice,12,choice.equals(historyFilter)?INK:MUTED,true);
             chip.setGravity(Gravity.CENTER);
             chip.setPadding(dp(4),dp(5),dp(4),dp(5));chip.setMinHeight(dp(48));
-            chip.setBackground(shape(choice.equals(historyFilter)?ACCENT:ELEVATED,13,0));
+            chip.setTextColor(choice.equals(historyFilter)?ACCENT:MUTED);
+            chip.setBackground(ripple(shape(choice.equals(historyFilter)?LedgerTheme.SELECTED:BG,6,choice.equals(historyFilter)?LedgerTheme.SELECTED:BORDER)));
             LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,-2,1);p.rightMargin=dp(5);
             filters.addView(chip,p);
             chip.setClickable(true);
@@ -711,7 +773,10 @@ public final class MainActivity extends Activity {
             if(shown>=historyVisibleLimit){moreHistory=true;break;}
             LocalDate date=PeriodReport.dateOf(e,ZoneId.systemDefault());
             if(!date.equals(lastHistoryDay)){
-                view.addView(label(dayFormat.format(date),12,MUTED,true),margin(-1,-2,4));
+                TextView dateHeading=label(dayFormat.format(date),12,MUTED,true);
+                dateHeading.setPadding(dp(6),dp(7),dp(6),dp(7));
+                dateHeading.setBackgroundColor(PANEL);
+                view.addView(dateHeading,margin(-1,-2,2));
                 lastHistoryDay=date;
             }
             view.addView(entryCard(e,names.get(e.clientId),canceled.contains(e.id),false));
@@ -801,8 +866,11 @@ public final class MainActivity extends Activity {
         LinearLayout card=row();
         card.setGravity(Gravity.CENTER_VERTICAL);
         card.setBackground(shape(BG,8,0));
-        card.setPadding(dp(8),dp(6),dp(8),dp(6));card.setMinimumHeight(dp(48));
+        card.setPadding(dp(4),dp(7),dp(4),dp(7));card.setMinimumHeight(dp(48));
         int color=e.type.equals("payment")?ACCENT:e.type.equals("reversal")?ALERT:TEXT;
+        TextView marker=label(e.type.equals("debt")?"+":e.type.equals("payment")?"−":"↶",18,canceled?MUTED:color,true);
+        marker.setGravity(Gravity.CENTER);marker.setBackground(shape(PANEL,6,0));
+        LinearLayout.LayoutParams mp=new LinearLayout.LayoutParams(dp(26),dp(26));mp.rightMargin=dp(8);card.addView(marker,mp);
         LinearLayout left=stack(2);
         String kind=e.type.equals("debt")?"Долг":e.type.equals("payment")?"Оплата":"Отмена";
         if(clientName!=null)left.addView(label(clientName,15,TEXT,true));
@@ -818,7 +886,8 @@ public final class MainActivity extends Activity {
         }
         LinearLayout.LayoutParams leftParams=new LinearLayout.LayoutParams(0,-2,1);
         leftParams.rightMargin=dp(8);card.addView(left,leftParams);
-        TextView sum=label((e.type.equals("payment")?"−":e.type.equals("debt")?"+":"↶ ")+money(e.amount),15,canceled?MUTED:color,true);
+        TextView sum=label((e.type.equals("payment")?"−":e.type.equals("debt")?"+":"↶ ")+money(e.amount),16,canceled?MUTED:color,true);
+        if(canceled)sum.setPaintFlags(sum.getPaintFlags()|android.graphics.Paint.STRIKE_THRU_TEXT_FLAG);
         sum.setGravity(Gravity.END|Gravity.CENTER_VERTICAL);
         card.addView(sum);
         return card;
@@ -827,13 +896,13 @@ public final class MainActivity extends Activity {
                                     String actionLabel,Runnable action) {
         LinearLayout box=stack(5);
         box.setGravity(Gravity.CENTER);
-        box.setPadding(dp(12),dp(12),dp(12),dp(12));
+        box.setPadding(dp(6),dp(20),dp(6),dp(12));
         box.setBackground(shape(BG,8,0));
         android.widget.ImageView image=new android.widget.ImageView(this);
         image.setImageResource(iconRes);
         image.setColorFilter(ACCENT);
         image.setPadding(dp(7),dp(7),dp(7),dp(7));
-        image.setBackground(shape(ELEVATED,17,0));
+        image.setBackground(shape(PANEL,8,0));
         image.setContentDescription(null);
         box.addView(image,new LinearLayout.LayoutParams(dp(32),dp(32)));
         TextView heading=label(title,16,TEXT,true);
@@ -1024,7 +1093,93 @@ public final class MainActivity extends Activity {
         if(privacy!=null&&!authInFlight)stoppedAt=android.os.SystemClock.elapsedRealtime();
         super.onStop();
     }
+    private void showQuickDebt(){
+        LinearLayout form=stack(6);
+        EditText name=field("Имя покупателя",null);
+        EditText phone=field("Телефон (необязательно)",null);phone.setInputType(InputType.TYPE_CLASS_PHONE);
+        EditText amount=field("0,00",null);amount.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        form.addView(formGroup("Имя покупателя",name));
+        form.addView(formGroup("Телефон (необязательно)",phone));
+        LinearLayout matches=stack(2);form.addView(matches);
+        form.addView(formGroup("Сумма долга, ₽",amount));
+        LocalDate[] day={LocalDate.now()};
+        TextView date=label(bookDateFormat.format(day[0]),15,TEXT,true);
+        date.setPadding(dp(11),0,dp(11),0);date.setGravity(Gravity.CENTER_VERTICAL);
+        date.setBackground(ripple(shape(ELEVATED,6,BORDER)));date.setFocusable(true);
+        date.setOnClickListener(v->{
+            DatePickerDialog picker=new DatePickerDialog(this,(widget,y,m,d)->{
+                day[0]=LocalDate.of(y,m+1,d);date.setText(bookDateFormat.format(day[0]));
+            },day[0].getYear(),day[0].getMonthValue()-1,day[0].getDayOfMonth());
+            picker.getDatePicker().setMaxDate(System.currentTimeMillis());picker.show();
+        });
+        form.addView(formGroup("Дата записи",date));
+        List<LedgerStore.Client> customers=ledger.clients();
+        List<CollectionsInsights.CustomerStatus> statuses=CollectionsInsights.analyze(customers,ledger.entries(),LocalDate.now());
+        Map<String,Long> balances=new HashMap<>();
+        for(CollectionsInsights.CustomerStatus status:statuses)balances.put(status.client.id,status.balance);
+        String[] selected={null};
+        boolean[] updating={false},separate={false};
+        Runnable refresh=()->{
+            matches.removeAllViews();
+            if(selected[0]!=null){
+                matches.addView(label("Выбран существующий клиент",12,ACCENT,true));return;
+            }
+            String query=name.getText().toString().trim().toLowerCase(new Locale("ru","RU"));
+            String digits=phone.getText().toString().replaceAll("[^0-9]","");
+            if(query.isEmpty()&&digits.length()<3)return;
+            int count=0;
+            for(LedgerStore.Client customer:customers){
+                String n=customer.name.toLowerCase(new Locale("ru","RU"));
+                String d=customer.phone.replaceAll("[^0-9]","");
+                if(!(!query.isEmpty()&&n.contains(query))&&!(digits.length()>=3&&d.contains(digits)))continue;
+                if(count++>=5)break;
+                boolean archived=directory.archived(customer.id,balances.getOrDefault(customer.id,0L));
+                String subtitle=(customer.phone.isEmpty()?"Без телефона":customer.phone)+" · "+money(balances.getOrDefault(customer.id,0L));
+                if(archived){matches.addView(label(customer.name+" · в архиве",13,ALERT,false));continue;}
+                actionRow(matches,"›",customer.name,subtitle,()->{
+                    updating[0]=true;
+                    selected[0]=customer.id;name.setText(customer.name);phone.setText(customer.phone);
+                    updating[0]=false;matches.removeAllViews();
+                    matches.addView(label("Выбран существующий клиент",12,ACCENT,true));
+                });
+            }
+            if(hasExactCustomer(customers,name.getText().toString(),phone.getText().toString())){
+                TextView warning=label(separate[0]?"Будет создан отдельный клиент":"Есть совпадение. Выберите клиента или подтвердите создание отдельного.",12,ALERT,false);
+                matches.addView(warning);
+                if(!separate[0])addButton(matches,"Создать отдельного клиента",false,()->{
+                    separate[0]=true;warning.setText("Будет создан отдельный клиент");
+                },1);
+            }
+        };
+        name.addTextChangedListener(watcher(v->{if(!updating[0]){selected[0]=null;separate[0]=false;refresh.run();}}));
+        phone.addTextChangedListener(watcher(v->{if(!updating[0]){selected[0]=null;separate[0]=false;refresh.run();}}));
+        showDialog("Новый долг",form,()->{
+            String n=name.getText().toString(),ph=phone.getText().toString();
+            if(selected[0]==null&&!separate[0]&&hasExactCustomer(ledger.clients(),n,ph))
+                throw new IllegalArgumentException("Выберите существующего клиента или подтвердите создание отдельного.");
+            if(selected[0]!=null&&directory.archived(selected[0],LedgerStore.balance(ledger.entries(),selected[0])))
+                throw new IllegalArgumentException("Сначала верните клиента из архива.");
+            // Determine how many dates to reveal before the transaction; no potentially
+            // failing database reads after a successful save.
+            int rank=1;
+            for(BookDays.Day existing:BookDays.group(ledger.entries(),ZoneId.systemDefault()))
+                if(existing.date.isAfter(day[0]))rank++;
+            ledger.recordDatedDebt(selected[0],n,ph,LedgerStore.parseAmount(amount.getText().toString()),day[0],"","");
+            expandedBookDays.add(day[0].toString());
+            bookDayLimit=Math.max(bookDayLimit,rank);
+            tab="Главная";selectedClient=null;return true;
+        });
+    }
+    private static boolean hasExactCustomer(List<LedgerStore.Client> people,String name,String phone){
+        String n=name.trim(),d=phone.replaceAll("[^0-9]","");
+        for(LedgerStore.Client c:people){
+            if(!n.isEmpty()&&c.name.trim().equalsIgnoreCase(n))return true;
+            if(d.length()>=7&&d.equals(c.phone.replaceAll("[^0-9]","")))return true;
+        }
+        return false;
+    }
     private void chooseClient(String type) {
+        if(type.equals("debt")){showQuickDebt();return;}
         List<LedgerStore.Client> customers=ledger.clients();
         if(customers.isEmpty()){showClientForm(null);return;}
         LinearLayout content=stack(8);
@@ -1379,8 +1534,9 @@ public final class MainActivity extends Activity {
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
         LinearLayout box=stack(7);
         box.setPadding(dp(14),dp(14),dp(14),dp(14));
-        box.setBackground(shape(PANEL,16,BORDER));
-        box.addView(label(title,19,TEXT,true));
+        box.setBackground(shape(PANEL,12,BORDER));
+        box.addView(label(title,20,TEXT,true));
+        addListDivider(box);
         ScrollView scroll=new ScrollView(this){
             @Override protected void onMeasure(int widthSpec,int heightSpec){
                 android.graphics.Rect visible=new android.graphics.Rect();
@@ -1407,6 +1563,7 @@ public final class MainActivity extends Activity {
             catch(Exception ex){error.setText(ex.getMessage()==null?"Не удалось сохранить запись.":ex.getMessage());error.setVisibility(View.VISIBLE);}
             finally{saving=false;}
         },1);
+        addListDivider(box);
         box.addView(buttons,new LinearLayout.LayoutParams(-1,dp(controlHeight())));
         dialog.setContentView(box);
         Window window=dialog.getWindow();
@@ -1553,8 +1710,8 @@ public final class MainActivity extends Activity {
 
     private LinearLayout screen(String title,String subtitle) {
         LinearLayout result=stack(0);
-        result.setPadding(dp(pad),dp(6),dp(pad),dp(16));
-        result.addView(label(title,largeText?25:22,TEXT,true),margin(-1,-2,subtitle.isEmpty()?6:1));
+        result.setPadding(dp(pad),dp(8),dp(pad),dp(12));
+        result.addView(label(title,largeText?24:20,TEXT,true),margin(-1,-2,subtitle.isEmpty()?8:2));
         if(!subtitle.isEmpty())result.addView(label(subtitle,12,MUTED,false),margin(-1,-2,6));
         return result;
     }
@@ -1596,9 +1753,44 @@ public final class MainActivity extends Activity {
         edit.setTextColor(TEXT);edit.setHintTextColor(MUTED);
         edit.setHint(hint);if(value!=null)edit.setText(value);
         edit.setPadding(dp(11),0,dp(11),0);edit.setMinimumHeight(dp(48));
-        edit.setBackground(shape(ELEVATED,8,BORDER));
+        android.graphics.drawable.StateListDrawable focusBackground=new android.graphics.drawable.StateListDrawable();
+        focusBackground.addState(new int[]{android.R.attr.state_focused},shape(ELEVATED,6,ACCENT));
+        focusBackground.addState(new int[]{},shape(ELEVATED,6,BORDER));
+        edit.setBackground(focusBackground);edit.setPadding(dp(11),0,dp(11),0);
         edit.setSelectAllOnFocus(false);
         return edit;
+    }
+    private LinearLayout balancePanel(String caption,long amount){
+        LinearLayout panel=stack(3);
+        panel.setPadding(dp(10),dp(8),dp(10),dp(8));
+        panel.setBackground(shape(PANEL,8,0));
+        panel.addView(label(caption,13,MUTED,false));
+        TextView value=label(money(amount),largeText?34:32,TEXT,true);
+        value.setTypeface(Typeface.create("sans-serif",Typeface.BOLD));
+        panel.addView(value);
+        return panel;
+    }
+    private void metricRow(LinearLayout into,String title,String value,int color,Runnable action){
+        LinearLayout line=row();line.setGravity(Gravity.CENTER_VERTICAL);
+        line.setMinimumHeight(dp(controlHeight()));line.setPadding(dp(4),dp(5),dp(4),dp(5));
+        line.setBackground(ripple(shape(BG,6,0)));
+        TextView caption=label(title,14,TEXT,true);
+        line.addView(caption,new LinearLayout.LayoutParams(0,-2,1));
+        TextView amount=label(value,14,color,true);amount.setGravity(Gravity.END|Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams vp=new LinearLayout.LayoutParams(0,-2,1);vp.leftMargin=dp(6);
+        line.addView(amount,vp);
+        TextView arrow=label("›",20,MUTED,false);arrow.setPadding(dp(8),0,0,0);line.addView(arrow);
+        line.setContentDescription(title);line.setFocusable(true);line.setOnClickListener(v->action.run());
+        into.addView(line);addListDivider(into);
+    }
+    private void sectionLink(LinearLayout into,String title,String actionLabel,Runnable action){
+        LinearLayout line=row();line.setGravity(Gravity.CENTER_VERTICAL);
+        line.addView(label(title,16,TEXT,true),new LinearLayout.LayoutParams(0,-2,1));
+        TextView link=label(actionLabel,13,ACCENT,true);link.setGravity(Gravity.CENTER);
+        link.setMinHeight(dp(48));link.setPadding(dp(8),0,dp(4),0);
+        link.setBackground(ripple(shape(BG,6,0)));link.setFocusable(true);
+        link.setOnClickListener(v->action.run());line.addView(link,new LinearLayout.LayoutParams(-2,dp(controlHeight())));
+        into.addView(line);
     }
     private void section(LinearLayout into,String title,String note) {
         into.addView(label(title,17,TEXT,true),margin(-1,-2,6));
@@ -1610,8 +1802,8 @@ public final class MainActivity extends Activity {
         block.setBackground(ripple(shape(BG,8,0)));
         TextView emblem=label(icon,18,ACCENT,true);
         emblem.setGravity(Gravity.CENTER);
-        emblem.setBackground(shape(ELEVATED,13,0));
-        block.addView(emblem,new LinearLayout.LayoutParams(dp(30),dp(30)));
+        emblem.setBackground(shape(BG,0,0));
+        block.addView(emblem,new LinearLayout.LayoutParams(dp(24),dp(24)));
         LinearLayout details=stack(2);
         details.addView(label(title,14,TEXT,true));
         details.addView(label(subtitle,12,MUTED,false));
@@ -1626,14 +1818,14 @@ public final class MainActivity extends Activity {
     }
     private TextView eyebrow(String text) {
         TextView v=label(text,11,MUTED,true);
-        v.setLetterSpacing(0.12f);
+        v.setLetterSpacing(0.02f);
         return v;
     }
     private void addButton(LinearLayout parent,String text,boolean filled,Runnable action,int weight) {
         TextView button=label(text,14,filled?INK:TEXT,true);
         button.setGravity(Gravity.CENTER);
         button.setPadding(dp(5),dp(5),dp(5),dp(5));button.setMinHeight(dp(48));
-        button.setBackground(ripple(shape(filled?ACCENT:PANEL,10,filled?0:BORDER)));
+        button.setBackground(ripple(shape(filled?ACCENT:BG,8,filled?0:BORDER)));
         button.setClickable(true);
         button.setFocusable(true);
         button.setContentDescription(text);
@@ -1686,7 +1878,7 @@ public final class MainActivity extends Activity {
     private LinearLayout card() {
         LinearLayout block=stack(5);
         block.setPadding(dp(12),dp(11),dp(12),dp(11));
-        block.setBackground(shape(PANEL,12,BORDER));
+        block.setBackground(shape(PANEL,8,0));
         return block;
     }
     private LinearLayout.LayoutParams margin(int width,int height,int bottom) {

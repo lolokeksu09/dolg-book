@@ -142,4 +142,36 @@ public class LedgerStoreInstrumentedTest {
         }catch(IllegalArgumentException e){fail("Last payment correction must be allowed: "+e);}
     }
 
+
+    @Test public void datedQuickDebtIsAtomicAndGroupsByDayEvenAfterPayment() throws Exception {
+        LocalDate yesterday=LocalDate.now().minusDays(1);
+        LocalDate earlier=yesterday.minusDays(3);
+        try{
+            book.recordDatedDebt(null,"Не сохранять","",0L,yesterday,"","");
+            fail("Invalid first debt must roll back the client");
+        }catch(IllegalArgumentException expected){
+            assertTrue(book.clients().isEmpty());assertTrue(book.entries().isEmpty());
+        }
+        String id=book.recordDatedDebt(null,"Покупатель","",10000L,yesterday,"","");
+        assertEquals(id,book.recordDatedDebt(id,"ignored","",5000L,earlier,"",""));
+        assertEquals(1,book.clients().size());
+        book.addEntry(id,"payment",15000L,"","");
+        assertEquals(0L,LedgerStore.balance(book.entries(),id));
+        List<BookDays.Day> days=BookDays.group(book.entries(),java.time.ZoneId.systemDefault());
+        assertEquals(2,days.size());assertEquals(yesterday,days.get(0).date);
+        assertEquals(10000L,days.get(0).recorded);assertEquals(5000L,days.get(1).recorded);
+        String backup=book.exportJson();book.importJson(backup);
+        assertEquals(backup,book.exportJson());
+        try{
+            book.recordDatedDebt(null,"Будущее","",100L,LocalDate.now().plusDays(1),"","");
+            fail("Future debt date must be rejected");
+        }catch(IllegalArgumentException expected){assertEquals(1,book.clients().size());}
+    }
+    @Test public void canceledDebtStaysVisibleButIsExcludedFromDayTotal(){
+        String id=book.recordDatedDebt(null,"Клиент","",1200L,LocalDate.now().minusDays(2),"","");
+        book.reverseLast(id,"Ошибка");
+        BookDays.Day day=BookDays.group(book.entries(),java.time.ZoneId.systemDefault()).get(0);
+        assertEquals(1,day.entries.size());assertEquals(0L,day.recorded);
+        assertTrue(day.canceled.contains(day.entries.get(0).id));
+    }
 }

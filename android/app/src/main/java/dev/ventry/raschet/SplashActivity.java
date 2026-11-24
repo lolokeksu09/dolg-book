@@ -15,9 +15,9 @@ import android.widget.TextView;
 
 /** Short branded cold-launch screen; never accesses user records or the network. */
 public final class SplashActivity extends Activity {
-    private static final int BG = 0xff090e0c;
-    private static final int TEXT = 0xfff4f7f3;
-    private static final int MUTED = 0xff9eb4a6;
+    private static final int BG = LedgerTheme.BG;
+    private static final int TEXT = LedgerTheme.TEXT;
+    private static final int MUTED = LedgerTheme.MUTED;
     private static final long DISPLAY_MS = 820L;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private boolean routed;
@@ -37,16 +37,16 @@ public final class SplashActivity extends Activity {
         ImageView logo = new ImageView(this);
         logo.setImageResource(R.drawable.ic_book);
         logo.setContentDescription("Расчёт");
-        center.addView(logo, new LinearLayout.LayoutParams(dp(88), dp(88)));
+        center.addView(logo, new LinearLayout.LayoutParams(dp(64), dp(64)));
 
         TextView name = new TextView(this);
         name.setText("Расчёт");
-        name.setTextSize(32);
+        name.setTextSize(26);
         name.setTextColor(TEXT);
         name.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL));
         name.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams nameParams = new LinearLayout.LayoutParams(-1, -2);
-        nameParams.topMargin = dp(20);
+        nameParams.topMargin = dp(12);
         center.addView(name, nameParams);
 
         TextView tagline = new TextView(this);

@@ -112,7 +112,7 @@ if grep -Fq 'Фильтры клиентов' android/build/native-ui.xml; then
     echo 'Empty client list must not show filters'; exit 1
 fi
 adb exec-out screencap -p > android/build/native-clients.png
-tap_text 'Главная'
+tap_text 'Книга'
 sleep 1
 dump_ui
 grep -Fq 'Общая задолженность' android/build/native-ui.xml
@@ -219,7 +219,7 @@ assert '800,00' in fields, 'Full repayment form must be prefilled, not executed 
 PY
 tap_text 'Закрыть'
 sleep 0.4
-tap_text 'Главная'
+tap_text 'Книга'
 sleep 0.4
 dump_ui
 grep -Fq '800,00' android/build/native-ui.xml
@@ -263,7 +263,7 @@ dump_ui
 grep -Fq 'Восстановить точку?' android/build/native-ui.xml
 tap_text 'Закрыть'
 sleep 0.2
-tap_text 'Главная'
+tap_text 'Книга'
 
 # On a clean CI emulator only: reinstall the same signed candidate without
 # uninstall/clear. This tests persistence across reinstall, not a version upgrade.
@@ -284,7 +284,7 @@ grep -Fq '800,00' android/build/native-ui.xml
 tap_text 'Финансовый отчёт'
 sleep 0.5
 dump_ui
-grep -Fq 'ОСТАТОК НА КОНЕЦ' android/build/native-ui.xml
+grep -Fq 'Остаток на конец' android/build/native-ui.xml
 grep -Fq '800,00' android/build/native-ui.xml
 adb exec-out screencap -p > android/build/native-period-report.png
 tap_text 'Период отчёта'
@@ -335,7 +335,7 @@ tap_text 'Фильтры клиентов'
 sleep 0.3
 tap_text 'Рабочие'
 sleep 0.3
-tap_text 'Главная'
+tap_text 'Книга'
 sleep 0.4
 dump_ui
 grep -Fq '800,00' android/build/native-ui.xml
@@ -378,7 +378,35 @@ grep -Fq '150,00' android/build/native-ui.xml
 adb exec-out screencap -p > android/build/native-purchase-details.png
 tap_text 'Закрыть'
 sleep 0.3
-tap_text 'Главная'
+tap_text 'Книга'
+
+# Quick debt creates a new customer and transaction without a separate client form.
+tap_text '+ Записать долг'
+sleep 0.5
+fill_form_input 0 QuickBuyer
+fill_form_input 2 321
+tap_text 'Сохранить'
+sleep 0.6
+dump_ui
+grep -Fq 'QuickBuyer' android/build/native-ui.xml
+grep -Fq '321,00' android/build/native-ui.xml
+day=$(adb shell date +%d.%m.%y | tr -d '\r')
+tap_text "$day"
+sleep 0.3
+dump_ui
+if grep -Fq 'QuickBuyer' android/build/native-ui.xml; then
+  echo 'Collapsed date still exposes its entries'; exit 1
+fi
+tap_text "$day"
+sleep 0.3
+dump_ui
+grep -Fq 'QuickBuyer' android/build/native-ui.xml
+tap_text 'QuickBuyer'
+sleep 0.4
+dump_ui
+grep -Fq 'Остаток долга' android/build/native-ui.xml
+grep -Fq '321,00' android/build/native-ui.xml
+tap_text 'Книга'
 
 adb logcat -d -s AndroidRuntime:E > android/build/android-runtime-errors.txt
 if grep -F 'FATAL EXCEPTION' android/build/android-runtime-errors.txt; then

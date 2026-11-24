@@ -13,6 +13,7 @@ import org.json.JSONObject;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -114,11 +115,30 @@ public final class LedgerStore extends SQLiteOpenHelper {
         return result;
     }
     public synchronized void addClient(String name,String phone) {
+        insertClient(getWritableDatabase(),name,phone);
+    }
+    private String insertClient(SQLiteDatabase db,String name,String phone){
         checkClient(name,phone);
         if(clients().size()>=MAX_CLIENTS)throw new IllegalArgumentException("Достигнут лимит клиентов.");
+        String id=UUID.randomUUID().toString();
         ContentValues row=new ContentValues();
-        row.put("id",UUID.randomUUID().toString()); row.put("name",name.trim()); row.put("phone",phone.trim());
-        getWritableDatabase().insertOrThrow("clients",null,row);
+        row.put("id",id);row.put("name",name.trim());row.put("phone",phone.trim());
+        db.insertOrThrow("clients",null,row);
+        return id;
+    }
+    /** New customer and first debt commit atomically; selecting an existing ID never edits contact details. */
+    public synchronized String recordDatedDebt(String existingId,String name,String phone,long amount,LocalDate day,String due,String note){
+        if(day==null||day.isAfter(LocalDate.now()))throw new IllegalArgumentException("Дата записи не может быть в будущем.");
+        String timestamp=day.equals(LocalDate.now())?Instant.now().toString():
+                day.atStartOfDay(ZoneId.systemDefault()).toInstant().toString();
+        SQLiteDatabase db=getWritableDatabase();
+        db.beginTransaction();
+        try{
+            String id=existingId==null?insertClient(db,name,phone):existingId;
+            insertEntry(db,id,"debt",amount,due,note,null,timestamp);
+            db.setTransactionSuccessful();
+            return id;
+        }finally{db.endTransaction();}
     }
     public synchronized void editClient(String id,String name,String phone) {
         checkClient(name,phone);
@@ -150,15 +170,20 @@ public final class LedgerStore extends SQLiteOpenHelper {
         addEntry(clientId,"debt",purchase.total,due,note,purchase);
     }
     private synchronized void addEntry(String clientId,String type,long amount,String due,String note,Purchase purchase) {
+        SQLiteDatabase db=getWritableDatabase();
+        db.beginTransaction();
+        try {
+            insertEntry(db,clientId,type,amount,due,note,purchase,Instant.now().toString());
+            db.setTransactionSuccessful();
+        }finally{db.endTransaction();}
+    }
+    private void insertEntry(SQLiteDatabase db,String clientId,String type,long amount,String due,String note,Purchase purchase,String timestamp){
         if(!"debt".equals(type)&&!"payment".equals(type))throw new IllegalArgumentException("Неверная операция.");
         if(amount<=0||amount>MAX_AMOUNT)throw new IllegalArgumentException("Неверная сумма.");
         if(note==null||note.length()>200)throw new IllegalArgumentException("Комментарий слишком длинный.");
         if("debt".equals(type)) {
             if(due!=null&&!due.isEmpty()) { try { LocalDate.parse(due); } catch(Exception ex) {throw new IllegalArgumentException("Неверный срок.");} }
         } else due="";
-        SQLiteDatabase db=getWritableDatabase();
-        db.beginTransaction();
-        try {
             boolean exists=false;
             try(Cursor c=db.rawQuery("SELECT 1 FROM clients WHERE id=?",new String[]{clientId})) {exists=c.moveToFirst();}
             if(!exists)throw new IllegalArgumentException("Клиент не найден.");
@@ -169,11 +194,9 @@ public final class LedgerStore extends SQLiteOpenHelper {
                 throw new IllegalArgumentException("Оплата превышает остаток долга.");
             if("debt".equals(type)&&amount>MAX_AMOUNT-available)
                 throw new IllegalArgumentException("Превышен максимальный остаток.");
-            Entry entry=new Entry(UUID.randomUUID().toString(),clientId,type,amount,Instant.now().toString(),
+            Entry entry=new Entry(UUID.randomUUID().toString(),clientId,type,amount,timestamp,
                     due==null?"":due,note,"",purchase);
             db.insertOrThrow("entries",null,values(entry));
-            db.setTransactionSuccessful();
-        }finally{db.endTransaction();}
     }
     public synchronized Entry lastActive(String clientId) {
         Set<String> undone=new HashSet<>();
