@@ -438,6 +438,32 @@ sleep 0.4
 dump_ui
 grep -Fq 'DirectoryBuyer' android/build/native-ui.xml
 
+# Filter by debtor; matching rows retain their full-book outstanding amount.
+tap_text 'Фильтры книги'
+sleep 0.4
+fill_form_input 0 DirectoryBuyer
+tap_text 'Сохранить'
+sleep 0.5
+dump_ui
+grep -Fq 'DirectoryBuyer' android/build/native-ui.xml
+grep -Fq '322,00' android/build/native-ui.xml
+if grep -Fq 'QuickBuyer' android/build/native-ui.xml; then
+  echo 'Book search leaked another client'; exit 1
+fi
+tap_text 'Фильтры книги'
+sleep 0.4
+tap_text 'Сбросить все условия'
+tap_text 'Сохранить'
+sleep 0.4
+tap_text "$day"
+sleep 0.4
+tap_text '+ Долг за этот день'
+sleep 0.4
+dump_ui
+grep -Fq "$day" android/build/native-ui.xml
+tap_text 'Закрыть'
+sleep 0.3
+
 adb logcat -d -s AndroidRuntime:E > android/build/android-runtime-errors.txt
 if grep -F 'FATAL EXCEPTION' android/build/android-runtime-errors.txt; then
   echo 'Android crash observed during onboarding smoke test'

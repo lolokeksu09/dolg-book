@@ -10,7 +10,7 @@ test('Android UI is native and does not contain web UI runtime',()=>{
   const gradle=read('android/app/build.gradle.kts');
   const activity=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
   const manifest=read('android/app/src/main/AndroidManifest.xml');
-  assert.ok(gradle.includes('versionName = "0.16.1-beta.1"'));
+  assert.ok(gradle.includes('versionName = "0.17.0-beta.1"'));
   assert.ok(gradle.includes('applicationIdSuffix = ".nativev031"'));
   assert.ok(!gradle.includes('webkit')&&!gradle.includes('syncOfflineBook'));
   assert.ok(!gradle.includes('index.html')&&!gradle.includes('app.js'));
@@ -130,7 +130,7 @@ test('dense lists, selected filters and content-sized dialogs are wired',()=>{
 
 test('counter-first UI keeps both financial actions, compact search and viewport-aware dialogs',()=>{
   const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
-  assert.ok(ui.includes('addButton(quick,"Принять оплату",true'));
+  assert.ok(ui.includes('addButton(quick,"Принять оплату",false'));
   assert.ok(ui.includes('add.setContentDescription("+ Добавить клиента")'));
   assert.ok(ui.includes('context.addView(moreActions'));
   assert.ok(ui.includes('root.getWindowVisibleDisplayFrame(visible)'));
@@ -172,4 +172,15 @@ test('client creation routes to the shared optional debt form and existing clien
   assert.ok(ui.includes('ledger.recordDatedDebt(selected[0]'));
   assert.ok(ui.includes('formGroup("Дата записи",debtDateField(entryDay))'));
   assert.ok(ui.includes('ledger.recordDatedDebt(clientId,"","",cents,entryDay[0]'));
+});
+
+
+test('journal filters preserve the full-book allocation and support date-scoped entry',()=>{
+  const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
+  const days=read('android/app/src/main/java/dev/ventry/raschet/BookDays.java');
+  assert.ok(ui.includes('BookDays.select(allDays,people,bookFrom,bookTo,bookQuery,bookOnlyUnpaid)'));
+  assert.ok(ui.includes('showQuickDebt(false,day.date)'));
+  assert.ok(ui.includes('day.unpaid.getOrDefault(e.id,0L)'));
+  assert.ok(days.includes('Math.min(available,e.amount)'));
+  assert.ok(days.includes('if(onlyUnpaid&&rest==0)continue;'));
 });

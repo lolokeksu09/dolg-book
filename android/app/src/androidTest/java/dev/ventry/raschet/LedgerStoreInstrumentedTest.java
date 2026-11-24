@@ -174,4 +174,27 @@ public class LedgerStoreInstrumentedTest {
         assertEquals(1,day.entries.size());assertEquals(0L,day.recorded);
         assertTrue(day.canceled.contains(day.entries.get(0).id));
     }
+
+    @Test public void bookFiltersNeverReallocatePaymentsAndPreserveOriginalDebtDates() {
+        LocalDate today=LocalDate.now(),older=today.minusDays(2);
+        String a=book.recordDatedDebt(null,"Фёдор","+7 123 456 78 90",120000L,older,"","");
+        book.recordDatedDebt(a,"","",50000L,today,"","");
+        String b=book.recordDatedDebt(null,"Анна","",30000L,today,"","");
+        book.addEntry(a,"payment",140000L,"","");
+        List<BookDays.Day> days=BookDays.group(book.entries(),java.time.ZoneId.systemDefault());
+        assertEquals(2,days.size());assertEquals(80000L,days.get(0).recorded);
+        assertEquals(60000L,days.get(0).remaining);assertEquals(0L,days.get(1).remaining);
+        java.util.Map<String,LedgerStore.Client> people=new java.util.HashMap<>();
+        for(LedgerStore.Client c:book.clients())people.put(c.id,c);
+        List<BookDays.Day> filtered=BookDays.select(days,people,today,today,"федор",true);
+        assertEquals(1,filtered.size());assertEquals(1,filtered.get(0).entries.size());
+        assertEquals(50000L,filtered.get(0).recorded);assertEquals(30000L,filtered.get(0).remaining);
+        assertEquals(30000L,LedgerStore.balance(book.entries(),a));
+        assertEquals(30000L,LedgerStore.balance(book.entries(),b));
+        assertEquals(2,BookDays.select(days,people,null,null,"1234567890",false).size());
+        assertTrue(BookDays.select(days,people,older,older,"",true).isEmpty());
+        book.reverseLast(a,"Отмена оплаты");
+        days=BookDays.group(book.entries(),java.time.ZoneId.systemDefault());
+        assertEquals(120000L,days.get(1).remaining);assertEquals(80000L,days.get(0).remaining);
+    }
 }
