@@ -48,7 +48,7 @@ test('intro first presents Ventry then preserves three interactive lessons',()=>
 
 test('native navigation and empty states are accessible, with actionable call-to-action',()=>{
   const activity=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
-  assert.ok(activity.includes('dp(88)'), 'bottom bar must not truncate labels');
+  assert.ok(activity.includes('private int navHeight(){return largeText?72:64;}'), 'navigation has compact and large-text heights');
   assert.ok(activity.includes('setSingleLine(true)'));
   assert.ok(activity.includes('setContentDescription(destination)'));
   assert.ok(activity.includes('setSelected(destination.equals(tab))'));
@@ -63,7 +63,7 @@ test('native navigation and empty states are accessible, with actionable call-to
 test('upgrade keeps native preview package and ledger persistence unchanged',()=>{
   const gradle=read('android/app/build.gradle.kts');
   const store=read('android/app/src/main/java/dev/ventry/raschet/LedgerStore.java');
-  assert.ok(gradle.includes('versionName = "0.11.0-beta.1"'));
+  assert.ok(gradle.includes('versionName = "0.12.0-beta.1"'));
   assert.ok(gradle.includes('applicationIdSuffix = ".nativev031"'));
   assert.ok(store.includes('raschet-ledger.db'));
   assert.ok(!gradle.includes('webkit'));

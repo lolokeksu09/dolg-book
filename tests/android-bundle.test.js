@@ -10,7 +10,7 @@ test('Android UI is native and does not contain web UI runtime',()=>{
   const gradle=read('android/app/build.gradle.kts');
   const activity=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
   const manifest=read('android/app/src/main/AndroidManifest.xml');
-  assert.ok(gradle.includes('versionName = "0.11.0-beta.1"'));
+  assert.ok(gradle.includes('versionName = "0.12.0-beta.1"'));
   assert.ok(gradle.includes('applicationIdSuffix = ".nativev031"'));
   assert.ok(!gradle.includes('webkit')&&!gradle.includes('syncOfflineBook'));
   assert.ok(!gradle.includes('index.html')&&!gradle.includes('app.js'));
@@ -97,4 +97,17 @@ test('client history follows two primary actions and secondary actions live in o
   assert.ok(detail.includes('История клиента'));
   assert.ok(ui.includes('showClientActions('));
   assert.ok(ui.includes('Остаток после записи: '));
+});
+
+test('compact book keeps essential controls and hides redundant empty-state filters',()=>{
+  const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
+  assert.ok(ui.includes('private int controlHeight(){return largeText?54:48;}'));
+  assert.ok(ui.includes('private int navHeight(){return largeText?72:64;}'));
+  const clients=ui.slice(ui.indexOf('private View clientsView()'),ui.indexOf('private void showClientFilters()'));
+  assert.ok(clients.indexOf('if(ledger.clients().isEmpty())')<clients.indexOf('"+ Добавить клиента"'));
+  assert.ok(clients.includes('this::showClientFilters'));
+  assert.ok(!clients.includes('filterGrid'));
+  assert.ok(ui.includes('if(settingsExpanded.equals("privacy"))'));
+  assert.ok(ui.includes('if(settingsExpanded.equals("backup"))'));
+  assert.ok(ui.includes('out.putString("settings_expanded",settingsExpanded)'));
 });

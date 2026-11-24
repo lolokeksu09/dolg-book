@@ -108,6 +108,9 @@ tap_text 'Начать работу'
 sleep 2
 dump_ui
 grep -Fq 'Добавить первого клиента' android/build/native-ui.xml
+if grep -Fq 'Фильтры клиентов' android/build/native-ui.xml; then
+    echo 'Empty client list must not show filters'; exit 1
+fi
 adb exec-out screencap -p > android/build/native-clients.png
 tap_text 'Главная'
 sleep 1
@@ -118,11 +121,19 @@ tap_text 'История'
 sleep 0.5
 dump_ui
 grep -Fq 'История пока пустая' android/build/native-ui.xml
+if grep -Fq 'Период истории' android/build/native-ui.xml; then
+    echo 'Empty history must not show period filters'; exit 1
+fi
 adb exec-out screencap -p > android/build/native-history.png
 tap_text 'Настройки'
 sleep 0.5
 dump_ui
 grep -Fq 'Ежедневно проверять сроки' android/build/native-ui.xml
+grep -Fq 'Резервные копии' android/build/native-ui.xml
+if grep -Fq 'Создать защищённую точку' android/build/native-ui.xml; then
+    echo 'Backup settings should be collapsed initially'; exit 1
+fi
+adb exec-out screencap -p > android/build/native-settings.png
 find_visible() {
   local target="$1" attempt
   for attempt in 1 2 3 4 5 6; do
@@ -134,10 +145,13 @@ find_visible() {
   echo "Missing settings text: $target" >&2
   return 1
 }
+tap_text 'Резервные копии'
+sleep 0.4
 find_visible 'JSON-копия ещё не сохранена'
 find_visible 'Восстановить из JSON'
 for i in 1 2 3 4 5; do adb shell input swipe 540 620 540 1570 230; done
-adb exec-out screencap -p > android/build/native-settings.png
+tap_text 'Резервные копии'
+sleep 0.3
 tap_text 'Крупный текст'
 sleep 0.5
 adb exec-out screencap -p > android/build/native-settings-large.png
@@ -212,19 +226,27 @@ grep -Fq '800,00' android/build/native-ui.xml
 adb exec-out screencap -p > android/build/native-ledger-800.png
 tap_text 'Клиенты'
 sleep 0.4
+tap_text 'Фильтры клиентов'
+sleep 0.3
 tap_text 'С долгом'
 sleep 0.4
 dump_ui
 grep -Fq 'TestBuyer' android/build/native-ui.xml
+tap_text 'Фильтры клиентов'
+sleep 0.3
 tap_text 'Просрочка'
 sleep 0.4
 dump_ui
 grep -Fq 'Просроченных долгов нет' android/build/native-ui.xml
 adb exec-out screencap -p > android/build/native-clients-filtered.png
+tap_text 'Фильтры клиентов'
+sleep 0.3
 tap_text 'Все'
 sleep 0.4
 tap_text 'Настройки'
 sleep 0.6
+tap_text 'Резервные копии'
+sleep 0.3
 tap_text 'Создать защищённую точку'
 sleep 0.6
 tap_text 'Восстановить защищённую точку'
@@ -269,6 +291,8 @@ tap_text 'Сбросить даты'
 sleep 0.3
 tap_text 'Клиенты'
 sleep 0.4
+tap_text 'Фильтры клиентов'
+sleep 0.3
 tap_text 'Рабочие'
 sleep 0.3
 tap_text '+ Добавить клиента'
@@ -293,10 +317,14 @@ tap_text 'ArchiveBuyer'
 sleep 0.4
 tap_text 'Вернуть из архива'
 sleep 0.4
+tap_text 'Фильтры клиентов'
+sleep 0.3
 tap_text 'Избранные'
 sleep 0.4
 dump_ui
 grep -Fq 'ArchiveBuyer' android/build/native-ui.xml
+tap_text 'Фильтры клиентов'
+sleep 0.3
 tap_text 'Рабочие'
 sleep 0.3
 tap_text 'Главная'
