@@ -1,0 +1,9 @@
+*
+!package.json
+!server/
+!server/**
+!dist/
+!dist/index.html
+!dist/app.js
+!dist/ledger.js
+!dist/style.css

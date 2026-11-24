@@ -8,11 +8,12 @@
   <link rel="stylesheet" href="/admin/style.css">
   <script src="/admin/app.js" type="module"></script>
 </head>
-<body>
+<body class="admin-page">
   <main>
-    <header><strong>Расчёт</strong><button id="logout" type="button" hidden>Выйти</button></header>
+    <header class="app-bar"><strong>Расчёт</strong><button id="logout" type="button" hidden>Выйти</button></header>
     <h1>Подписки магазинов</h1>
-    <form id="lookup">
+    <p id="signin" hidden><a class="sign-in" href="/signin?next=admin">Войти в админку</a></p>
+    <form id="lookup" hidden>
       <label id="token-label">Токен оператора
         <input name="token" type="password" maxlength="8192" autocomplete="off" spellcheck="false" required>
       </label>

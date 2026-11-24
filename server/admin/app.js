@@ -11,6 +11,7 @@ const formatter = new Intl.DateTimeFormat('ru-RU', {
 const date = value => value ? formatter.format(new Date(value)) + ' МСК' : '—';
 
 let token = '';
+let browserSignIn = false;
 let selected = null;
 let pending = null;
 let busy = false;
@@ -54,12 +55,17 @@ function logout() {
 }
 
 async function api(path, method = 'GET', body) {
-  const headers = {Authorization: `Bearer ${token}`};
+  const headers = token ? {Authorization: `Bearer ${token}`} : {};
   if (body) headers['Content-Type'] = 'application/json';
   const response = await fetch(path, {method, headers, body: body && JSON.stringify(body), cache: 'no-store', redirect: 'error'});
   if (!response.ok) {
     if (response.status === 401 || response.status === 403) {
       logout();
+      if (browserSignIn) {
+        lookup.hidden = true;
+        find('signin').hidden = false;
+        throw Error('Нет доступа. Войдите под учётной записью оператора.');
+      }
       throw Error('Нет доступа. Проверьте токен оператора.');
     }
     if (response.status === 409 && (await response.json()).error === 'subscription changed') {
@@ -71,7 +77,7 @@ async function api(path, method = 'GET', body) {
       503: 'Служба входа недоступна.',
     }[response.status] || 'Запрос не выполнен.');
   }
-  return response.json();
+  return response.status === 204 ? null : response.json();
 }
 
 lookup.addEventListener('submit', async event => {
@@ -97,7 +103,18 @@ lookup.addEventListener('submit', async event => {
     setBusy(false);
   }
 });
-find('logout').onclick = () => {
+find('logout').onclick = async () => {
+  if (browserSignIn) {
+    setBusy(true);
+    try {
+      await api('/signout', 'POST');
+      location.replace('/admin/');
+    } catch (error) {
+      showStatus(error.message);
+      setBusy(false);
+    }
+    return;
+  }
   logout();
   showStatus('Вы вышли из админки.');
   tokenInput.focus();
@@ -129,3 +146,25 @@ find('apply').onclick = async () => {
     setBusy(false);
   }
 };
+
+async function initSignIn() {
+  try {
+    const session = await api('/session');
+    if (!session.enabled) {
+      lookup.hidden = false;
+      return;
+    }
+    browserSignIn = true;
+    find('logout').hidden = !session.signedIn;
+    find('signin').hidden = session.operator;
+    lookup.hidden = !session.operator;
+    find('token-label').hidden = true;
+    tokenInput.required = false;
+    if (session.signedIn && !session.operator) showStatus('Эта учётная запись не имеет доступа к подпискам.');
+    else if (new URL(location.href).searchParams.has('login')) showStatus('Вход не завершён. Попробуйте снова.');
+  } catch (error) {
+    showStatus(error.message);
+  }
+}
+
+initSignIn();

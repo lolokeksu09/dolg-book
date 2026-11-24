@@ -3,22 +3,40 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 // Requires an introspector; there is deliberately no fallback to caller-supplied identity.
-export function createApi({store, authenticate, staticDirectory=null, adminSubject=''}) {
+export function createApi({store, authenticate, staticDirectory=null, adminSubject='', browserAuth=null}) {
  if(!store || typeof authenticate!=='function')throw new Error('identity verifier required');
  return createServer(async(req,res)=>{
   const send=(status,body)=>{res.writeHead(status,{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'});res.end(JSON.stringify(body));};
   try {
    if(req.url==='/health' && req.method==='GET')return send(200,{status:'ok'});
    const staticAssets={'/':['index.html','text/html; charset=utf-8'],'/index.html':['index.html','text/html; charset=utf-8'],'/app.js':['app.js','text/javascript; charset=utf-8'],'/ledger.js':['ledger.js','text/javascript; charset=utf-8'],'/style.css':['style.css','text/css; charset=utf-8']};
-   const assetPath=new URL(req.url,'http://localhost').pathname;
+   const url = new URL(req.url, 'http://localhost');
+   const assetPath = url.pathname;
+   if (browserAuth && ['/signin','/signin/callback','/signout'].includes(assetPath)) {
+    if (await browserAuth.route(req, res, url) !== false) return;
+   }
+   if (req.method === 'GET' && assetPath === '/session') {
+    if (!browserAuth) return send(200, {enabled:false});
+    let identity;
+    try { identity = await authenticate(browserAuth.authorization(req)); }
+    catch { return send(503, {error:'identity unavailable'}); }
+    const subject = typeof identity === 'string' ? identity : identity?.subject;
+    return send(200, {enabled:true, signedIn:Boolean(subject), operator:Boolean(subject && subject === adminSubject)});
+   }
+   const bookAssets = {
+    '/book/': ['index.html', 'text/html; charset=utf-8'],
+    '/book/app.js': ['app.js', 'text/javascript; charset=utf-8'],
+   };
    const adminAssets = {
     '/admin/': ['index.html', 'text/html; charset=utf-8'],
     '/admin/app.js': ['app.js', 'text/javascript; charset=utf-8'],
     '/admin/style.css': ['style.css', 'text/css; charset=utf-8'],
    };
-   if(adminSubject&&Object.hasOwn(adminAssets,assetPath)&&(req.method==='GET'||req.method==='HEAD')){
-    const [file,type] = adminAssets[assetPath];
-    const data = await readFile(new URL('./admin/'+file, import.meta.url));
+   const page = adminSubject && Object.hasOwn(adminAssets, assetPath) ? 'admin'
+    : browserAuth && Object.hasOwn(bookAssets, assetPath) ? 'book' : null;
+   if (page && ['GET','HEAD'].includes(req.method)) {
+    const [file,type] = (page === 'admin' ? adminAssets : bookAssets)[assetPath];
+    const data = await readFile(new URL('./'+page+'/'+file, import.meta.url));
     res.writeHead(200, {
      'content-type':type, 'cache-control':'no-store', 'x-content-type-options':'nosniff',
      'content-security-policy':"default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
@@ -31,7 +49,7 @@ export function createApi({store, authenticate, staticDirectory=null, adminSubje
     try{const data=await readFile(join(staticDirectory,asset[0]));res.writeHead(200,{'content-type':asset[1],'cache-control':'no-cache','x-content-type-options':'nosniff'});return res.end(req.method==='HEAD'?undefined:data);}
     catch{return send(503,{error:'interface unavailable'});}
    }
-   let identity;try{identity=await authenticate(req.headers.authorization);}catch{return send(503,{error:'identity unavailable'});}
+   let identity;try{identity=await authenticate(req.headers.authorization ?? browserAuth?.authorization(req));}catch{return send(503,{error:'identity unavailable'});}
    const actor = typeof identity === 'string' ? identity : identity?.subject;
    if(!actor)return send(401,{error:'unauthorized'});
    const path=new URL(req.url,'http://localhost').pathname;
