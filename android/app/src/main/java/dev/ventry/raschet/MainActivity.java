@@ -68,6 +68,12 @@ public final class MainActivity extends Activity {
     private final DateTimeFormatter dayFormat=DateTimeFormatter.ofPattern("d MMM yyyy",new Locale("ru","RU"));
     private LedgerStore ledger;
     private RecoveryVault vault;
+    private ClientDirectory directory;
+    private BookPrivacy privacy;
+    private boolean unlocked,authInFlight;
+    private long stoppedAt=-1;
+    private String clientScope=ClientDirectory.ACTIVE;
+    private int clientVisibleLimit=60;
     private LinearLayout root, mainPanel, navigation;
     private TextView shopCaption;
     private FrameLayout page;
@@ -91,12 +97,19 @@ public final class MainActivity extends Activity {
         getWindow().getDecorView().setSystemUiVisibility(0);
         ledger=new LedgerStore(this);
         vault=new RecoveryVault(this);
+        directory=new ClientDirectory(this);
+        privacy=new BookPrivacy(this);
+        unlocked=!privacy.enabled();
+        applyPrivacyFlag();
         shopName=getPreferences(MODE_PRIVATE).getString("shop","Мой магазин");
         largeText=getPreferences(MODE_PRIVATE).getBoolean("large",false);
         if(state!=null){
             tab=state.getString("tab","Главная");selectedClient=state.getString("client");
             search=state.getString("search","");
             clientFilter=state.getString("client_filter",CollectionsInsights.ALL);
+            clientScope=state.getString("client_scope",ClientDirectory.ACTIVE);
+            clientVisibleLimit=state.getInt("client_visible_limit",60);
+            authInFlight=state.getBoolean("auth_in_flight",false);
             clientsAmountFirst=state.getBoolean("clients_amount_first",false);
             historyVisibleLimit=state.getInt("history_visible_limit",100);
             detailVisibleLimit=state.getInt("detail_visible_limit",80);
@@ -111,13 +124,18 @@ public final class MainActivity extends Activity {
         }
         else if(getIntent().getBooleanExtra(EXTRA_FIRST_START,false)&&ledger.clients().isEmpty())tab="Клиенты";
         tablet=getResources().getConfiguration().screenWidthDp>=720;
-        setContentView(createShell());
+        View shell=createShell();
+        if(!unlocked)shell.setVisibility(View.INVISIBLE);
+        setContentView(shell);
         render();
     }
     @Override protected void onSaveInstanceState(Bundle out) {
         out.putString("tab",tab);out.putString("client",selectedClient);
         out.putString("search",search);
         out.putString("client_filter",clientFilter);
+        out.putString("client_scope",clientScope);
+        out.putInt("client_visible_limit",clientVisibleLimit);
+        out.putBoolean("auth_in_flight",authInFlight);
         out.putBoolean("clients_amount_first",clientsAmountFirst);
         out.putInt("history_visible_limit",historyVisibleLimit);
         out.putInt("detail_visible_limit",detailVisibleLimit);
@@ -181,6 +199,8 @@ public final class MainActivity extends Activity {
         return root;
     }
     private void render() {
+        if(!unlocked){root.setVisibility(View.INVISIBLE);return;}
+        root.setVisibility(View.VISIBLE);
         navigation.removeAllViews();
         for(int i=0;i<TABS.length;i++){
             final String destination=TABS[i];
@@ -348,7 +368,7 @@ public final class MainActivity extends Activity {
         return columns;
     }
     private void openClientFilter(String filter) {
-        clientFilter=filter;search="";selectedClient=null;tab="Клиенты";render();
+        clientFilter=filter;clientScope=ClientDirectory.ACTIVE;clientVisibleLimit=60;search="";selectedClient=null;tab="Клиенты";render();
     }
     private View clientsView() {
         LinearLayout view=screen("Клиенты","Остатки и записи по каждому человеку");
@@ -356,6 +376,13 @@ public final class MainActivity extends Activity {
         EditText searchInput=field("Поиск по имени или телефону",search);
         searchInput.setSingleLine(true);
         view.addView(searchInput,margin(-1,dp(54),12));
+        LinearLayout scopes=row();
+        for(String scope:new String[]{ClientDirectory.ACTIVE,ClientDirectory.FAVORITES,ClientDirectory.ARCHIVE}){
+            addButton(scopes,scope,scope.equals(clientScope),()->{
+                clientScope=scope;clientFilter=CollectionsInsights.ALL;clientVisibleLimit=60;render();
+            },1);
+        }
+        view.addView(scopes,margin(-1,dp(54),10));
         LinearLayout filterGrid=stack(7);
         String[] options={CollectionsInsights.ALL,CollectionsInsights.OWING,
                 CollectionsInsights.LATE,CollectionsInsights.SOON};
@@ -370,7 +397,7 @@ public final class MainActivity extends Activity {
                 chip.setContentDescription("Фильтр клиентов: "+choice);
                 chip.setSelected(selected);
                 chip.setClickable(true);chip.setFocusable(true);
-                chip.setOnClickListener(v->{clientFilter=choice;render();});
+                chip.setOnClickListener(v->{clientFilter=choice;clientVisibleLimit=60;render();});
                 LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(0,dp(48),1);
                 if(j>offset)params.leftMargin=dp(8);
                 filterRow.addView(chip,params);
@@ -392,15 +419,17 @@ public final class MainActivity extends Activity {
         List<CollectionsInsights.CustomerStatus> cached=
                 CollectionsInsights.analyze(ledger.clients(),ledger.entries(),LocalDate.now());
         Runnable fill=()->fillClients(results,cached);
-        searchInput.addTextChangedListener(watcher(value->{search=value;fill.run();}));
+        searchInput.addTextChangedListener(watcher(value->{search=value;clientVisibleLimit=60;fill.run();}));
         fill.run();
         return scroll(view);
     }
     private void fillClients(LinearLayout rows,List<CollectionsInsights.CustomerStatus> cached) {
         rows.removeAllViews();
         List<CollectionsInsights.CustomerStatus> visible=CollectionsInsights.visible(
-                cached,clientFilter,clientsAmountFirst,search);
+                directory.select(cached,clientScope),clientFilter,clientsAmountFirst,search);
+        int shown=0;
         for(CollectionsInsights.CustomerStatus status:visible){
+            if(shown++>=clientVisibleLimit)break;
             LedgerStore.Client customer=status.client;
             long amount=status.balance;
             LinearLayout card=row();
@@ -429,8 +458,16 @@ public final class MainActivity extends Activity {
                     +(status.overdue>0?", просрочено "+money(status.overdue):""));
             rows.addView(card,margin(-1,-2,5));
         }
+        if(visible.size()>clientVisibleLimit)addButton(rows,"Показать ещё клиентов",false,()->{
+            clientVisibleLimit+=60;fillClients(rows,cached);
+        },1);
         if(visible.isEmpty()){
-            if(cached.isEmpty())rows.addView(emptyState(R.drawable.ic_nav_people,
+            if(!ClientDirectory.ACTIVE.equals(clientScope)&&search.trim().isEmpty())
+                rows.addView(emptyState(R.drawable.ic_nav_people,
+                    ClientDirectory.ARCHIVE.equals(clientScope)?"Архив пуст":"Нет избранных клиентов",
+                    "Управляйте списками из карточки клиента.","Рабочие клиенты",
+                    ()->{clientScope=ClientDirectory.ACTIVE;clientFilter=CollectionsInsights.ALL;render();}));
+            else if(cached.isEmpty())rows.addView(emptyState(R.drawable.ic_nav_people,
                     "Пока нет клиентов","Добавьте первого клиента, затем записывайте долги и оплаты.",
                     "Добавить первого клиента",()->showClientForm(null)));
             else if(!search.trim().isEmpty())rows.addView(emptyState(R.drawable.ic_nav_people,
@@ -475,14 +512,30 @@ public final class MainActivity extends Activity {
             total.addView(label("К возврату до "+status.nextDue+": "+money(status.upcoming),
                     13,MUTED,false));
         view.addView(total,margin(-1,-2,12));
+        boolean archived=directory.archived(id,amount);
+        if(archived)view.addView(label("Клиент в архиве. История сохранена.",14,MUTED,true));
+        LinearLayout directoryActions=stack(7);
+        addButton(directoryActions,directory.favorite(id)?"Убрать из избранного":"В избранное",false,()->{
+            try{directory.favorite(id,!directory.favorite(id));render();}catch(Exception e){message(e.getMessage());}
+        },1);
+        if(archived||amount==0)addButton(directoryActions,archived?"Вернуть из архива":"В архив",false,()->{
+            try{
+                directory.archive(id,LedgerStore.balance(ledger.entries(),id),!archived);
+                selectedClient=null;clientScope=archived?ClientDirectory.ACTIVE:ClientDirectory.ARCHIVE;
+                clientFilter=CollectionsInsights.ALL;search="";render();
+            }catch(Exception e){message(e.getMessage());}
+        },1);
+        if(archived){
+            view.addView(directoryActions,margin(-1,-2,10));
+        }
         LinearLayout actions=row();
         addButton(actions,"+ Долг",true,()->showEntryForm(id,"debt"),1);
         addButton(actions,"Оплата",false,()->showEntryForm(id,"payment"),1);
-        view.addView(actions,margin(-1,dp(54),9));
+        if(!archived)view.addView(actions,margin(-1,dp(54),9));
         LinearLayout tools=row();
         addButton(tools,"Изменить",false,()->showClientForm(current),1);
         addButton(tools,"Отменить запись",false,()->showReversal(id),1);
-        view.addView(tools,margin(-1,dp(48),10));
+        if(!archived)view.addView(tools,margin(-1,dp(48),10));
         LinearLayout extraActions=stack(7);
         if(amount>0)
             addButton(extraActions,"Погасить весь остаток",false,
@@ -491,10 +544,11 @@ public final class MainActivity extends Activity {
                 ()->shareClientSummary(current,amount,overdue),1);
         addButton(extraActions,"Сохранить выписку PDF",false,
                 ()->exportCustomerPdf(current.id),1);
-        if(ledger.lastActive(id)!=null)
+        if(!archived&&ledger.lastActive(id)!=null)
             addButton(extraActions,"Исправить последнюю запись",false,
                     ()->showCorrection(id),1);
         view.addView(extraActions,margin(-1,-2,6));
+        if(!archived)view.addView(directoryActions,margin(-1,-2,10));
         view.addView(label("Сводка содержит данные о долге. Перед отправкой проверьте получателя.",
                 12,MUTED,false),margin(-1,-2,12));
         section(view,"История клиента","Долги, оплаты и отмены");
@@ -678,6 +732,20 @@ public final class MainActivity extends Activity {
         view.addView(textSizeSetting(),margin(-1,-2,8));
         section(view,"Напоминания о долгах","Проверка раз в сутки. Android может задерживать уведомления.");
         view.addView(reminderSetting(),margin(-1,-2,14));
+        section(view,"Конфиденциальность","Защита от посторонних на общем устройстве");
+        LinearLayout privacyCard=card();
+        privacyCard.addView(label(privacy.enabled()?"Вход защищён кодом устройства":"Защита входа выключена",16,TEXT,true));
+        privacyCard.addView(label("Проверка при открытии и после 1 минуты вне приложения. Используется системный код, пароль или графический ключ.",13,MUTED,false));
+        addButton(privacyCard,privacy.enabled()?"Отключить защиту входа":"Защитить вход",false,
+                ()->authenticate(privacy.enabled()?BookPrivacy.DISABLE:BookPrivacy.ENABLE),1);
+        if(privacy.enabled())addButton(privacyCard,"Заблокировать книгу",false,()->{
+            unlocked=false;render();authenticate(BookPrivacy.OPEN);
+        },1);
+        else addButton(privacyCard,privacy.hideScreens()?"Разрешить снимки экрана":"Скрывать снимки и недавние",false,()->{
+            privacy.setHideScreens(!privacy.hideScreens());applyPrivacyFlag();render();
+        },1);
+        privacyCard.addView(label("Это блокировка интерфейса, не отдельное шифрование базы. При включённой защите снимки экрана блокируются.",12,MUTED,false));
+        view.addView(privacyCard,margin(-1,-2,12));
         section(view,"Сохранность данных","Рекомендуется копировать книгу регулярно");
         long lastExport=getPreferences(MODE_PRIVATE).getLong("last_json_export",0L);
         String lastExportText=lastExport==0L
@@ -824,6 +892,7 @@ public final class MainActivity extends Activity {
         showDialog("Восстановить точку?",form,()->{
             vault.create(ledger); // Fail closed: do not replace if recovery point cannot be created.
             ledger.importJson(snapshot);
+            directory.clearAfterRestore();
             getPreferences(MODE_PRIVATE).edit().remove("last_json_export").apply();
             selectedClient=null;tab="Клиенты";
             return true;
@@ -890,22 +959,78 @@ public final class MainActivity extends Activity {
         return row;
     }
 
+    private void applyPrivacyFlag(){
+        if(privacy.hideScreens())getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
+        else getWindow().clearFlags(WindowManager.LayoutParams.FLAG_SECURE);
+    }
+    private void authenticate(int request){
+        if(authInFlight)return;
+        Intent credential=privacy.credential();
+        if(credential==null){
+            message("Настройте код блокировки устройства в Android.");
+            if(request==BookPrivacy.OPEN)finishAndRemoveTask();
+            return;
+        }
+        try{
+            authInFlight=true;
+            startActivityForResult(credential,request);
+        }catch(ActivityNotFoundException e){
+            authInFlight=false;message("Системное подтверждение недоступно.");
+            if(request==BookPrivacy.OPEN)finishAndRemoveTask();
+        }
+    }
+    @Override protected void onStart(){
+        super.onStart();
+        if(privacy!=null&&BookPrivacy.shouldRelock(privacy.enabled(),stoppedAt,android.os.SystemClock.elapsedRealtime())){
+            unlocked=false;
+            if(chooser!=null)chooser.dismiss();
+            if(root!=null)root.setVisibility(View.INVISIBLE);
+        }
+        stoppedAt=-1;
+    }
+    @Override protected void onResume(){
+        super.onResume();
+        if(privacy!=null&&!unlocked&&!authInFlight&&!isFinishing()){
+            if(chooser!=null)chooser.dismiss();
+            authenticate(BookPrivacy.OPEN);
+        }
+    }
+    @Override protected void onStop(){
+        if(privacy!=null&&!authInFlight)stoppedAt=android.os.SystemClock.elapsedRealtime();
+        super.onStop();
+    }
     private void chooseClient(String type) {
         List<LedgerStore.Client> customers=ledger.clients();
         if(customers.isEmpty()){showClientForm(null);return;}
         LinearLayout content=stack(8);
-        List<CollectionsInsights.CustomerStatus> statuses=
-                CollectionsInsights.analyze(customers,ledger.entries(),LocalDate.now());
-        for(CollectionsInsights.CustomerStatus status:statuses){
-            LedgerStore.Client c=status.client;
-            if(type.equals("payment")&&status.balance<=0)continue;
-            TextView b=label(c.name+"     "+money(status.balance),16,TEXT,false);
-            b.setPadding(dp(14),dp(16),dp(14),dp(16));
-            b.setBackground(shape(ELEVATED,14,BORDER));
-            content.addView(b);
-            b.setOnClickListener(v->{if(chooser!=null)chooser.dismiss();showEntryForm(c.id,type);});
-        }
-        if(content.getChildCount()==0)content.addView(label("Нет клиентов с непогашенным долгом.",14,MUTED,false));
+        List<CollectionsInsights.CustomerStatus> statuses=directory.select(
+                CollectionsInsights.analyze(customers,ledger.entries(),LocalDate.now()),ClientDirectory.ACTIVE);
+        EditText lookup=field("Имя или номер телефона",null);
+        lookup.setSingleLine(true);
+        content.addView(lookup);
+        LinearLayout results=stack(6);content.addView(results);
+        int[] limit={60};
+        Runnable fill=new Runnable(){
+            @Override public void run(){
+                results.removeAllViews();
+                List<CollectionsInsights.CustomerStatus> found=CollectionsInsights.visible(statuses,
+                        type.equals("payment")?CollectionsInsights.OWING:CollectionsInsights.ALL,false,lookup.getText().toString());
+                int count=0;
+                for(CollectionsInsights.CustomerStatus status:found){
+                    if(count++>=limit[0])break;
+                    LedgerStore.Client customer=status.client;
+                    TextView button=label(customer.name+"     "+money(status.balance),16,TEXT,false);
+                    button.setPadding(dp(14),dp(16),dp(14),dp(16));
+                    button.setBackground(ripple(shape(ELEVATED,14,BORDER)));
+                    results.addView(button);
+                    button.setOnClickListener(v->{if(chooser!=null)chooser.dismiss();showEntryForm(customer.id,type);});
+                }
+                if(found.isEmpty())results.addView(label("Нет подходящих клиентов.",14,MUTED,false));
+                if(found.size()>limit[0])addButton(results,"Показать ещё клиентов",false,()->{limit[0]+=60;run();},1);
+            }
+        };
+        lookup.addTextChangedListener(watcher(value->{limit[0]=60;fill.run();}));
+        fill.run();
         showDialog("Выберите клиента",content,null);
     }
     private Dialog chooser;
@@ -968,6 +1093,7 @@ public final class MainActivity extends Activity {
         for(LedgerStore.Client person:ledger.clients())if(person.id.equals(clientId))c=person;
         if(c==null){message("Клиент не найден.");return;}
         final long available=LedgerStore.balance(ledger.entries(),clientId);
+        if(directory.archived(clientId,available)){message("Сначала верните клиента из архива.");return;}
         if(type.equals("payment")&&available<=0){message("Нет долга для оплаты.");return;}
         LinearLayout content=stack(12);
         content.addView(label(c.name+" · остаток "+money(available),13,MUTED,false));
@@ -1106,6 +1232,7 @@ public final class MainActivity extends Activity {
         dialog.setContentView(box);
         Window window=dialog.getWindow();
         if(window!=null){
+            if(privacy.hideScreens())window.addFlags(WindowManager.LayoutParams.FLAG_SECURE);
             window.setBackgroundDrawableResource(android.R.color.transparent);
             window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
             window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
@@ -1158,6 +1285,16 @@ public final class MainActivity extends Activity {
     }
     @Override protected void onActivityResult(int request,int result,Intent data) {
         super.onActivityResult(request,result,data);
+        if(request==BookPrivacy.OPEN||request==BookPrivacy.ENABLE||request==BookPrivacy.DISABLE){
+            authInFlight=false;
+            if(result!=RESULT_OK){
+                if(request==BookPrivacy.OPEN)finishAndRemoveTask();
+                return;
+            }
+            if(request==BookPrivacy.ENABLE)privacy.setEnabled(true);
+            if(request==BookPrivacy.DISABLE)privacy.setEnabled(false);
+            unlocked=true;stoppedAt=-1;applyPrivacyFlag();render();return;
+        }
         if(request==REQUEST_EXPORT){
             boolean canExport=pendingExport;
             boolean csv=pendingExportCsv;
@@ -1216,6 +1353,7 @@ public final class MainActivity extends Activity {
                     // If creating this point fails, abort before touching SQLite.
                     vault.create(ledger);
                     int[] count=ledger.importJson(backup);
+                    directory.clearAfterRestore();
                     // A backup of the previous book is not a backup of this restored book.
                     getPreferences(MODE_PRIVATE).edit().remove("last_json_export").apply();
                     selectedClient=null;tab="Клиенты";
@@ -1226,6 +1364,7 @@ public final class MainActivity extends Activity {
         }
     }
     @Override public void onBackPressed() {
+        if(!unlocked){finishAndRemoveTask();return;}
         if(selectedClient!=null){selectedClient=null;tab="Клиенты";render();}
         else if(!tab.equals("Главная")){tab="Главная";render();}
         else super.onBackPressed();
