@@ -536,6 +536,37 @@ dump_ui
 grep -Fq 'Клиент: DirectoryBuyer' android/build/native-ui.xml
 tap_text 'Книга'
 
+# Client-specific debt limit: denial first, explicit confirmation posts once.
+tap_text 'Клиенты'
+sleep 0.4
+tap_text 'DirectoryBuyer'
+sleep 0.4
+tap_text 'Ещё действия'
+sleep 0.4
+tap_text 'Лимит задолженности'
+sleep 0.4
+fill_form_input 0 150
+tap_text 'Сохранить'
+sleep 0.5
+dump_ui
+grep -Fq 'Доступно 50,00' android/build/native-ui.xml
+tap_text '+ Долг'
+sleep 0.4
+tap_text 'Повторить сумму: 100,00 ₽'
+sleep 0.4
+dump_ui
+grep -Fq 'После записи превышение 50,00' android/build/native-ui.xml
+tap_text 'Сохранить'
+sleep 0.4
+dump_ui
+grep -Fq 'Превышен лимит задолженности' android/build/native-ui.xml
+tap_text 'Подтверждаю превышение лимита'
+tap_text 'Сохранить'
+sleep 0.5
+dump_ui
+grep -Fq 'Превышение 50,00' android/build/native-ui.xml
+tap_text 'Книга'
+
 adb logcat -d -s AndroidRuntime:E > android/build/android-runtime-errors.txt
 if grep -F 'FATAL EXCEPTION' android/build/android-runtime-errors.txt; then
   echo 'Android crash observed during onboarding smoke test'

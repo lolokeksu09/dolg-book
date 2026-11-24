@@ -23,6 +23,7 @@ import android.view.Window;
 import android.view.WindowInsets;
 import android.view.WindowManager;
 import android.widget.Button;
+import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
@@ -572,6 +573,8 @@ public final class MainActivity extends Activity {
                     status.upcoming>0?"Ближайший срок: "+status.nextDue+" · за 7 дней: "+money(status.upcoming):"";
             if(!statusText.isEmpty())
                 labels.addView(label(statusText,12,status.overdue>0?RED:ALERT,false));
+            long limit=directory.debtLimit(customer.id);
+            if(limit>0&&amount>=limit)labels.addView(label(amount>limit?"Лимит превышен":"Лимит исчерпан",12,ALERT,false));
             LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-2,1);
             lp.leftMargin=dp(8);lp.rightMargin=dp(8);card.addView(labels,lp);
             LinearLayout right=stack(1);right.setGravity(Gravity.END);
@@ -584,7 +587,8 @@ public final class MainActivity extends Activity {
             card.setClickable(true);card.setFocusable(true);
             card.setOnClickListener(v->{selectedClient=customer.id;render();});
             card.setContentDescription(customer.name+", остаток "+money(amount)
-                    +(status.overdue>0?", просрочено "+money(status.overdue):""));
+                    +(status.overdue>0?", просрочено "+money(status.overdue):"")
+                    +(limit>0&&amount>=limit?(amount>limit?", лимит превышен":", лимит исчерпан"):""));
             rows.addView(card);
             addListDivider(rows);
         }
@@ -641,6 +645,8 @@ public final class MainActivity extends Activity {
         if(status!=null&&status.upcoming>0)
             total.addView(label("Ближайший срок: "+status.nextDue+" · за 7 дней: "+money(status.upcoming),
                     13,MUTED,false));
+        long limit=directory.debtLimit(id);
+        if(limit>0)total.addView(label(limitSummary(limit,amount),13,amount>=limit?ALERT:MUTED,false));
         view.addView(total,margin(-1,-2,12));
         boolean archived=directory.archived(id,amount);
         if(archived)view.addView(label("Клиент в архиве. История сохранена.",14,MUTED,true));
@@ -713,6 +719,7 @@ public final class MainActivity extends Activity {
             if(amount>0)clientMenuAction(menu,"Погасить весь остаток",()->showEntryForm(id,"payment",amount));
             clientMenuAction(menu,"Долг по товарам",()->showPurchaseForm(id));
             clientMenuAction(menu,"Изменить клиента",()->showClientForm(client));
+            clientMenuAction(menu,"Лимит задолженности",()->showDebtLimit(client));
             if(ledger.lastActive(id)!=null){
                 clientMenuAction(menu,"Исправить последнюю запись",()->showCorrection(id));
                 clientMenuAction(menu,"Отменить запись",()->showReversal(id));
@@ -725,6 +732,58 @@ public final class MainActivity extends Activity {
         });
         if(!archived&&amount==0)clientMenuAction(menu,"В архив",()->changeClientArchive(id,false));
         showDialog("Действия с клиентом",menu,null);
+    }
+    private String limitSummary(long limit,long balance){
+        return "Лимит: "+money(limit)+" · "+(balance>limit?"Превышение "+money(balance-limit):"Доступно "+money(DebtLimits.remaining(limit,balance)));
+    }
+    private void showDebtLimit(LedgerStore.Client client){
+        long limit=directory.debtLimit(client.id);
+        LinearLayout form=stack(6);
+        form.addView(label(client.name+" · остаток "+money(LedgerStore.balance(ledger.entries(),client.id)),14,TEXT,true));
+        EditText amount=field("Без лимита",limit>0?amountInput(limit):null);
+        amount.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        form.addView(formGroup("Лимит задолженности, ₽",amount));
+        addButton(form,"Без лимита",false,()->amount.setText(""),1);
+        form.addView(label("Пустое поле отключает лимит. Превышение при новом долге требует подтверждения. Настройка действует на этом устройстве и не переносится с JSON-копией.",13,MUTED,false));
+        showDialog("Лимит задолженности",form,()->{
+            String raw=amount.getText().toString().trim();
+            directory.setDebtLimit(client.id,raw.isEmpty()?0L:LedgerStore.parseAmount(raw));
+            return true;
+        });
+    }
+    /** Approval binds to the exact customer, balance, configured limit and new amount. */
+    private final class LimitNotice {
+        final LinearLayout block=stack(2);
+        final TextView text=label("",13,MUTED,false);
+        final CheckBox consent=new CheckBox(MainActivity.this);
+        String approvedFor="";
+        LimitNotice(LinearLayout parent){
+            text.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
+            consent.setText("Подтверждаю превышение лимита");consent.setTextColor(TEXT);
+            consent.setMinHeight(dp(48));
+            block.addView(text);block.addView(consent);block.setVisibility(View.GONE);parent.addView(block);
+        }
+        void update(String clientId,long balance,long addition){
+            long limit=clientId==null?0:directory.debtLimit(clientId);
+            String key=clientId+":"+balance+":"+limit+":"+addition;
+            if(!key.equals(approvedFor)){consent.setChecked(false);approvedFor=key;}
+            block.setVisibility(limit>0?View.VISIBLE:View.GONE);
+            if(limit==0)return;
+            boolean over=DebtLimits.requiresConfirmation(limit,balance,addition);
+            text.setText(limitSummary(limit,balance)+(over?" · После записи превышение "+money(balance+addition-limit):""));
+            text.setTextColor(over?RED:balance>=limit?ALERT:MUTED);
+            consent.setVisibility(over?View.VISIBLE:View.GONE);
+        }
+        void verify(String clientId,long addition){
+            if(clientId==null)return;
+            long balance=LedgerStore.balance(ledger.entries(),clientId);
+            update(clientId,balance,addition);
+            DebtLimits.requireConsent(directory.debtLimit(clientId),balance,addition,consent.isChecked());
+        }
+    }
+    private long previewAmount(EditText amount){
+        try{return LedgerStore.parseAmount(amount.getText().toString());}
+        catch(IllegalArgumentException e){return 0L;}
     }
     private static LocalDate readDate(Bundle b,String key){
         String value=b.getString(key);return value==null?null:LocalDate.parse(value);
@@ -1226,6 +1285,7 @@ public final class MainActivity extends Activity {
         form.addView(formGroup("Телефон (необязательно)",phone));
         LinearLayout matches=stack(2);form.addView(matches);
         form.addView(formGroup(fromClients?"Сумма долга, ₽ (необязательно)":"Сумма долга, ₽",amount));
+        LimitNotice notice=new LimitNotice(form);
         if(fromClients)form.addView(label("Без суммы сохраняется только клиент.",12,MUTED,false));
         LocalDate[] day={initialDay};
         TextView date=debtDateField(day);
@@ -1259,15 +1319,18 @@ public final class MainActivity extends Activity {
         for(CollectionsInsights.CustomerStatus status:statuses)balances.put(status.client.id,status.balance);
         String[] selected={null};
         boolean[] updating={false},separate={false};
+        Runnable refreshLimit=()->notice.update(selected[0],selected[0]==null?0L:balances.getOrDefault(selected[0],0L),previewAmount(amount));
+        amount.addTextChangedListener(watcher(v->refreshLimit.run()));
         java.util.function.Consumer<LedgerStore.Client> choose=customer->{
             updating[0]=true;selected[0]=customer.id;
             name.setText(customer.name);phone.setText(customer.phone);updating[0]=false;
             matches.removeAllViews();
             matches.addView(label("Выбран существующий клиент · "+money(balances.getOrDefault(customer.id,0L)),12,ACCENT,true));
             addRecentAmount(matches,amount,lastAmounts.getOrDefault(customer.id,0L));
+            refreshLimit.run();
         };
         Runnable refresh=()->{
-            matches.removeAllViews();
+            refreshLimit.run();matches.removeAllViews();
             if(selected[0]!=null){
                 matches.addView(label("Выбран существующий клиент",12,ACCENT,true));
                 addRecentAmount(matches,amount,lastAmounts.getOrDefault(selected[0],0L));return;
@@ -1332,7 +1395,9 @@ public final class MainActivity extends Activity {
             int rank=1;
             for(BookDays.Day existing:BookDays.group(ledger.entries(),ZoneId.systemDefault()))
                 if(existing.date.isAfter(day[0]))rank++;
-            ledger.recordDatedDebt(selected[0],n,ph,LedgerStore.parseAmount(amount.getText().toString()),day[0],due.getText().toString(),note.getText().toString().trim());
+            long cents=LedgerStore.parseAmount(amount.getText().toString());
+            notice.verify(selected[0],cents);
+            ledger.recordDatedDebt(selected[0],n,ph,cents,day[0],due.getText().toString(),note.getText().toString().trim());
             bookPayments=false;clearBookFilters();
             expandedBookDays.add(day[0].toString());
             bookDayLimit=Math.max(bookDayLimit,rank);
@@ -1499,7 +1564,10 @@ public final class MainActivity extends Activity {
         TextView details=label("Заполните товары и цены.",13,MUTED,false);
         summary.addView(total);summary.addView(details);
         // Keep the current total visible at the top of the scrollable form.
-        form.addView(summary);addListDivider(form);form.addView(rows);
+        form.addView(summary);
+        LimitNotice notice=new LimitNotice(form);
+        final long available=LedgerStore.balance(ledger.entries(),clientId);
+        addListDivider(form);form.addView(rows);
         Runnable update=()->{
             List<Purchase.Item> valid=new ArrayList<>();
             boolean complete=!items.isEmpty();
@@ -1513,7 +1581,8 @@ public final class MainActivity extends Activity {
                 Purchase purchase=new Purchase(valid,Purchase.discount(discount.getText().toString()));
                 total.setText("Итого к записи: "+money(purchase.total));
                 details.setText("Товары "+money(purchase.subtotal)+" · скидка "+money(purchase.discount));
-            }catch(Exception ex){total.setText("Итого к записи: —");details.setText(ex.getMessage());}
+                notice.update(clientId,available,purchase.total);
+            }catch(Exception ex){total.setText("Итого к записи: —");details.setText(ex.getMessage());notice.update(clientId,available,0L);}
         };
         Runnable add=()->{
             if(items.size()>=Purchase.MAX_ITEMS){message("Максимум 8 позиций в одной покупке.");return;}
@@ -1553,6 +1622,7 @@ public final class MainActivity extends Activity {
             Purchase purchase=new Purchase(valid,Purchase.discount(discount.getText().toString()));
             if(directory.archived(clientId,LedgerStore.balance(ledger.entries(),clientId)))
                 throw new IllegalArgumentException("Сначала верните клиента из архива.");
+            notice.verify(clientId,purchase.total);
             ledger.addPurchase(clientId,purchase,due.getText().toString(),note.getText().toString().trim());
             selectedClient=clientId;tab="Клиенты";return true;
         });
@@ -1596,7 +1666,12 @@ public final class MainActivity extends Activity {
             content.addView(label("Незавершённый черновик восстановлен.",12,ACCENT,false));
         EditText amount=field("0,00",preset);amount.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);
         content.addView(formGroup("Сумма, ₽",amount));
-        if(type.equals("debt"))addRecentAmount(content,amount,RecentDebts.lastAmounts(ledger.entries()).getOrDefault(clientId,0L));
+        final LimitNotice notice=type.equals("debt")?new LimitNotice(content):null;
+        if(notice!=null){
+            addRecentAmount(content,amount,RecentDebts.lastAmounts(ledger.entries()).getOrDefault(clientId,0L));
+            Runnable check=()->notice.update(clientId,available,previewAmount(amount));
+            amount.addTextChangedListener(watcher(v->check.run()));check.run();
+        }
         if(type.equals("payment")){
             LinearLayout amounts=row();
             addButton(amounts,"Половина",false,()->amount.setText(amountInput(Math.max(1L,available/2))),1);
@@ -1655,6 +1730,7 @@ public final class MainActivity extends Activity {
                 int rank=1;
                 for(BookDays.Day existing:BookDays.group(ledger.entries(),ZoneId.systemDefault()))
                     if(existing.date.isAfter(entryDay[0]))rank++;
+                notice.verify(clientId,cents);
                 ledger.recordDatedDebt(clientId,"","",cents,entryDay[0],due.getText().toString(),note.getText().toString().trim());
                 bookPayments=false;clearBookFilters();bookDayLimit=Math.max(bookDayLimit,rank);
                 expandedBookDays.add(entryDay[0].toString());

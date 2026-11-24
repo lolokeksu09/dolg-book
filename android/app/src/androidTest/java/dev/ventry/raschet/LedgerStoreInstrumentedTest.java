@@ -252,4 +252,33 @@ public class LedgerStoreInstrumentedTest {
         assertEquals(25000L,LedgerStore.balance(book.entries(),a));
         String corrected=book.exportJson();book.importJson(corrected);assertEquals(corrected,book.exportJson());
     }
+
+    @Test public void debtLimitSettingsPersistAndGuardOnlyNewDebt(){
+        String id=addCustomer();
+        String storage="raschet-qa-limits-"+java.util.UUID.randomUUID();
+        ClientDirectory directory=new ClientDirectory(testContext,storage);
+        try{
+            assertEquals(0L,directory.debtLimit(id));
+            directory.setDebtLimit(id,15000L);
+            assertEquals(15000L,new ClientDirectory(testContext,storage).debtLimit(id));
+            book.addEntry(id,"debt",10000L,"","");
+            long balance=LedgerStore.balance(book.entries(),id);
+            assertEquals(5000L,DebtLimits.remaining(directory.debtLimit(id),balance));
+            DebtLimits.requireConsent(15000L,balance,5000L,false);
+            String before=book.exportJson();
+            try{DebtLimits.requireConsent(15000L,balance,5001L,false);fail("Missing override accepted");}
+            catch(IllegalArgumentException expected){}
+            assertEquals(before,book.exportJson());
+            DebtLimits.requireConsent(15000L,balance,10000L,true);
+            book.addEntry(id,"debt",10000L,"","");
+            assertTrue(DebtLimits.requiresConfirmation(15000L,20000L,1L));
+            assertFalse(DebtLimits.requiresConfirmation(15000L,20000L,0L));
+            book.addEntry(id,"payment",10000L,"","");
+            assertEquals(5000L,DebtLimits.remaining(15000L,LedgerStore.balance(book.entries(),id)));
+            directory.setDebtLimit(id,0L);
+            assertFalse(DebtLimits.requiresConfirmation(directory.debtLimit(id),10000L,100000L));
+            directory.setDebtLimit(id,15000L);directory.clearAfterRestore();
+            assertEquals(0L,directory.debtLimit(id));
+        }finally{directory.clearAfterRestore();}
+    }
 }

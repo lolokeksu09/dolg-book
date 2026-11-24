@@ -9,8 +9,8 @@ android {
         applicationId = "dev.ventry.raschet"
         minSdk = 26
         targetSdk = 35
-        versionCode = 24
-        versionName = "0.20.0-beta.1"
+        versionCode = 25
+        versionName = "0.21.0-beta.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildTypes {

@@ -33,6 +33,14 @@ final class ClientDirectory {
         if(value&&balance!=0)throw new IllegalArgumentException("Сначала погасите долг.");
         set("archived",id,value);
     }
+    long debtLimit(String id){return prefs.getLong("debt_limit:"+id,0L);}
+    void setDebtLimit(String id,long cents){
+        if(id==null||id.isEmpty()||cents<0||cents>LedgerStore.MAX_AMOUNT)
+            throw new IllegalArgumentException("Неверный лимит задолженности.");
+        SharedPreferences.Editor editor=prefs.edit();
+        if(cents==0)editor.remove("debt_limit:"+id);else editor.putLong("debt_limit:"+id,cents);
+        if(!editor.commit())throw new IllegalStateException("Не удалось сохранить лимит.");
+    }
     void clearAfterRestore(){prefs.edit().clear().apply();}
     List<CollectionsInsights.CustomerStatus> select(List<CollectionsInsights.CustomerStatus> source,String scope){
         Set<String> archived=ids("archived"),favorites=ids("favorites");

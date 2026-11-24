@@ -10,7 +10,7 @@ test('Android UI is native and does not contain web UI runtime',()=>{
   const gradle=read('android/app/build.gradle.kts');
   const activity=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
   const manifest=read('android/app/src/main/AndroidManifest.xml');
-  assert.ok(gradle.includes('versionName = "0.20.0-beta.1"'));
+  assert.ok(gradle.includes('versionName = "0.21.0-beta.1"'));
   assert.ok(gradle.includes('applicationIdSuffix = ".nativev031"'));
   assert.ok(!gradle.includes('webkit')&&!gradle.includes('syncOfflineBook'));
   assert.ok(!gradle.includes('index.html')&&!gradle.includes('app.js'));
@@ -230,4 +230,14 @@ test('operation inspector uses exact selected IDs and history search',()=>{
   assert.ok(ui.includes('showOperation(e.id)'));
   assert.ok(ui.includes('ledger.correctSelected(clientId,original.id'));
   assert.ok(ui.includes('ledger.reverseSelected(clientId,last.id'));
+});
+
+
+test('all new debt forms check the local client credit limit before storing debt',()=>{
+  const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
+  assert.ok(ui.includes('notice.verify(selected[0],cents)'));
+  assert.ok(ui.includes('notice.verify(clientId,cents)'));
+  assert.ok(ui.includes('notice.verify(clientId,purchase.total)'));
+  assert.ok(ui.includes('DebtLimits.requireConsent('));
+  assert.ok(ui.includes('consent.setChecked(false)'));
 });
