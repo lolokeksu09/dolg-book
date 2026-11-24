@@ -8,6 +8,8 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewModelScope
 import dev.ventry.raschet.CollectionsInsights
+import dev.ventry.raschet.ClientWriteService
+import dev.ventry.raschet.data.ClientCommand
 import dev.ventry.raschet.LedgerStore
 import dev.ventry.raschet.data.LedgerSnapshot
 import dev.ventry.raschet.data.SqliteLedgerRepository
@@ -40,8 +42,31 @@ class BookViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
     val state = reader.state
+    private val writer = SingleWrite<ClientCommand, Boolean>(viewModelScope) { command ->
+        withContext(Dispatchers.IO) {
+            readMutex.withLock { ClientWriteService.execute(application, command) }
+        }
+    }
+    val writeState = writer.state
 
-    fun refresh() = reader.refresh()
+    fun submitClient(command: ClientCommand): Boolean {
+        if (!writer.submit(command)) return false
+        reader.clear()
+        return true
+    }
+
+    fun acknowledgeWrite(result: WriteState<Boolean>) = writer.acknowledge(result)
+    fun hasPendingWrite(): Boolean = writeState.value != WriteState.Idle
+
+    fun observeWrites(owner: ComponentActivity, listener: Consumer<WriteState<Boolean>>) {
+        owner.lifecycleScope.launch {
+            owner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                writeState.collect { listener.accept(it) }
+            }
+        }
+    }
+
+    fun refresh() { if (!hasPendingWrite()) reader.refresh() }
     fun clear() = reader.clear()
 
     /** Java Views collect only while started; Compose can later collect the same StateFlow. */
