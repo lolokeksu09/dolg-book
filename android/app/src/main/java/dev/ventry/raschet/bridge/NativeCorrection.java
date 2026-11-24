@@ -13,6 +13,11 @@ public final class NativeCorrection {
     public static final long RANGE = -3L;
     public static final long INTERNAL = -4L;
 
+    /** Explicit loading for the opt-in Android preview; never called by ordinary builds. */
+    public static void loadAndroidLibrary() {
+        System.loadLibrary("raschet_jni");
+    }
+
     /** Returns nonnegative kopecks or one of the explicit negative error codes. */
     public static native long correctedBalance(int kind, long available, long oldAmount, long replacement);
 }
