@@ -10,7 +10,7 @@ test('Android UI is native and does not contain web UI runtime',()=>{
   const gradle=read('android/app/build.gradle.kts');
   const activity=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
   const manifest=read('android/app/src/main/AndroidManifest.xml');
-  assert.ok(gradle.includes('versionName = "0.24.1-beta.1"'));
+  assert.ok(gradle.includes('versionName = "0.25.0-beta.1"'));
   assert.ok(gradle.includes('applicationIdSuffix = ".nativev031"'));
   assert.ok(!gradle.includes('webkit')&&!gradle.includes('syncOfflineBook'));
   assert.ok(!gradle.includes('index.html')&&!gradle.includes('app.js'));
@@ -281,4 +281,16 @@ test('client drafts keep operation identity and original date across reopening',
  assert.ok(ui.includes('ledger.addDraftPayment(clientId,cents'));
  assert.ok(ui.includes('new LedgerDrafts(this).clearAll()'));
  assert.ok(draft.includes('json.put("day",day.toString())'));
+});
+
+
+test('client statement allocates before filtering and reuses the existing operation inspector',()=>{
+ const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
+ const model=read('android/app/src/main/java/dev/ventry/raschet/ClientStatement.java');
+ assert.ok(ui.includes('ClientStatement.build(all,id,ZoneId.systemDefault())'));
+ assert.ok(ui.includes('statement.remaining.get(e.id)'));
+ assert.ok(ui.includes('this::showDetailFilters'));
+ assert.ok(ui.includes('drafts.get(id,type)'));
+ assert.ok(model.includes('BookDays.group(own,zone)'));
+ assert.ok(model.includes('remaining.getOrDefault(e.id,0L)<=0'));
 });

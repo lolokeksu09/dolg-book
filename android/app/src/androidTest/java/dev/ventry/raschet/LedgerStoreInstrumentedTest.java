@@ -368,6 +368,32 @@ public class LedgerStoreInstrumentedTest {
         }finally{directory.clearAfterRestore();}
     }
 
+    @Test public void clientStatementShowsUnpaidAmountsAndCanceledRowsWithoutOtherClients() throws Exception {
+        LocalDate today=LocalDate.now();
+        java.time.ZoneId zone=java.time.ZoneId.systemDefault();
+        String id=book.recordDatedDebt(null,"Выписка","",10000L,today.minusDays(3),"","");
+        String first=book.entries().get(0).id;
+        book.recordDatedDebt(id,"","",20000L,today.minusDays(1),"","");
+        String second=book.entries().get(1).id;
+        book.recordDatedDebt(null,"Другой","",99900L,today,"","");
+        book.addEntry(id,"payment",15000L,"","");
+        String before=book.exportJson();
+        ClientStatement statement=ClientStatement.build(book.entries(),id,zone);
+        assertEquals(3,statement.entries.size());
+        assertEquals(Long.valueOf(0L),statement.remaining.get(first));
+        assertEquals(Long.valueOf(15000L),statement.remaining.get(second));
+        assertEquals(1,statement.select(ClientStatement.UNPAID).size());
+        assertEquals(second,statement.select(ClientStatement.UNPAID).get(0).id);
+        assertEquals(1,statement.select(ClientStatement.PAYMENTS).size());
+        assertEquals(before,book.exportJson());
+        book.reverseLast(id,"Ошибка");
+        statement=ClientStatement.build(book.entries(),id,zone);
+        assertEquals(2,statement.select(ClientStatement.UNPAID).size());
+        assertEquals(2,statement.select(ClientStatement.REVERSED).size());
+        assertEquals(Long.valueOf(10000L),statement.remaining.get(first));
+        assertEquals(Long.valueOf(20000L),statement.remaining.get(second));
+    }
+
     @Test public void existingClientDraftKeepsDateAndCannotRepeatPayment() throws Exception {
         String client=addCustomer();
         LocalDate day=LocalDate.now().minusDays(3);
