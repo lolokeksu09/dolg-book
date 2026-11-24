@@ -10,7 +10,7 @@ test('Android UI is native and does not contain web UI runtime',()=>{
   const gradle=read('android/app/build.gradle.kts');
   const activity=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
   const manifest=read('android/app/src/main/AndroidManifest.xml');
-  assert.ok(gradle.includes('versionName = "0.7.0-beta.1"'));
+  assert.ok(gradle.includes('versionName = "0.8.0-beta.1"'));
   assert.ok(gradle.includes('applicationIdSuffix = ".nativev031"'));
   assert.ok(!gradle.includes('webkit')&&!gradle.includes('syncOfflineBook'));
   assert.ok(!gradle.includes('index.html')&&!gradle.includes('app.js'));
@@ -59,4 +59,17 @@ test('RC signing is isolated from PR and verifies the fixed certificate and cand
   assert.ok(workflow.includes('sha256sum -c SHA256SUMS'));
   assert.ok(smoke.includes('RASCHET_SIGNED_APK'));
   assert.ok(smoke.includes('PACKAGE=dev.ventry.raschet\n'));
+});
+
+test('itemized debts use an additive migration and versioned validated purchase export',()=>{
+  const store=read('android/app/src/main/java/dev/ventry/raschet/LedgerStore.java');
+  const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
+  const purchase=read('android/app/src/main/java/dev/ventry/raschet/Purchase.java');
+  assert.ok(store.includes("ALTER TABLE entries ADD COLUMN purchase"));
+  assert.ok(store.includes('root.put("version",3)'));
+  assert.ok(store.includes('purchase.total!=amount'));
+  assert.ok(store.includes('last.purchase!=null&&amount!=last.amount'));
+  assert.ok(purchase.includes('RoundingMode.HALF_UP'));
+  assert.ok(ui.includes('ledger.addPurchase(clientId,purchase'));
+  assert.ok(ui.includes('e.purchase.summary()'));
 });
