@@ -664,8 +664,11 @@ tap_text 'Поиск по имени или телефону'
 adb shell input text DraftBuyer
 adb shell input keyevent 4
 sleep 0.4
-tap_text 'DraftBuyer'
+# Select the actual customer row, not the search EditText with identical text.
+tap_text 'DraftBuyer, остаток 23,00 ₽'
 sleep 0.4
+dump_ui
+grep -Fq 'История клиента' android/build/native-ui.xml
 tap_text 'Оплата'
 sleep 0.4
 fill_form_input 0 10
