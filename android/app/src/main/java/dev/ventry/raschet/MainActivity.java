@@ -7,6 +7,9 @@ import dev.ventry.raschet.presentation.BookScreenData;
 import dev.ventry.raschet.presentation.ReadState;
 import dev.ventry.raschet.presentation.WriteState;
 import dev.ventry.raschet.data.ClientCommand;
+import dev.ventry.raschet.data.WriteReceipt;
+import dev.ventry.raschet.data.WriteDestination;
+import dev.ventry.raschet.domain.DebtApproval;
 import android.app.DatePickerDialog;
 import android.app.Dialog;
 import android.Manifest;
@@ -262,7 +265,7 @@ public final class MainActivity extends ComponentActivity {
         navigation.removeAllViews();
         if(bookViewModel.hasPendingWrite()){
             page.removeAllViews();
-            page.addView(scroll(screen("Сохранение клиента","Дождитесь завершения записи.")),new FrameLayout.LayoutParams(-1,-1));
+            page.addView(scroll(screen("Сохранение записи","Дождитесь завершения записи.")),new FrameLayout.LayoutParams(-1,-1));
             return;
         }
         for(int i=0;i<TABS.length;i++){
@@ -990,7 +993,7 @@ public final class MainActivity extends ComponentActivity {
         }
         void update(String clientId,long balance,long addition){
             long limit=clientId==null?0:directory.debtLimit(clientId);
-            String key=clientId+":"+balance+":"+limit+":"+addition;
+            String key=DebtApproval.key(clientId,balance,limit,addition);
             if(!key.equals(approvedFor)){consent.setChecked(false);approvedFor=key;}
             block.setVisibility(limit>0?View.VISIBLE:View.GONE);
             if(limit==0)return;
@@ -999,6 +1002,7 @@ public final class MainActivity extends ComponentActivity {
             text.setTextColor(over?RED:balance>=limit?ALERT:MUTED);
             consent.setVisibility(over?View.VISIBLE:View.GONE);
         }
+        String confirmation(){return consent.isChecked()?approvedFor:"";}
         void verify(String clientId,long addition){
             if(clientId==null)return;
             long balance=LedgerStore.balance(ledger.entries(),clientId);
@@ -1635,36 +1639,17 @@ public final class MainActivity extends ComponentActivity {
         for(TextView field:new TextView[]{name,phone,amount,date,due,note})field.addTextChangedListener(watcher(v->persist.run()));
         refresh.run();
         if(previous!=null)addButton(form,"Удалить черновик",false,()->{drafts.clear();if(chooser!=null)chooser.dismiss();render();},1);
-        showDialog(fromClients?"Новый клиент и долг":"Новый долг",form,()->{
+        showDialog(fromClients?"Новый клиент и долг":"Новый долг",form,null,()->{
             String n=name.getText().toString(),ph=phone.getText().toString();
-            if(selected[0]==null&&!separate[0]&&hasExactCustomer(ledger.clients(),n,ph))
-                throw new IllegalArgumentException("Выберите существующего клиента или подтвердите создание отдельного.");
-            if(selected[0]!=null&&directory.archived(selected[0],LedgerStore.balance(ledger.entries(),selected[0])))
-                throw new IllegalArgumentException("Сначала верните клиента из архива.");
-            // Determine how many dates to reveal before the transaction; no potentially
-            // failing database reads after a successful save.
-            int rank=1;
-            for(BookDays.Day existing:BookDays.group(ledger.entries(),ZoneId.systemDefault()))
-                if(existing.date.isAfter(day[0]))rank++;
-            long cents=LedgerStore.parseAmount(amount.getText().toString());
-            notice.verify(selected[0],cents);
-            ledger.recordDatedDebt(selected[0],n,ph,cents,day[0],due.getText().toString(),note.getText().toString().trim(),draftId);
-            drafts.clear();
-            bookPayments=false;clearBookFilters();
-            expandedBookDays.add(day[0].toString());
-            bookDayLimit=Math.max(bookDayLimit,rank);
-            if(fromClients){
-                tab="Клиенты";clientScope=ClientDirectory.ACTIVE;clientFilter=CollectionsInsights.ALL;
-                search="";clientVisibleLimit=60;
-            }else tab="Главная";
-            selectedClient=null;return true;
-        },()->{
             if(fromClients&&amount.getText().toString().trim().isEmpty()){
                 if(selected[0]!=null)throw new IllegalArgumentException("Клиент уже существует. Введите сумму долга.");
                 if(due.length()>0||!note.getText().toString().trim().isEmpty())throw new IllegalArgumentException("Введите сумму долга или очистите срок и комментарий.");
-                return new ClientCommand.Create(draftId,name.getText().toString(),phone.getText().toString(),separate[0]);
+                return new ClientCommand.Create(draftId,n,ph,separate[0]);
             }
-            return null;
+            long cents=LedgerStore.parseAmount(amount.getText().toString());
+            return new ClientCommand.Debt(draftId,selected[0],n,ph,cents,day[0],
+                    due.getText().toString(),note.getText().toString().trim(),separate[0],notice.confirmation(),
+                    true,fromClients?WriteDestination.CLIENTS:WriteDestination.BOOK);
         });
         if(chooser!=null)chooser.setOnDismissListener(v->{if(!saving&&unlocked&&!bookViewModel.hasPendingWrite())render();});
     }
@@ -2017,41 +2002,18 @@ public final class MainActivity extends ComponentActivity {
                 message("Черновик очищен.");
             },1);
         }
-        showDialog(type.equals("debt")?"Новый долг":"Принять оплату",content,()->{
+        showDialog(type.equals("debt")?"Новый долг":"Принять оплату",content,null,()->{
             long cents=LedgerStore.parseAmount(amount.getText().toString());
+            WriteDestination destination=fromBook?WriteDestination.BOOK:
+                    fromCollections?WriteDestination.COLLECTIONS:WriteDestination.DETAIL;
             if(type.equals("debt")){
-                if(directory.archived(clientId,LedgerStore.balance(ledger.entries(),clientId)))
-                    throw new IllegalArgumentException("Сначала верните клиента из архива.");
-                int rank=1;
-                for(BookDays.Day existing:BookDays.group(ledger.entries(),ZoneId.systemDefault()))
-                    if(existing.date.isAfter(entryDay[0]))rank++;
-                notice.verify(clientId,cents);
-                ledger.recordDatedDebt(clientId,"","",cents,entryDay[0],due.getText().toString(),note.getText().toString().trim(),operationId[0]);
-                bookPayments=false;clearBookFilters();bookDayLimit=Math.max(bookDayLimit,rank);
-                expandedBookDays.add(entryDay[0].toString());
-            }else{
-                int rank=1;
-                for(BookDays.Day existing:BookDays.groupPayments(ledger.entries(),ZoneId.systemDefault()))
-                    if(existing.date.isAfter(entryDay[0]))rank++;
-                ledger.addDraftPayment(clientId,cents,note.getText().toString().trim(),operationId[0],entryDay[0]);
-                if(cents==available)try{
-                    ClientDirectory.FollowUp plan=directory.followUp(clientId);
-                    if(plan!=null&&plan.amount==0)directory.setFollowUp(clientId,null,"");
-                }catch(Exception ignored){}
-                if(fromBook){
-                    bookPayments=true;clearBookFilters();bookDayLimit=Math.max(bookDayLimit,rank);
-                    expandedBookDays.clear();expandedBookDays.add(entryDay[0].toString());
-                }
+                return new ClientCommand.Debt(operationId[0],clientId,"","",cents,entryDay[0],
+                        due.getText().toString(),note.getText().toString().trim(),false,notice.confirmation(),false,destination);
             }
-            drafts.clear(clientId,type);
-            if(type.equals("payment")&&fromBook){
-                selectedClient=null;tab="Главная";
-            }else if(fromBook){selectedClient=null;tab="Главная";}
-            else if(fromCollections){selectedClient=null;tab="Возврат";}
-            else{selectedClient=clientId;tab="Клиенты";}
-            return true;
+            return new ClientCommand.Payment(operationId[0],clientId,cents,entryDay[0],
+                    note.getText().toString().trim(),destination);
         });
-        if(!fromBook&&!fromCollections&&chooser!=null)chooser.setOnDismissListener(v->{if(!saving&&unlocked)render();});
+        if(!fromBook&&!fromCollections&&chooser!=null)chooser.setOnDismissListener(v->{if(!saving&&unlocked&&!bookViewModel.hasPendingWrite())render();});
     }
     private static String amountInput(long cents){return String.format(Locale.ROOT,"%d,%02d",cents/100,cents%100);}
     private void exportCustomerPdf(String clientId) {
@@ -2296,7 +2258,7 @@ public final class MainActivity extends ComponentActivity {
         if(pendingClientDialog!=null)pendingClientDialog.setCancelable(true);
         pendingClientDialog=null;pendingClientError=null;
     }
-    private void onClientWriteState(WriteState<Boolean> state){
+    private void onClientWriteState(WriteState<WriteReceipt> state){
         if(!unlocked||isFinishing()||isDestroyed()||state!=bookViewModel.getWriteState().getValue())return;
         if(!(state instanceof WriteState.Done)&&!(state instanceof WriteState.Failed))return;
         Dialog dialog=pendingClientDialog;
@@ -2304,10 +2266,7 @@ public final class MainActivity extends ComponentActivity {
         restoreClientDialog();
         bookViewModel.acknowledgeWrite(state);
         if(state instanceof WriteState.Done<?> done){
-            if(Boolean.TRUE.equals(done.getValue())){
-                tab="Клиенты";selectedClient=null;clientScope=ClientDirectory.ACTIVE;
-                clientFilter=CollectionsInsights.ALL;search="";clientVisibleLimit=60;
-            }
+            applyWriteReceipt((WriteReceipt)done.getValue());
             saving=true;
             try{if(dialog!=null&&dialog.isShowing())dialog.dismiss();}
             finally{saving=false;}
@@ -2319,6 +2278,26 @@ public final class MainActivity extends ComponentActivity {
             }else{
                 render();message(failed.getMessage());
             }
+        }
+    }
+    private void applyWriteReceipt(WriteReceipt receipt){
+        if("debt".equals(receipt.getKind())){
+            bookPayments=false;clearBookFilters();
+            bookDayLimit=Math.max(bookDayLimit,receipt.getRank());
+            expandedBookDays.add(receipt.getDay().toString());
+        }else if("payment".equals(receipt.getKind())&&receipt.getDestination()==WriteDestination.BOOK){
+            bookPayments=true;clearBookFilters();
+            bookDayLimit=Math.max(bookDayLimit,receipt.getRank());
+            expandedBookDays.clear();expandedBookDays.add(receipt.getDay().toString());
+        }
+        switch(receipt.getDestination()){
+            case CLIENTS:
+                tab="Клиенты";selectedClient=null;clientScope=ClientDirectory.ACTIVE;
+                clientFilter=CollectionsInsights.ALL;search="";clientVisibleLimit=60;break;
+            case BOOK: tab="Главная";selectedClient=null;break;
+            case COLLECTIONS: tab="Возврат";selectedClient=null;break;
+            case DETAIL: tab="Клиенты";selectedClient=receipt.getClientId();break;
+            case KEEP: break;
         }
     }
     private void pickImport() {
