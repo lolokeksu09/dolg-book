@@ -90,7 +90,6 @@ public final class MainActivity extends Activity {
     private int historyVisibleLimit=100, detailVisibleLimit=80;
     private final int pad=14;
     private String settingsExpanded="";
-    private LinearLayout headerBar;
     private int controlHeight(){return largeText?54:48;}
     private int navHeight(){return largeText?72:64;}
 
@@ -167,7 +166,7 @@ public final class MainActivity extends Activity {
             }
             return insets;
         });
-        LinearLayout header=row();headerBar=header;
+        LinearLayout header=row();
         header.setGravity(Gravity.CENTER_VERTICAL);
         header.setPadding(dp(14),dp(5),dp(14),dp(5));
         android.widget.ImageView insignia=new android.widget.ImageView(this);
@@ -342,7 +341,7 @@ public final class MainActivity extends Activity {
         view.addView(searchInput,margin(-1,dp(controlHeight()),6));
         actionRow(view,"≡","Фильтры клиентов",clientScope+" · "+clientFilter+
                 (clientsAmountFirst?" · по остатку":" · по имени"),this::showClientFilters);
-        LinearLayout results=stack(8);view.addView(results);
+        LinearLayout results=stack(0);view.addView(results);
         // Build due/balance projections once per render, not on every typed character.
         List<CollectionsInsights.CustomerStatus> cached=
                 CollectionsInsights.analyze(ledger.clients(),ledger.entries(),LocalDate.now());
@@ -352,17 +351,18 @@ public final class MainActivity extends Activity {
         return scroll(view);
     }
     private void showClientFilters(){
-        LinearLayout menu=stack(4);
+        LinearLayout menu=stack(2);
         section(menu,"Список","");
         for(String scope:new String[]{ClientDirectory.ACTIVE,ClientDirectory.FAVORITES,ClientDirectory.ARCHIVE})
-            clientMenuAction(menu,scope,()->{
+            filterMenuAction(menu,scope,scope.equals(clientScope),()->{
                 clientScope=scope;clientFilter=CollectionsInsights.ALL;clientVisibleLimit=60;render();
             });
         section(menu,"Долги","");
         for(String choice:new String[]{CollectionsInsights.ALL,CollectionsInsights.OWING,CollectionsInsights.LATE,CollectionsInsights.SOON})
-            clientMenuAction(menu,choice,()->{clientFilter=choice;clientVisibleLimit=60;render();});
-        clientMenuAction(menu,clientsAmountFirst?"Сортировка: по остатку ↓":"Сортировка: по имени",
-                ()->{clientsAmountFirst=!clientsAmountFirst;render();});
+            filterMenuAction(menu,choice,choice.equals(clientFilter),()->{clientFilter=choice;clientVisibleLimit=60;render();});
+        section(menu,"Сортировка","");
+        filterMenuAction(menu,"Сортировка: по имени",!clientsAmountFirst,()->{clientsAmountFirst=false;render();});
+        filterMenuAction(menu,"Сортировка: по остатку ↓",clientsAmountFirst,()->{clientsAmountFirst=true;render();});
         showDialog("Фильтры клиентов",menu,null);
     }
     private void fillClients(LinearLayout rows,List<CollectionsInsights.CustomerStatus> cached) {
@@ -378,28 +378,29 @@ public final class MainActivity extends Activity {
             card.setPadding(dp(10),dp(8),dp(10),dp(8));
             card.setMinimumHeight(dp(48));
             card.setGravity(Gravity.CENTER_VERTICAL);
-            card.setBackground(ripple(shape(PANEL,12,0)));
-            TextView badge=label(customer.name.substring(0,1).toUpperCase(new Locale("ru","RU")),19,ACCENT,true);
+            card.setBackground(ripple(shape(BG,8,0)));
+            TextView badge=label(customer.name.substring(0,1).toUpperCase(new Locale("ru","RU")),15,ACCENT,true);
             badge.setGravity(Gravity.CENTER);badge.setBackground(shape(ELEVATED,16,0));
             card.addView(badge,new LinearLayout.LayoutParams(dp(32),dp(32)));
-            LinearLayout labels=stack(4);
-            labels.addView(label(customer.name,16,TEXT,true));
+            LinearLayout labels=stack(1);
+            labels.addView(label(customer.name,15,TEXT,true));
             if(!customer.phone.isEmpty())labels.addView(label(customer.phone,13,MUTED,false));
             String statusText=status.overdue>0?"Просрочено: "+money(status.overdue):
                     status.upcoming>0?"Ближайший срок: "+status.nextDue+" · за 7 дней: "+money(status.upcoming):"";
             if(!statusText.isEmpty())
                 labels.addView(label(statusText,12,status.overdue>0?ALERT:MUTED,false));
             LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-2,1);
-            lp.leftMargin=dp(12);card.addView(labels,lp);
-            LinearLayout right=stack(4);right.setGravity(Gravity.RIGHT);
-            right.addView(label(money(amount),16,amount>0?ACCENT:TEXT,true));
-            right.addView(label(amount>0?"Должен":"Нет долга",11,MUTED,false));
+            lp.leftMargin=dp(8);lp.rightMargin=dp(8);card.addView(labels,lp);
+            LinearLayout right=stack(1);right.setGravity(Gravity.END);
+            right.addView(label(money(amount),15,amount>0?TEXT:MUTED,true));
+            if(amount==0)right.addView(label("Нет долга",11,MUTED,false));
             card.addView(right);
             card.setClickable(true);card.setFocusable(true);
             card.setOnClickListener(v->{selectedClient=customer.id;render();});
             card.setContentDescription(customer.name+", остаток "+money(amount)
                     +(status.overdue>0?", просрочено "+money(status.overdue):""));
-            rows.addView(card,margin(-1,-2,5));
+            rows.addView(card);
+            addListDivider(rows);
         }
         if(visible.size()>clientVisibleLimit)addButton(rows,"Показать ещё клиентов",false,()->{
             clientVisibleLimit+=60;fillClients(rows,cached);
@@ -466,7 +467,7 @@ public final class MainActivity extends Activity {
             addButton(view,"Вернуть из архива",true,()->changeClientArchive(id,true),1);
         }
         addButton(view,"Ещё действия",false,()->showClientActions(current,amount,overdue,archived),1);
-        section(view,"История клиента","Долги, оплаты и отмены");
+        section(view,"История клиента","");
         Set<String> canceled=LedgerStore.canceled(all);
         int shown=0;
         boolean more=false;
@@ -474,7 +475,7 @@ public final class MainActivity extends Activity {
             LedgerStore.Entry e=all.get(i);
             if(!e.clientId.equals(id))continue;
             if(shown>=detailVisibleLimit){more=true;break;}
-            view.addView(entryCard(e,null,canceled.contains(e.id)),margin(-1,-2,7));shown++;
+            view.addView(entryCard(e,null,canceled.contains(e.id)));addListDivider(view);shown++;
         }
         if(shown==0)view.addView(label("Пока нет операций.",14,MUTED,false));
         if(more)addButton(view,"Показать ещё операции",false,()->{
@@ -489,11 +490,27 @@ public final class MainActivity extends Activity {
             clientFilter=CollectionsInsights.ALL;search="";render();
         }catch(Exception e){message(e.getMessage());}
     }
+    private void addListDivider(LinearLayout parent){
+        View divider=new View(this);
+        divider.setBackgroundColor(BORDER);
+        parent.addView(divider,new LinearLayout.LayoutParams(-1,dp(1)));
+    }
     private void clientMenuAction(LinearLayout menu,String title,Runnable action){
-        addButton(menu,title,false,()->{
-            if(chooser!=null)chooser.dismiss();
-            action.run();
-        },1);
+        filterMenuAction(menu,title,false,action);
+    }
+    private void filterMenuAction(LinearLayout menu,String title,boolean selected,Runnable action){
+        LinearLayout item=row();
+        item.setGravity(Gravity.CENTER_VERTICAL);
+        item.setMinimumHeight(dp(controlHeight()));
+        item.setPadding(dp(10),dp(5),dp(10),dp(5));
+        item.setBackground(ripple(shape(selected?ELEVATED:PANEL,8,0)));
+        item.addView(label(title,14,selected?ACCENT:TEXT,true),new LinearLayout.LayoutParams(0,-2,1));
+        if(selected)item.addView(label("Выбрано",11,ACCENT,false));
+        item.setSelected(selected);
+        item.setContentDescription(title);
+        item.setFocusable(true);item.setClickable(true);
+        item.setOnClickListener(v->{if(chooser!=null)chooser.dismiss();action.run();});
+        menu.addView(item);
     }
     private void showClientActions(LedgerStore.Client client,long amount,long overdue,boolean archived){
         String id=client.id;
@@ -658,6 +675,7 @@ public final class MainActivity extends Activity {
         Set<String> canceled=LedgerStore.canceled(all);
         int shown=0;
         boolean moreHistory=false;
+        LocalDate lastHistoryDay=null;
         for(int i=all.size()-1;i>=0;i--){
             LedgerStore.Entry e=all.get(i);
             if(historyFrom!=null){
@@ -668,8 +686,13 @@ public final class MainActivity extends Activity {
                     &&!(historyFilter.equals("Оплаты")&&e.type.equals("payment"))
                     &&!(historyFilter.equals("Отмены")&&e.type.equals("reversal")))continue;
             if(shown>=historyVisibleLimit){moreHistory=true;break;}
-            view.addView(entryCard(e,names.get(e.clientId),canceled.contains(e.id)),margin(-1,-2,8));
-            shown++;
+            LocalDate date=PeriodReport.dateOf(e,ZoneId.systemDefault());
+            if(!date.equals(lastHistoryDay)){
+                view.addView(label(dayFormat.format(date),12,MUTED,true),margin(-1,-2,4));
+                lastHistoryDay=date;
+            }
+            view.addView(entryCard(e,names.get(e.clientId),canceled.contains(e.id)));
+            addListDivider(view);shown++;
         }
         if(moreHistory)addButton(view,"Показать ещё операции",false,()->{
             historyVisibleLimit=Math.min(historyVisibleLimit+100,100000);render();
@@ -751,14 +774,15 @@ public final class MainActivity extends Activity {
     private LinearLayout entryCard(LedgerStore.Entry e,String clientName,boolean canceled) {
         LinearLayout card=row();
         card.setGravity(Gravity.CENTER_VERTICAL);
-        card.setBackground(shape(PANEL,10,0));
-        card.setPadding(dp(10),dp(7),dp(10),dp(7));card.setMinimumHeight(dp(48));
+        card.setBackground(shape(BG,8,0));
+        card.setPadding(dp(8),dp(6),dp(8),dp(6));card.setMinimumHeight(dp(48));
         int color=e.type.equals("payment")?ACCENT:e.type.equals("reversal")?ALERT:TEXT;
         LinearLayout left=stack(2);
         String kind=e.type.equals("debt")?"Долг":e.type.equals("payment")?"Оплата":"Отмена";
-        left.addView(label(kind+(canceled?" · отменено":""),15,canceled?MUTED:color,true));
-        if(clientName!=null)left.addView(label(clientName,13,TEXT,false));
-        left.addView(label(formatDate(e.date)+(e.note.isEmpty()?"":" · "+e.note),12,MUTED,false));
+        if(clientName!=null)left.addView(label(clientName,15,TEXT,true));
+        left.addView(label(kind+(canceled?" · отменено":"")+(clientName==null?"":" · "+formatDate(e.date)),clientName==null?15:12,canceled?MUTED:color,clientName==null));
+        if(clientName==null)left.addView(label(formatDate(e.date),12,MUTED,false));
+        if(!e.note.isEmpty())left.addView(label(e.note,12,MUTED,false));
         if(!e.due.isEmpty())left.addView(label("Вернуть до "+e.due,11,ALERT,false));
         if(e.purchase!=null){
             TextView details=label("Состав покупки · "+e.purchase.items.size()+" поз.",13,ACCENT,true);
@@ -766,7 +790,8 @@ public final class MainActivity extends Activity {
             details.setFocusable(true);details.setClickable(true);
             details.setOnClickListener(v->showPurchaseDetails(e));left.addView(details);
         }
-        card.addView(left,new LinearLayout.LayoutParams(0,-2,1));
+        LinearLayout.LayoutParams leftParams=new LinearLayout.LayoutParams(0,-2,1);
+        leftParams.rightMargin=dp(8);card.addView(left,leftParams);
         TextView sum=label((e.type.equals("payment")?"−":e.type.equals("debt")?"+":"↶ ")+money(e.amount),15,canceled?MUTED:color,true);
         card.addView(sum);
         return card;
@@ -776,7 +801,7 @@ public final class MainActivity extends Activity {
         LinearLayout box=stack(5);
         box.setGravity(Gravity.CENTER);
         box.setPadding(dp(12),dp(12),dp(12),dp(12));
-        box.setBackground(shape(PANEL,20,BORDER));
+        box.setBackground(shape(BG,8,0));
         android.widget.ImageView image=new android.widget.ImageView(this);
         image.setImageResource(iconRes);
         image.setColorFilter(ACCENT);
@@ -1181,7 +1206,7 @@ public final class MainActivity extends Activity {
         final long available=LedgerStore.balance(ledger.entries(),clientId);
         if(directory.archived(clientId,available)){message("Сначала верните клиента из архива.");return;}
         if(type.equals("payment")&&available<=0){message("Нет долга для оплаты.");return;}
-        LinearLayout content=stack(12);
+        LinearLayout content=stack(7);
         content.addView(label(c.name+" · остаток "+money(available),13,MUTED,false));
         LedgerDrafts drafts=new LedgerDrafts(this);
         LedgerDrafts.Draft previous=drafts.get(clientId,type);
@@ -1215,7 +1240,11 @@ public final class MainActivity extends Activity {
         });
         if(type.equals("debt")){
             content.addView(formGroup("Вернуть до (необязательно)",due));
-            addButton(content,"Без срока",false,()->due.setText(""),1);
+            LinearLayout clearDue=stack(0);
+            addButton(clearDue,"Без срока",false,()->due.setText(""),1);
+            clearDue.setVisibility(due.getText().length()==0?View.GONE:View.VISIBLE);
+            due.addTextChangedListener(watcher(v->clearDue.setVisibility(v.isEmpty()?View.GONE:View.VISIBLE)));
+            content.addView(clearDue);
         }
         EditText note=field("Комментарий",savedDraft?previous.note:null);
         content.addView(formGroup("Комментарий (необязательно)",note));
@@ -1319,9 +1348,17 @@ public final class MainActivity extends Activity {
         box.setPadding(dp(14),dp(14),dp(14),dp(14));
         box.setBackground(shape(PANEL,23,BORDER));
         box.addView(label(title,19,TEXT,true));
-        ScrollView scroll=new ScrollView(this);scroll.setFillViewport(false);
+        ScrollView scroll=new ScrollView(this){
+            @Override protected void onMeasure(int widthSpec,int heightSpec){
+                int limit=dp(380);
+                if(View.MeasureSpec.getMode(heightSpec)!=View.MeasureSpec.UNSPECIFIED)
+                    limit=Math.min(limit,View.MeasureSpec.getSize(heightSpec));
+                super.onMeasure(widthSpec,View.MeasureSpec.makeMeasureSpec(limit,View.MeasureSpec.AT_MOST));
+            }
+        };
+        scroll.setFillViewport(false);
         scroll.addView(form);
-        box.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
+        box.addView(scroll,new LinearLayout.LayoutParams(-1,-2));
         TextView error=label("",12,RED,false);
         error.setVisibility(View.GONE);
         box.addView(error);
@@ -1334,7 +1371,7 @@ public final class MainActivity extends Activity {
             catch(Exception ex){error.setText(ex.getMessage()==null?"Не удалось сохранить запись.":ex.getMessage());error.setVisibility(View.VISIBLE);}
             finally{saving=false;}
         },1);
-        box.addView(buttons,new LinearLayout.LayoutParams(-1,dp(48)));
+        box.addView(buttons,new LinearLayout.LayoutParams(-1,dp(controlHeight())));
         dialog.setContentView(box);
         Window window=dialog.getWindow();
         if(window!=null){
@@ -1343,12 +1380,12 @@ public final class MainActivity extends Activity {
             window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
             window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
             window.setLayout(Math.min(getResources().getDisplayMetrics().widthPixels-dp(26),dp(510)),
-                    Math.min(getResources().getDisplayMetrics().heightPixels-dp(96),dp(550)));
+                    WindowManager.LayoutParams.WRAP_CONTENT);
         }
         chooser=dialog;
         dialog.show();
         if(window!=null)window.setLayout(Math.min(getResources().getDisplayMetrics().widthPixels-dp(26),dp(510)),
-                Math.min(getResources().getDisplayMetrics().heightPixels-dp(96),dp(550)));
+                WindowManager.LayoutParams.WRAP_CONTENT);
     }
     private void pickImport() {
         Intent picker=new Intent(Intent.ACTION_OPEN_DOCUMENT);
@@ -1534,7 +1571,7 @@ public final class MainActivity extends Activity {
     private void actionRow(LinearLayout into,String icon,String title,String subtitle,Runnable action) {
         LinearLayout block=row();block.setGravity(Gravity.CENTER_VERTICAL);
         block.setPadding(dp(10),dp(6),dp(10),dp(6));block.setMinimumHeight(dp(48));
-        block.setBackground(ripple(shape(PANEL,10,0)));
+        block.setBackground(ripple(shape(BG,8,0)));
         TextView emblem=label(icon,18,ACCENT,true);
         emblem.setGravity(Gravity.CENTER);
         emblem.setBackground(shape(ELEVATED,13,0));
@@ -1542,14 +1579,14 @@ public final class MainActivity extends Activity {
         LinearLayout details=stack(2);
         details.addView(label(title,14,TEXT,true));
         details.addView(label(subtitle,12,MUTED,false));
-        LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,-2,1);p.leftMargin=dp(8);
+        LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,-2,1);p.leftMargin=dp(8);p.rightMargin=dp(8);
         block.addView(details,p);
         block.addView(label("›",24,MUTED,false));
         block.setClickable(true);
         block.setFocusable(true);
         block.setOnClickListener(v->action.run());
         block.setContentDescription(title);
-        into.addView(block,margin(-1,-2,5));
+        into.addView(block);addListDivider(into);
     }
     private TextView eyebrow(String text) {
         TextView v=label(text,11,MUTED,true);
@@ -1595,7 +1632,7 @@ public final class MainActivity extends Activity {
         // Large text applies to everyday labels and actions, not only totals.
         int actualSize=largeText && size<26 ? size+(size<=12?1:2) : size;
         textView.setTextSize(actualSize);
-        textView.setFontFeatureSettings("kern");
+        textView.setFontFeatureSettings("kern, tnum");
         if(bold)textView.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));
         textView.setGravity(Gravity.CENTER_VERTICAL);
         return textView;

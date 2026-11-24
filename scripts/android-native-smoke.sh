@@ -228,12 +228,20 @@ tap_text 'Клиенты'
 sleep 0.4
 tap_text 'Фильтры клиентов'
 sleep 0.3
+dump_ui
+grep -Fq 'Выбрано' android/build/native-ui.xml
 tap_text 'С долгом'
 sleep 0.4
 dump_ui
 grep -Fq 'TestBuyer' android/build/native-ui.xml
 tap_text 'Фильтры клиентов'
 sleep 0.3
+dump_ui
+python3 - <<'PY'
+import xml.etree.ElementTree as ET
+nodes=list(ET.parse("android/build/native-ui.xml").iter("node"))
+assert any(n.get("content-desc")=="С долгом" and n.get("selected")=="true" for n in nodes), "Current debt filter must be selected"
+PY
 tap_text 'Просрочка'
 sleep 0.4
 dump_ui

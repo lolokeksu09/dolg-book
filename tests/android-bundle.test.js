@@ -10,7 +10,7 @@ test('Android UI is native and does not contain web UI runtime',()=>{
   const gradle=read('android/app/build.gradle.kts');
   const activity=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
   const manifest=read('android/app/src/main/AndroidManifest.xml');
-  assert.ok(gradle.includes('versionName = "0.12.0-beta.1"'));
+  assert.ok(gradle.includes('versionName = "0.13.0-beta.1"'));
   assert.ok(gradle.includes('applicationIdSuffix = ".nativev031"'));
   assert.ok(!gradle.includes('webkit')&&!gradle.includes('syncOfflineBook'));
   assert.ok(!gradle.includes('index.html')&&!gradle.includes('app.js'));
@@ -110,4 +110,20 @@ test('compact book keeps essential controls and hides redundant empty-state filt
   assert.ok(ui.includes('if(settingsExpanded.equals("privacy"))'));
   assert.ok(ui.includes('if(settingsExpanded.equals("backup"))'));
   assert.ok(ui.includes('out.putString("settings_expanded",settingsExpanded)'));
+});
+
+test('dense lists, selected filters and content-sized dialogs are wired',()=>{
+  const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
+  assert.ok(ui.includes('addListDivider(rows)'));
+  assert.ok(ui.includes('filterMenuAction(menu,scope,scope.equals(clientScope)'));
+  assert.ok(ui.includes('filterMenuAction(menu,choice,choice.equals(clientFilter)'));
+  assert.ok(ui.includes('if(selected)item.addView(label("Выбрано"'));
+  assert.ok(ui.includes('LocalDate lastHistoryDay=null;'));
+  assert.ok(ui.includes('date.equals(lastHistoryDay)'));
+  assert.ok(ui.includes('textView.setFontFeatureSettings("kern, tnum")'));
+  const dialog=ui.slice(ui.indexOf('private void showDialog('),ui.indexOf('private void pickImport('));
+  assert.ok(dialog.includes('WindowManager.LayoutParams.WRAP_CONTENT'));
+  assert.ok(dialog.includes('View.MeasureSpec.AT_MOST'));
+  assert.ok(dialog.includes('WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE'));
+  assert.ok(!dialog.includes('dp(550)'));
 });
