@@ -10,7 +10,7 @@ test('Android UI is native and does not contain web UI runtime',()=>{
   const gradle=read('android/app/build.gradle.kts');
   const activity=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
   const manifest=read('android/app/src/main/AndroidManifest.xml');
-  assert.ok(gradle.includes('versionName = "0.17.0-beta.1"'));
+  assert.ok(gradle.includes('versionName = "0.17.1-beta.1"'));
   assert.ok(gradle.includes('applicationIdSuffix = ".nativev031"'));
   assert.ok(!gradle.includes('webkit')&&!gradle.includes('syncOfflineBook'));
   assert.ok(!gradle.includes('index.html')&&!gradle.includes('app.js'));
@@ -183,4 +183,20 @@ test('journal filters preserve the full-book allocation and support date-scoped 
   assert.ok(ui.includes('day.unpaid.getOrDefault(e.id,0L)'));
   assert.ok(days.includes('Math.min(available,e.amount)'));
   assert.ok(days.includes('if(onlyUnpaid&&rest==0)continue;'));
+});
+
+
+test('launcher has adaptive and themed icon resources without changing the Ventry brand',()=>{
+  const res='android/app/src/main/res/';
+  const manifest=read('android/app/src/main/AndroidManifest.xml');
+  assert.ok(manifest.includes('android:icon="@mipmap/ic_launcher"'));
+  assert.ok(manifest.includes('android:roundIcon="@mipmap/ic_launcher"'));
+  assert.ok(read(res+'mipmap-anydpi-v26/ic_launcher.xml').includes('@drawable/ic_book_foreground'));
+  assert.ok(read(res+'mipmap-anydpi-v33/ic_launcher.xml').includes('<monochrome android:drawable="@drawable/ic_book_monochrome"'));
+  const foreground=read(res+'drawable/ic_book_foreground.xml');
+  const mono=read(res+'drawable/ic_book_monochrome.xml');
+  assert.ok(foreground.includes('android:viewportWidth="108"'));
+  assert.ok(foreground.includes('android:fillType="evenOdd"'));
+  assert.equal(foreground.replace('#48CF99','#FFFFFF'),mono);
+  assert.ok(read(res+'drawable/ic_ventry.xml').includes('Faithful Android vector'));
 });
