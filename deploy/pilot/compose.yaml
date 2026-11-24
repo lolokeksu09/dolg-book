@@ -1,0 +1,69 @@
+name: raschet-pilot
+services:
+  raschet-db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    mem_limit: 192m
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?}
+    volumes:
+      - identity_db:/var/lib/postgresql/data
+    networks: [identity]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "keycloak", "-d", "keycloak"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+  raschet-id:
+    image: quay.io/keycloak/keycloak:26.8.2
+    command: ["start", "--import-realm"]
+    restart: unless-stopped
+    mem_limit: 900m
+    depends_on:
+      raschet-db:
+        condition: service_healthy
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://raschet-db:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ${DB_PASSWORD:?}
+      KC_HOSTNAME: https://${LOGIN_HOST:?}
+      KC_HTTP_ENABLED: "true"
+      KC_PROXY_HEADERS: xforwarded
+      KC_PROXY_TRUSTED_ADDRESSES: ${CADDY_IP:?}
+      KC_CACHE: local
+      JAVA_OPTS_KC_HEAP: "-Xms128m -Xmx384m"
+    volumes:
+      - ${PILOT_STATE:?}/raschet-pilot-realm.json:/opt/keycloak/data/import/raschet-pilot-realm.json:ro
+    networks: [edge, identity]
+  raschet-api:
+    build:
+      context: ../..
+      dockerfile: deploy/pilot/Dockerfile
+    restart: unless-stopped
+    mem_limit: 160m
+    environment:
+      AMVERA: "1"
+      PORT: "3000"
+      LEDGER_DATABASE: /data/dolg-book.sqlite
+      LEDGER_BROWSER_ORIGIN: https://${BOOK_HOST:?}
+      LEDGER_ADMIN_SUBJECT: ${OPERATOR_SUB:?}
+      IDENTITY_ISSUER: https://${LOGIN_HOST:?}/realms/raschet-pilot
+      IDENTITY_INTROSPECTION_URL: https://${LOGIN_HOST:?}/realms/raschet-pilot/protocol/openid-connect/token/introspect
+      IDENTITY_AUDIENCE: raschet-pilot
+      IDENTITY_CLIENT_ID: raschet-pilot
+      IDENTITY_CLIENT_SECRET: ${CLIENT_SECRET:?}
+    volumes:
+      - ledger:/data
+    networks: [edge]
+networks:
+  edge:
+    external: true
+    name: ventry_default
+  identity:
+    internal: true
+volumes:
+  identity_db:
+  ledger:
