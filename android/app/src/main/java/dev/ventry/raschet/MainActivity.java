@@ -1563,8 +1563,7 @@ public final class MainActivity extends Activity {
             int count=0;
             for(LedgerStore.Client customer:customers){
                 String n=customer.name.toLowerCase(new Locale("ru","RU"));
-                String d=customer.phone.replaceAll("[^0-9]","");
-                if(!(!query.isEmpty()&&n.contains(query))&&!(digits.length()>=3&&d.contains(digits)))continue;
+                if(!(!query.isEmpty()&&n.contains(query))&&!(digits.length()>=3&&ClientSearch.phoneMatches(customer.phone,digits)))continue;
                 if(count++>=5)break;
                 boolean archived=directory.archived(customer.id,balances.getOrDefault(customer.id,0L));
                 String subtitle=(customer.phone.isEmpty()?"Без телефона":customer.phone)+" · "+money(balances.getOrDefault(customer.id,0L));
@@ -1640,7 +1639,7 @@ public final class MainActivity extends Activity {
         String n=name.trim(),d=phone.replaceAll("[^0-9]","");
         for(LedgerStore.Client c:people){
             if(!n.isEmpty()&&c.name.trim().equalsIgnoreCase(n))return true;
-            if(d.length()>=7&&d.equals(c.phone.replaceAll("[^0-9]","")))return true;
+            if(ClientSearch.sameNumber(c.phone,d))return true;
         }
         return false;
     }
@@ -1706,8 +1705,7 @@ public final class MainActivity extends Activity {
             String possible=null;
             for(LedgerStore.Client other:existing){
                 if(client!=null&&other.id.equals(client.id))continue;
-                String phoneDigits=other.phone.replaceAll("[^0-9]","");
-                boolean samePhone=digits.length()>=7 && digits.equals(phoneDigits);
+                boolean samePhone=ClientSearch.sameNumber(other.phone,digits);
                 boolean sameName=!enteredName.isEmpty() && other.name.trim().equalsIgnoreCase(enteredName);
                 if(samePhone||sameName){possible=other.name;break;}
             }

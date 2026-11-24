@@ -10,7 +10,13 @@ final class ClientSearch {
         String actual=stored==null?"":stored.replaceAll("[^0-9]","");
         if(actual.contains(wanted))return true;
         // Only equate complete Russian numbers; do not rewrite other country codes.
-        return russian(wanted)&&russian(actual)&&wanted.substring(1).equals(actual.substring(1));
+        return sameNumber(actual,wanted);
+    }
+    static boolean sameNumber(String first,String second){
+        String actual=first==null?"":first.replaceAll("[^0-9]","");
+        String wanted=second==null?"":second.replaceAll("[^0-9]","");
+        if(wanted.length()<7)return false;
+        return actual.equals(wanted)||russian(wanted)&&russian(actual)&&wanted.substring(1).equals(actual.substring(1));
     }
     private static boolean russian(String digits){
         return digits.length()==11&&(digits.charAt(0)=='7'||digits.charAt(0)=='8');

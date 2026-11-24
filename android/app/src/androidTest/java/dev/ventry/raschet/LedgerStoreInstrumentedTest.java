@@ -410,6 +410,9 @@ public class LedgerStoreInstrumentedTest {
         assertTrue(ClientSearch.phoneMatches("+7 900 222-33-44","8 900 2223344"));
         assertFalse(ClientSearch.phoneMatches("+1 900 222-33-44","8 900 2223344"));
         assertFalse(ClientSearch.phoneMatches("","999"));
+        assertTrue(ClientSearch.sameNumber("8 (999) 123-45-67","+7 999 1234567"));
+        assertFalse(ClientSearch.sameNumber("123","123"));
+        assertFalse(ClientSearch.sameNumber("8 999 123-45-67","9991234567"));
         assertFalse(ClientSearch.phoneMatches("8 999 1234567","Али999"));
         java.util.Map<String,LedgerStore.Client> people=new java.util.HashMap<>();
         for(LedgerStore.Client c:book.clients())people.put(c.id,c);
