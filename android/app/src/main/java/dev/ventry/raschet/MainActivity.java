@@ -954,6 +954,11 @@ public final class MainActivity extends Activity {
         try{return LedgerStore.parseAmount(amount.getText().toString());}
         catch(IllegalArgumentException e){return 0L;}
     }
+    static LocalDate correctionDueDate(String raw,LocalDate fallback){
+        if(raw==null||raw.trim().isEmpty())return fallback;
+        try{return LocalDate.parse(raw.trim());}
+        catch(java.time.format.DateTimeParseException invalid){return fallback;}
+    }
     private static LocalDate readDate(Bundle b,String key){
         String value=b.getString(key);return value==null?null:LocalDate.parse(value);
     }
@@ -2115,10 +2120,10 @@ public final class MainActivity extends Activity {
         EditText due=field("Без срока",original.due);
         due.setFocusable(false);due.setClickable(true);
         due.setOnClickListener(v->{
-            LocalDate today=LocalDate.now();
+            LocalDate initial=correctionDueDate(due.getText().toString(),LocalDate.now());
             new DatePickerDialog(this,(picker,y,m,d)->due.setText(
                     String.format(Locale.ROOT,"%04d-%02d-%02d",y,m+1,d)),
-                    today.getYear(),today.getMonthValue()-1,today.getDayOfMonth()).show();
+                    initial.getYear(),initial.getMonthValue()-1,initial.getDayOfMonth()).show();
         });
         if(original.type.equals("debt")){
             content.addView(formGroup("Вернуть до",due));
