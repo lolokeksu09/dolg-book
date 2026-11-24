@@ -397,9 +397,8 @@ public final class LedgerStore extends SQLiteOpenHelper {
             newClients.add(new Client(id,name.trim(),phone));
         }
         Set<String> entryIds=new HashSet<>();
-        Map<String,Long> sums=new HashMap<>();
-        Map<String,List<Entry>> active=new HashMap<>();
-        for(Client c:newClients){sums.put(c.id,0L);active.put(c.id,new ArrayList<>());}
+        dev.ventry.raschet.domain.ImportLedgerValidation history=
+                new dev.ventry.raschet.domain.ImportLedgerValidation(version,ids);
         for(int i=0;i<es.length();i++){
             JSONObject j=es.getJSONObject(i);
             String id=j.getString("id"),cid=j.getString("clientId"),type=j.getString("type"),
@@ -409,7 +408,7 @@ public final class LedgerStore extends SQLiteOpenHelper {
             if(!(rawAmount instanceof Number) || !rawAmount.toString().matches("\\d{1,12}"))
                 throw new IllegalArgumentException("Сумма операции должна быть целым числом копеек.");
             long amount=Long.parseLong(rawAmount.toString());
-            if(id.isEmpty()||id.length()>100||!entryIds.add(id)||!sums.containsKey(cid)
+            if(id.isEmpty()||id.length()>100||!entryIds.add(id)||!ids.contains(cid)
                     ||!type.equals("debt")&&!type.equals("payment")&&!type.equals("reversal")
                     ||amount<=0||amount>MAX_AMOUNT||note.length()>200||date.length()>40
                     ||due.length()>10)throw new IllegalArgumentException("Некорректная запись.");
@@ -427,24 +426,7 @@ public final class LedgerStore extends SQLiteOpenHelper {
                 if(purchase.total!=amount||(version<4&&purchase.hasUnits()))throw new IllegalArgumentException("Неверный состав или сумма покупки.");
             }
             Entry e=new Entry(id,cid,type,amount,date,due,note,reverses,purchase);
-            long delta;
-            List<Entry> stack=active.get(cid);
-            if(type.equals("reversal")){
-                if(version==1||stack.isEmpty()||note.trim().isEmpty())
-                    throw new IllegalArgumentException("Некорректная отмена.");
-                Entry previous=stack.get(stack.size()-1);
-                if(!previous.id.equals(reverses)||previous.amount!=amount)
-                    throw new IllegalArgumentException("Неверная связь отмены.");
-                stack.remove(stack.size()-1);
-                delta=previous.type.equals("debt")?-amount:amount;
-            }else{
-                if(!reverses.isEmpty())throw new IllegalArgumentException("Неверная ссылка.");
-                stack.add(e);
-                delta=type.equals("debt")?amount:-amount;
-            }
-            long current=sums.get(cid),updated=current+delta;
-            if(updated<0||updated>MAX_AMOUNT)throw new IllegalArgumentException("Книга содержит переплату или слишком большой остаток.");
-            sums.put(cid,updated);
+            history.accept(cid,id,type,amount,reverses,note);
             newEntries.add(e);
         }
         SQLiteDatabase db=getWritableDatabase();
