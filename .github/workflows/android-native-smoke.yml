@@ -1,0 +1,70 @@
+name: Native Android emulator smoke
+on:
+  pull_request:
+    paths:
+      - 'android/**'
+      - 'scripts/android-native-smoke.sh'
+      - '.github/workflows/android-native-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  emulator:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Enable KVM for x86_64 Android emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -no-snapshot -noaudio -no-boot-anim -gpu swiftshader
+          script: bash scripts/android-native-smoke.sh
+      - name: Upload screenshots and UI check
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Raschet-native-emulator-captures
+          path: |
+            android/build/native-intro-ventry.png
+            android/build/native-intro-ventry-expanded.png
+            android/build/native-intro-1.png
+            android/build/native-intro-1-practice.png
+            android/build/native-intro-2.png
+            android/build/native-intro-2-practice.png
+            android/build/native-intro-3.png
+            android/build/native-intro-3-practice.png
+            android/build/native-home.png
+            android/build/native-clients.png
+            android/build/native-history.png
+            android/build/native-settings.png
+            android/build/native-tablet-clients.png
+            android/build/native-settings-large.png
+            android/build/native-ledger-800.png
+            android/build/native-client-compact.png
+            android/build/native-payment-projection.png
+            android/build/native-period-report.png
+            android/build/native-client-archive.png
+            android/build/native-purchase-form.png
+            android/build/native-purchase-details.png
+            android/build/native-ui.xml
+            android/build/android-runtime-errors.txt
+          if-no-files-found: warn
+          retention-days: 14

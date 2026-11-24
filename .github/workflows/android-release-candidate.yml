@@ -1,0 +1,142 @@
+name: Android release candidate
+
+on:
+  pull_request:
+    paths:
+      - 'android/**'
+      - '.github/workflows/android-release-candidate.yml'
+      - 'tests/android-bundle.test.js'
+      - 'tests/android-collections.test.js'
+      - 'tests/android-daily-ops.test.js'
+  push:
+    tags:
+      - 'raschet-v*-rc.*'
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Install SDK
+        run: |
+          sdkmanager_bin="${ANDROID_HOME:-/usr/local/lib/android/sdk}/cmdline-tools/latest/bin/sdkmanager"
+          "$sdkmanager_bin" --install 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Verify release configuration and ledger
+        run: node --test tests/ledger.test.js tests/android-bundle.test.js tests/android-onboarding.test.js tests/android-collections.test.js tests/android-daily-ops.test.js
+      - name: Validate unsigned release variant (PR only)
+        if: github.event_name == 'pull_request'
+        run: |
+          gradle -p android lintRelease assembleRelease --no-daemon
+          test -s android/app/build/outputs/apk/release/app-release-unsigned.apk
+          echo 'Unsigned release variant compiled; not publishable.'
+      - name: Decode configured signing keystore (RC tag only)
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/raschet-v')
+        env:
+          SIGNING_KEYSTORE_BASE64: ${{ secrets.RASCHET_SIGNING_KEYSTORE_BASE64 }}
+          RASCHET_SIGNING_STORE_PASSWORD: ${{ secrets.RASCHET_SIGNING_STORE_PASSWORD }}
+          RASCHET_SIGNING_KEY_ALIAS: ${{ secrets.RASCHET_SIGNING_KEY_ALIAS }}
+          RASCHET_SIGNING_KEY_PASSWORD: ${{ secrets.RASCHET_SIGNING_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for name in SIGNING_KEYSTORE_BASE64 RASCHET_SIGNING_STORE_PASSWORD RASCHET_SIGNING_KEY_ALIAS RASCHET_SIGNING_KEY_PASSWORD; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "Missing signing secret: $name"
+              exit 1
+            fi
+          done
+          printf '%s' "$SIGNING_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/raschet-signing.jks"
+          chmod 600 "$RUNNER_TEMP/raschet-signing.jks"
+      - name: Build and verify signed candidate (RC tag only)
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/raschet-v')
+        env:
+          RASCHET_SIGNING_STORE_FILE: ${{ runner.temp }}/raschet-signing.jks
+          RASCHET_SIGNING_STORE_PASSWORD: ${{ secrets.RASCHET_SIGNING_STORE_PASSWORD }}
+          RASCHET_SIGNING_KEY_ALIAS: ${{ secrets.RASCHET_SIGNING_KEY_ALIAS }}
+          RASCHET_SIGNING_KEY_PASSWORD: ${{ secrets.RASCHET_SIGNING_KEY_PASSWORD }}
+          EXPECTED_CERT_SHA256: ${{ vars.RASCHET_SIGNING_CERT_SHA256 }}
+        run: |
+          set -euo pipefail
+          [[ "$EXPECTED_CERT_SHA256" =~ ^[a-fA-F0-9]{64}$ ]] || { echo 'Missing/invalid pinned release certificate'; exit 1; }
+          gradle -p android lintRelease assembleRelease --no-daemon
+          apk=android/app/build/outputs/apk/release/app-release.apk
+          test -s "$apk"
+          tools="${ANDROID_HOME}/build-tools/35.0.0"
+          "$tools/apksigner" verify --verbose --print-certs "$apk" > "$RUNNER_TEMP/raschet-certificate.txt"
+          actual=$(awk -F': ' '/^Signer #1 certificate SHA-256 digest: /{print tolower($2)}' "$RUNNER_TEMP/raschet-certificate.txt")
+          [[ "$actual" == "${EXPECTED_CERT_SHA256,,}" ]] || { echo 'Release signer mismatch'; exit 1; }
+          badging=$("$tools/aapt" dump badging "$apk")
+          grep -Fq "package: name='dev.ventry.raschet' " <<< "$badging"
+          version=$(sed -n "s/^package: .*versionName='\([^']*\)'.*/\1/p" <<< "$badging")
+          [[ "$GITHUB_REF_NAME" == "raschet-v$version-rc."* ]] || { echo 'Tag and APK version differ'; exit 1; }
+          mkdir -p android/build/release-candidate
+          printf '%s\n' "$actual" > android/build/release-candidate/CERT_SHA256
+          printf '%s\n' "$GITHUB_SHA" > android/build/release-candidate/REVISION
+          cp "$apk" android/build/release-candidate/Raschet-release-candidate.apk
+          (cd android/build/release-candidate && sha256sum Raschet-release-candidate.apk > SHA256SUMS)
+      - name: Upload signed release candidate (RC tag only)
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/raschet-v')
+        uses: actions/upload-artifact@v4
+        with:
+          name: Raschet-signed-release-candidate
+          path: android/build/release-candidate/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Remove signing material
+        if: always()
+        run: rm -f "$RUNNER_TEMP/raschet-signing.jks"
+
+  signed-smoke:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/raschet-v')
+    needs: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: Raschet-signed-release-candidate
+          path: android/build/release-candidate
+      - name: Verify candidate bytes
+        working-directory: android/build/release-candidate
+        run: |
+          sha256sum -c SHA256SUMS
+          test "$(cat REVISION)" = "$GITHUB_SHA"
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        env:
+          RASCHET_SIGNED_APK: android/build/release-candidate/Raschet-release-candidate.apk
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -no-snapshot -noaudio -no-boot-anim -gpu swiftshader
+          script: bash scripts/android-native-smoke.sh
+      - name: Upload signed candidate smoke evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Raschet-signed-smoke-captures
+          path: |
+            android/build/native-*.png
+            android/build/native-ui.xml
+            android/build/android-runtime-errors.txt
+          if-no-files-found: warn
+          retention-days: 14
