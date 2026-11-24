@@ -63,7 +63,7 @@ test('native navigation and empty states are accessible, with actionable call-to
 test('upgrade keeps native preview package and ledger persistence unchanged',()=>{
   const gradle=read('android/app/build.gradle.kts');
   const store=read('android/app/src/main/java/dev/ventry/raschet/LedgerStore.java');
-  assert.ok(gradle.includes('versionName = "0.18.0-beta.1"'));
+  assert.ok(gradle.includes('versionName = "0.19.0-beta.1"'));
   assert.ok(gradle.includes('applicationIdSuffix = ".nativev031"'));
   assert.ok(store.includes('raschet-ledger.db'));
   assert.ok(!gradle.includes('webkit'));

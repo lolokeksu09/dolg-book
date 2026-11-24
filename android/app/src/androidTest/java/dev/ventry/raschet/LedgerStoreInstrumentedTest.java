@@ -215,4 +215,18 @@ public class LedgerStoreInstrumentedTest {
         assertEquals(2,filtered.get(0).entries.size());assertEquals(60000L,LedgerStore.balance(book.entries(),a));
         assertEquals(0L,LedgerStore.balance(book.entries(),b));
     }
+
+    @Test public void recentDebtSuggestionsIgnorePaymentsAndCanceledDebt(){
+        String a=book.recordDatedDebt(null,"Али","",15000L,LocalDate.now(),"","");
+        String b=book.recordDatedDebt(null,"Лейла","",20000L,LocalDate.now(),"","");
+        book.recordDatedDebt(a,"","",9000L,LocalDate.now(),"","");
+        book.reverseLast(a,"Ошибочная запись");
+        book.addEntry(a,"payment",5000L,"","");
+        java.util.Map<String,Long> recent=RecentDebts.lastAmounts(book.entries());
+        assertEquals(java.util.Arrays.asList(b,a),new java.util.ArrayList<>(recent.keySet()));
+        assertEquals(Long.valueOf(15000L),recent.get(a));
+        assertEquals(Long.valueOf(20000L),recent.get(b));
+        assertEquals(10000L,LedgerStore.balance(book.entries(),a));
+        assertEquals(5,book.entries().size());
+    }
 }

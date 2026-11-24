@@ -10,7 +10,7 @@ test('Android UI is native and does not contain web UI runtime',()=>{
   const gradle=read('android/app/build.gradle.kts');
   const activity=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
   const manifest=read('android/app/src/main/AndroidManifest.xml');
-  assert.ok(gradle.includes('versionName = "0.18.0-beta.1"'));
+  assert.ok(gradle.includes('versionName = "0.19.0-beta.1"'));
   assert.ok(gradle.includes('applicationIdSuffix = ".nativev031"'));
   assert.ok(!gradle.includes('webkit')&&!gradle.includes('syncOfflineBook'));
   assert.ok(!gradle.includes('index.html')&&!gradle.includes('app.js'));
@@ -210,4 +210,15 @@ test('payment journal is separate from unpaid debt and shortcuts only prefill th
   assert.ok(ui.includes('amount.setText(amountInput(available))'));
   assert.ok(ui.includes('if(type.equals("payment")&&fromBook)'));
   assert.ok(days.includes('if(!"payment".equals(e.type))continue;'));
+});
+
+
+test('repeat debt shortcuts prefill without posting and quick debt has optional detail fields',()=>{
+  const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
+  const recent=read('android/app/src/main/java/dev/ventry/raschet/RecentDebts.java');
+  assert.ok(ui.includes('repeat.setOnClickListener(v->showEntryForm(person.id,"debt"))'));
+  assert.ok(ui.includes('()->amount.setText(amountInput(cents))'));
+  assert.ok(ui.includes('addButton(matches,"Недавние клиенты"'));
+  assert.ok(ui.includes('day[0],due.getText().toString(),note.getText().toString().trim()'));
+  assert.ok(recent.includes('!canceled.contains(e.id)'));
 });
