@@ -47,3 +47,16 @@ test('release signing is opt-in and test package does not change',()=>{
   assert.ok(gradle.includes('signingConfigs.create("raschetRelease")'));
   assert.ok(!gradle.includes('storePassword = "'));
 });
+
+test('RC signing is isolated from PR and verifies the fixed certificate and candidate',()=>{
+  const workflow=read('.github/workflows/android-release-candidate.yml');
+  const smoke=read('scripts/android-native-smoke.sh');
+  assert.ok(workflow.includes("'raschet-v*-rc.*'"));
+  assert.ok(workflow.includes('vars.RASCHET_SIGNING_CERT_SHA256'));
+  assert.ok(workflow.includes('Release signer mismatch'));
+  assert.ok(workflow.includes("github.event_name == 'pull_request'"));
+  assert.ok(workflow.includes('signed-smoke:'));
+  assert.ok(workflow.includes('sha256sum -c SHA256SUMS'));
+  assert.ok(smoke.includes('RASCHET_SIGNED_APK'));
+  assert.ok(smoke.includes('PACKAGE=dev.ventry.raschet\n'));
+});

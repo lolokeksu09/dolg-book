@@ -1,15 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 mkdir -p android/build
-gradle -p android assembleDebug --no-daemon
-APK=android/app/build/outputs/apk/debug/app-debug.apk
-PACKAGE=dev.ventry.raschet.nativev031
-adb install -r "$APK"
-# Real instrumented SQLite tests execute against the test APK's isolated context.
-gradle -p android connectedDebugAndroidTest --no-daemon
-# Gradle may uninstall the target package after instrumentation on some runners.
-# Reinstall the identical debug APK before performing the end-to-end UI actions.
-adb install -r "$APK"
+if [[ -n "${RASCHET_SIGNED_APK:-}" ]]; then
+  APK="$RASCHET_SIGNED_APK"
+  PACKAGE=dev.ventry.raschet
+  test -s "$APK"
+  adb install "$APK"
+else
+  gradle -p android assembleDebug --no-daemon
+  APK=android/app/build/outputs/apk/debug/app-debug.apk
+  PACKAGE=dev.ventry.raschet.nativev031
+  adb install -r "$APK"
+  # Instrumentation tests run only with the isolated debug package.
+  gradle -p android connectedDebugAndroidTest --no-daemon
+  adb install -r "$APK"
+fi
 adb logcat -c
 adb shell am start -W -n "$PACKAGE/dev.ventry.raschet.SplashActivity"
 sleep 4
@@ -223,6 +228,11 @@ tap_text 'Закрыть'
 sleep 0.2
 tap_text 'Главная'
 
+# On a clean CI emulator only: reinstall the same signed candidate without
+# uninstall/clear. This tests persistence across reinstall, not a version upgrade.
+if [[ -n "${RASCHET_SIGNED_APK:-}" ]]; then
+  adb install -r "$APK"
+fi
 # Reopen: the onboarding must not be shown twice and the remaining debt persists.
 adb shell am force-stop "$PACKAGE"
 adb shell am start -W -n "$PACKAGE/dev.ventry.raschet.SplashActivity"
