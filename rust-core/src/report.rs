@@ -141,7 +141,10 @@ mod tests {
         assert_eq!(report.opening, header[4].parse::<i64>().unwrap());
         assert_eq!(report.closing, header[5].parse::<i64>().unwrap());
         assert_eq!(report.totals, totals(&header[6..11]));
-        assert_eq!(report.active_customers, header[11].parse::<usize>().unwrap());
+        assert_eq!(
+            report.active_customers,
+            header[11].parse::<usize>().unwrap()
+        );
         assert_eq!(&report.daily, daily, "{}", header[1]);
     }
 
