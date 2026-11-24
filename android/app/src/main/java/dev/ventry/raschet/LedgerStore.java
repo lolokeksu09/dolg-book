@@ -121,6 +121,17 @@ public final class LedgerStore extends SQLiteOpenHelper {
         }
         return result;
     }
+    /** Both ordered queries observe the same committed SQLite transaction. */
+    public synchronized dev.ventry.raschet.data.LedgerSnapshot readSnapshot() {
+        SQLiteDatabase db=getWritableDatabase();
+        db.beginTransactionNonExclusive();
+        try {
+            dev.ventry.raschet.data.LedgerSnapshot snapshot=
+                    new dev.ventry.raschet.data.LedgerSnapshot(clients(),entries());
+            db.setTransactionSuccessful();
+            return snapshot;
+        }finally{db.endTransaction();}
+    }
     public synchronized void addClient(String name,String phone) {
         insertClient(getWritableDatabase(),name,phone);
     }
@@ -324,7 +335,7 @@ public final class LedgerStore extends SQLiteOpenHelper {
     /** Same balance guard for correction preview and actual transaction. Zero is reversal only. */
     static long correctedBalance(long available,Entry last,long amount){
         if(last==null)throw new IllegalArgumentException("Неверная операция.");
-        return dev.ventry.raschet.domain.LedgerArithmetic.correctedBalance(available,last.type,last.amount,amount);
+        return dev.ventry.raschet.bridge.CorrectionEngine.correctedBalance(available,last.type,last.amount,amount);
     }
 
     private static ContentValues values(Entry entry) {
