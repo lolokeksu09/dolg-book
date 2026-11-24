@@ -32,9 +32,9 @@ Source review, not proof of actual device performance, full security audit or ex
 
 | REQ | Deliverable | Gate | Current |
 |---|---|---|---|
-| M01 | Kotlin interoperable build and a real financial slice | Java call → Kotlin, original tests plus shared contract | Implemented in branch; full Android CI pending |
-| M02 | Rust arithmetic reference and parity | same contract inputs; cargo fmt/clippy/test; no runtime activation | First correction function and tests added; Rust not locally executed |
-| M03 | Audited pure engine: balance, FIFO, overdue, historical payments, reversal, reports/import validation | golden fixtures from exact Java baseline + property/differential tests for date ordering, amounts, reversals, duplicate IDs | NOT STARTED |
+| M01 | Kotlin interoperable build and a real financial slice | Java call → Kotlin, original tests plus shared contract | First-slice Android APK, unsigned release and contract CI PASS; emulator pending |
+| M02 | Rust arithmetic reference and parity | same contract inputs; cargo fmt/clippy/test; no runtime activation | Correction CI PASS; FIFO projection and shared fixtures added, new Rust CI pending |
+| M03 | Audited pure engine: balance, FIFO, overdue, historical payments, reversal, reports/import validation | golden fixtures from exact Java baseline + property/differential tests for date ordering, amounts, reversals, duplicate IDs | PARTIAL: Kotlin balance, canceled IDs and overdue are active through Java facade; Rust projection implemented, parity CI pending; historical payments, aggregate insights, reports/import validation remain |
 | M04 | Thin JNI bridge and NDK build | pinned toolchain, all supported ABIs, malformed inputs, panic boundary, exact APK smoke | NOT STARTED |
 | M05 | Kotlin data layer + Repository; transaction boundary retained | old DB opened with existing records, rollback/restore, JSON v1–v4, concurrency, large synthetic book | NOT STARTED |
 | M06 | MVVM state holders and coroutine dispatcher ownership | lifecycle, process recreation, stale result rejection, retries and repeated tap, no I/O in UI | NOT STARTED |
@@ -54,4 +54,12 @@ References:
 
 Standalone JVM: LedgerArithmetic.kt + tests/contracts/CorrectionContract.kt compiled with locally available kotlinc 1.9.0, jvm-target 17; 18/18 shared vectors PASS. This does not prove the new Android Gradle toolchain. Rust/Android/emulator on migration revision NOT RUN locally (no Cargo/Android SDK/Gradle); GitHub Actions gates are required. No release, merge, device changes or database migration authorized by this report.
 
-Continue only after exact branch CI, then M03 with extracted legacy golden fixtures. Maintain existing preview/release isolation.
+Maintain existing preview/release isolation. No merge or delivery until exact-head CI passes.
+
+## M03 — balance / FIFO projection slice
+
+- Kotlin `LedgerProjection.kt`: checked integer arithmetic, exact prior cancellation and insertion-order FIFO behavior, client isolation, prior ISO due-date string comparison preserved deliberately. Existing `LedgerStore.Entry` implements the read-only interface with getters; no copied storage model, database schema change or transaction change. `LedgerStore.canceled`, `balance`, `overdue` now delegate to Kotlin.
+- Rust `projection.rs`: independent checked projection, shared ten fixtures and an overflow rejection test. Rust still not used by the APK; JNI and ABI packaging remain M04. No performance claims.
+- Shared fixtures cover empty book, date/order distinction, reversed payments and debts, replacement, client isolation, due today/no date, one kopeck, max balance and full repayment. Local Kotlin 1.9.0/JVM 17: **10 fixed cases and 500 deterministic differential checks PASS** against the transcribed baseline loops over 250 synthetic histories (80 operations, two clients). Java standalone adapter calling the Kotlin module: PASS. Exact Kotlin module, test harness and fixture blob SHA matched the tested local files. Production-facade JUnit test added but full Android Gradle verification is pending.
+- Prior baseline `46ff504`: contract CI (45479114768), Android APK (45479114762), unsigned release (45479114724) all PASS; emulator (45479114647) was still in progress at last check. These results are **not** evidence for the new revision.
+- Next: verify exact-head Android/Rust CI, then migrate DatedPayments and CollectionsInsights with independent regression evidence. Retain transaction writes, JSON v1–v4, old dates and correction/restore invariants.
