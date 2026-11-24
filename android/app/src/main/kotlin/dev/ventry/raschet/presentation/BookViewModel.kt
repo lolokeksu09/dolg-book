@@ -10,6 +10,7 @@ import androidx.lifecycle.viewModelScope
 import dev.ventry.raschet.CollectionsInsights
 import dev.ventry.raschet.ClientWriteService
 import dev.ventry.raschet.data.ClientCommand
+import dev.ventry.raschet.data.WriteReceipt
 import dev.ventry.raschet.LedgerStore
 import dev.ventry.raschet.data.LedgerSnapshot
 import dev.ventry.raschet.data.SqliteLedgerRepository
@@ -42,7 +43,7 @@ class BookViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
     val state = reader.state
-    private val writer = SingleWrite<ClientCommand, Boolean>(viewModelScope) { command ->
+    private val writer = SingleWrite<ClientCommand, WriteReceipt>(viewModelScope) { command ->
         withContext(Dispatchers.IO) {
             readMutex.withLock { ClientWriteService.execute(application, command) }
         }
@@ -55,10 +56,10 @@ class BookViewModel(application: Application) : AndroidViewModel(application) {
         return true
     }
 
-    fun acknowledgeWrite(result: WriteState<Boolean>) = writer.acknowledge(result)
+    fun acknowledgeWrite(result: WriteState<WriteReceipt>) = writer.acknowledge(result)
     fun hasPendingWrite(): Boolean = writeState.value != WriteState.Idle
 
-    fun observeWrites(owner: ComponentActivity, listener: Consumer<WriteState<Boolean>>) {
+    fun observeWrites(owner: ComponentActivity, listener: Consumer<WriteState<WriteReceipt>>) {
         owner.lifecycleScope.launch {
             owner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 writeState.collect { listener.accept(it) }
