@@ -1,14 +1,9 @@
 package dev.ventry.raschet;
 
-import java.time.Instant;
 import java.time.LocalDate;
-import java.time.OffsetDateTime;
 import java.time.ZoneId;
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.TreeMap;
 
 /** Read-only report, reversals take effect on their recorded date. */
@@ -30,44 +25,23 @@ final class PeriodReport {
         this.daily=daily;this.activeCustomers=activeCustomers;
     }
     static LocalDate dateOf(LedgerStore.Entry entry,ZoneId zone){
-        Instant instant;
-        try{instant=Instant.parse(entry.date);}
-        catch(java.time.format.DateTimeParseException ignored){
-            instant=OffsetDateTime.parse(entry.date).toInstant();
-        }
-        return instant.atZone(zone).toLocalDate();
+        return dev.ventry.raschet.domain.DatedLedger.localDate(entry.date,zone);
     }
-    private static void apply(Totals t,LedgerStore.Entry e,Map<String,LedgerStore.Entry> earlier){
-        if("debt".equals(e.type))t.debts+=e.amount;
-        else if("payment".equals(e.type))t.payments+=e.amount;
-        else if("reversal".equals(e.type)){
-            LedgerStore.Entry original=earlier.get(e.reverses);
-            if(original==null||!original.clientId.equals(e.clientId)||original.amount!=e.amount)
-                throw new IllegalArgumentException("Нарушена связь отмены.");
-            if("debt".equals(original.type))t.debtReversals+=e.amount;
-            else if("payment".equals(original.type))t.paymentReversals+=e.amount;
-            else throw new IllegalArgumentException("Недопустимый тип отмены.");
-        }else throw new IllegalArgumentException("Неизвестная операция.");
-        t.count++;
+    private static Totals adapt(dev.ventry.raschet.domain.ReportProjection.Totals source){
+        Totals totals=new Totals();
+        totals.debts=source.getDebts();
+        totals.payments=source.getPayments();
+        totals.debtReversals=source.getDebtReversals();
+        totals.paymentReversals=source.getPaymentReversals();
+        totals.count=source.getCount();
+        return totals;
     }
     static PeriodReport build(List<LedgerStore.Entry> entries,LocalDate from,LocalDate to,ZoneId zone){
-        if(from.isAfter(to)||to.isAfter(from.plusDays(365)))
-            throw new IllegalArgumentException("Выберите период от 1 до 366 дней.");
-        Map<String,LedgerStore.Entry> earlier=new HashMap<>();
-        Totals before=new Totals(),during=new Totals();
+        dev.ventry.raschet.domain.ReportProjection.Report report=
+                dev.ventry.raschet.domain.ReportProjection.build(entries,from,to,zone);
         Map<LocalDate,Totals> daily=new TreeMap<>();
-        Set<String> customers=new HashSet<>();
-        for(LedgerStore.Entry entry:entries){
-            LocalDate date=dateOf(entry,zone);
-            if(date.isBefore(from))apply(before,entry,earlier);
-            else if(!date.isAfter(to)){
-                apply(during,entry,earlier);
-                apply(daily.computeIfAbsent(date,d->new Totals()),entry,earlier);
-                customers.add(entry.clientId);
-            }
-            earlier.put(entry.id,entry);
-        }
-        return new PeriodReport(from,to,before.net(),during,daily,customers.size());
+        report.getDaily().forEach((date,totals)->daily.put(date,adapt(totals)));
+        return new PeriodReport(from,to,report.getOpening(),adapt(report.getTotals()),daily,report.getActiveCustomers());
     }
     static String rubles(long cents){
         return java.math.BigDecimal.valueOf(cents,2).toPlainString().replace('.',',');
