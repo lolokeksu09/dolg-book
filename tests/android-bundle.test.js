@@ -10,7 +10,7 @@ test('Android UI is native and does not contain web UI runtime',()=>{
   const gradle=read('android/app/build.gradle.kts');
   const activity=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
   const manifest=read('android/app/src/main/AndroidManifest.xml');
-  assert.ok(gradle.includes('versionName = "0.13.0-beta.1"'));
+  assert.ok(gradle.includes('versionName = "0.14.0-beta.1"'));
   assert.ok(gradle.includes('applicationIdSuffix = ".nativev031"'));
   assert.ok(!gradle.includes('webkit')&&!gradle.includes('syncOfflineBook'));
   assert.ok(!gradle.includes('index.html')&&!gradle.includes('app.js'));
@@ -126,4 +126,15 @@ test('dense lists, selected filters and content-sized dialogs are wired',()=>{
   assert.ok(dialog.includes('View.MeasureSpec.AT_MOST'));
   assert.ok(dialog.includes('WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE'));
   assert.ok(!dialog.includes('dp(550)'));
+});
+
+test('counter-first UI keeps both financial actions, compact search and viewport-aware dialogs',()=>{
+  const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
+  assert.ok(ui.includes('addButton(quick,"Принять оплату",true'));
+  assert.ok(ui.includes('add.setContentDescription("+ Добавить клиента")'));
+  assert.ok(ui.includes('context.addView(moreActions'));
+  assert.ok(ui.includes('root.getWindowVisibleDisplayFrame(visible)'));
+  assert.ok(!ui.includes('int limit=dp(380)'));
+  assert.ok(ui.includes('items.size()>1?View.VISIBLE:View.GONE'));
+  assert.ok(ui.includes('card.setSelected(customer.id.equals(selectedClient))'));
 });
