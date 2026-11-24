@@ -10,7 +10,7 @@ test('Android UI is native and does not contain web UI runtime',()=>{
   const gradle=read('android/app/build.gradle.kts');
   const activity=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
   const manifest=read('android/app/src/main/AndroidManifest.xml');
-  assert.ok(gradle.includes('versionName = "0.14.0-beta.1"'));
+  assert.ok(gradle.includes('versionName = "0.15.0-beta.1"'));
   assert.ok(gradle.includes('applicationIdSuffix = ".nativev031"'));
   assert.ok(!gradle.includes('webkit')&&!gradle.includes('syncOfflineBook'));
   assert.ok(!gradle.includes('index.html')&&!gradle.includes('app.js'));
@@ -102,7 +102,7 @@ test('client history follows two primary actions and secondary actions live in o
 test('compact book keeps essential controls and hides redundant empty-state filters',()=>{
   const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
   assert.ok(ui.includes('private int controlHeight(){return largeText?54:48;}'));
-  assert.ok(ui.includes('private int navHeight(){return largeText?72:64;}'));
+  assert.ok(ui.includes('private int navHeight(){return largeText?68:56;}'));
   const clients=ui.slice(ui.indexOf('private View clientsView()'),ui.indexOf('private void showClientFilters()'));
   assert.ok(clients.indexOf('if(ledger.clients().isEmpty())')<clients.indexOf('"+ Добавить клиента"'));
   assert.ok(clients.includes('this::showClientFilters'));
@@ -137,4 +137,17 @@ test('counter-first UI keeps both financial actions, compact search and viewport
   assert.ok(!ui.includes('int limit=dp(380)'));
   assert.ok(ui.includes('items.size()>1?View.VISIBLE:View.GONE'));
   assert.ok(ui.includes('card.setSelected(customer.id.equals(selectedClient))'));
+});
+
+
+test('AMOLED ledger uses shared semantic palette and real metric rows',()=>{
+  const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
+  const theme=read('android/app/src/main/java/dev/ventry/raschet/LedgerTheme.java');
+  assert.ok(theme.includes('BG=0xff000000'));
+  for(const screen of ['MainActivity','IntroActivity','SplashActivity']) assert.ok(read('android/app/src/main/java/dev/ventry/raschet/'+screen+'.java').includes('LedgerTheme.BG'));
+  assert.ok(ui.includes('balancePanel("Общая задолженность",debt)'));
+  assert.ok(ui.includes('metricRow(due,"Просрочено",money(overdue)'));
+  assert.ok(ui.includes('metricRow(due,"Должников",debtors'));
+  assert.ok(ui.includes('android.R.attr.state_focused'));
+  assert.ok(ui.includes('STRIKE_THRU_TEXT_FLAG'));
 });

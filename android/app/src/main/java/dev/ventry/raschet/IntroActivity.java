@@ -24,13 +24,13 @@ public final class IntroActivity extends Activity {
     private static final String PREFS = "raschet_intro";
     private static final String KEY_COMPLETED = "completed";
     private static final String KEY_VENTRY_SHOWN = "ventry_shown";
-    private static final int BG = 0xff090e0c;
-    private static final int PANEL = 0xff17231c;
-    private static final int TEXT = 0xfff4f7f3;
-    private static final int MUTED = 0xffa5b9ab;
-    private static final int ACCENT = 0xffb9efd0;
-    private static final int INK = 0xff12271b;
-    private static final int BORDER = 0xff314137;
+    private static final int BG = LedgerTheme.BG;
+    private static final int PANEL = LedgerTheme.PANEL;
+    private static final int TEXT = LedgerTheme.TEXT;
+    private static final int MUTED = LedgerTheme.MUTED;
+    private static final int ACCENT = LedgerTheme.ACCENT;
+    private static final int INK = LedgerTheme.INK;
+    private static final int BORDER = LedgerTheme.BORDER;
 
     private static final String[] TITLES = {
             "Знакомьтесь, Ventry",
@@ -147,41 +147,41 @@ public final class IntroActivity extends Activity {
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
         content.setGravity(Gravity.CENTER_VERTICAL);
-        content.setPadding(dp(28), dp(12), dp(28), dp(12));
+        content.setPadding(dp(16), dp(8), dp(16), dp(8));
 
         FrameLayout glyphFrame = new FrameLayout(this);
-        glyphFrame.setBackground(shape(PANEL, 30));
+        glyphFrame.setBackground(shape(PANEL, 10));
         ImageView glyph = new ImageView(this);
         glyph.setImageResource(ICONS[step]);
         if (step != 0) glyph.setColorFilter(ACCENT);
         glyph.setContentDescription(null);
-        FrameLayout.LayoutParams glyphParams = new FrameLayout.LayoutParams(dp(44), dp(44), Gravity.CENTER);
+        FrameLayout.LayoutParams glyphParams = new FrameLayout.LayoutParams(dp(30), dp(30), Gravity.CENTER);
         glyphFrame.addView(glyph, glyphParams);
-        content.addView(glyphFrame, new LinearLayout.LayoutParams(dp(78), dp(78)));
+        content.addView(glyphFrame, new LinearLayout.LayoutParams(dp(52), dp(52)));
 
         TextView number = label(step == 0 ? "ЦИФРОВЫЕ ПРОДУКТЫ" :
                 "УРОК " + step + " ИЗ 3", 12, ACCENT, true);
         number.setLetterSpacing(0.16f);
         LinearLayout.LayoutParams noParams = new LinearLayout.LayoutParams(-1, -2);
-        noParams.topMargin = dp(16);
+        noParams.topMargin = dp(8);
         content.addView(number, noParams);
 
-        TextView title = label(TITLES[step], 28, TEXT, true);
+        TextView title = label(TITLES[step], 24, TEXT, true);
         title.setMaxLines(3);
         LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(-1, -2);
-        titleParams.topMargin = dp(8);
+        titleParams.topMargin = dp(4);
         content.addView(title, titleParams);
 
-        TextView description = label(DESCRIPTIONS[step], 16, MUTED, false);
+        TextView description = label(DESCRIPTIONS[step], 15, MUTED, false);
         description.setLineSpacing(dp(4), 1f);
         LinearLayout.LayoutParams descParams = new LinearLayout.LayoutParams(-1, -2);
-        descParams.topMargin = dp(12);
+        descParams.topMargin = dp(8);
         content.addView(description, descParams);
 
         previewHost = new FrameLayout(this);
         previewHost.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
         LinearLayout.LayoutParams previewParams = new LinearLayout.LayoutParams(-1, -2);
-        previewParams.topMargin = dp(18);
+        previewParams.topMargin = dp(10);
         content.addView(previewHost, previewParams);
         updatePracticePreview();
         scroll.addView(content);
@@ -205,7 +205,7 @@ public final class IntroActivity extends Activity {
                 finishOnboarding();
             }
         });
-        footer.addView(next, new LinearLayout.LayoutParams(-1, dp(56)));
+        footer.addView(next, new LinearLayout.LayoutParams(-1, dp(48)));
 
         if (step < TITLES.length - 1) {
             TextView skip = button("Пропустить", false);

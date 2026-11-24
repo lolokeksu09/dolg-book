@@ -284,7 +284,7 @@ grep -Fq '800,00' android/build/native-ui.xml
 tap_text 'Финансовый отчёт'
 sleep 0.5
 dump_ui
-grep -Fq 'ОСТАТОК НА КОНЕЦ' android/build/native-ui.xml
+grep -Fq 'Остаток на конец' android/build/native-ui.xml
 grep -Fq '800,00' android/build/native-ui.xml
 adb exec-out screencap -p > android/build/native-period-report.png
 tap_text 'Период отчёта'
