@@ -193,6 +193,68 @@ public final class LedgerStore extends SQLiteOpenHelper {
             return id;
         }finally{db.endTransaction();}
     }
+    /** The consent check and existing debt transaction run under one outer SQLite transaction. */
+    public synchronized dev.ventry.raschet.data.WriteReceipt recordCheckedDebt(
+            dev.ventry.raschet.data.ClientCommand.Debt command, Context context){
+        UUID.fromString(command.getId());
+        SQLiteDatabase db=getWritableDatabase();
+        db.beginTransaction();
+        try{
+            String client=command.getExistingId();
+            if(hasEntryId(command.getId())||hasClientId(command.getId()))
+                throw new IllegalArgumentException("Этот черновик уже сохранён. Откройте книгу.");
+            List<Entry> all=entries();
+            if(client==null){
+                checkClient(command.getName(),command.getPhone());
+                if(!command.getAllowDuplicate()){
+                    String n=command.getName().trim(),d=command.getPhone().replaceAll("[^0-9]","");
+                    for(Client other:clients())
+                        if(other.name.trim().equalsIgnoreCase(n)||ClientSearch.sameNumber(other.phone,d))
+                            throw new IllegalArgumentException("Выберите существующего клиента или подтвердите создание отдельного.");
+                }
+            }else{
+                ClientDirectory directory=new ClientDirectory(context);
+                long balance=balance(all,client),limit=directory.debtLimit(client);
+                if(directory.archived(client,balance))
+                    throw new IllegalArgumentException("Сначала верните клиента из архива.");
+                boolean confirmed=dev.ventry.raschet.domain.DebtApproval.matches(
+                        command.getApproval(),client,balance,limit,command.getAmount());
+                if(!confirmed&&!command.getApproval().isEmpty()&&DebtLimits.requiresConfirmation(limit,balance,command.getAmount()))
+                    throw new IllegalArgumentException("Остаток или лимит изменился. Откройте форму заново и подтвердите превышение.");
+                DebtLimits.requireConsent(limit,balance,command.getAmount(),confirmed);
+            }
+            int rank=1;
+            for(BookDays.Day existing:BookDays.group(all,ZoneId.systemDefault()))
+                if(existing.date.isAfter(command.getDay()))rank++;
+            String id=recordDatedDebt(client,command.getName(),command.getPhone(),command.getAmount(),
+                    command.getDay(),command.getDue(),command.getNote(),command.getId());
+            dev.ventry.raschet.data.WriteReceipt receipt=new dev.ventry.raschet.data.WriteReceipt(
+                    command.getDestination(),"debt",id,command.getDay(),rank,false);
+            db.setTransactionSuccessful();
+            return receipt;
+        }finally{db.endTransaction();}
+    }
+
+    /** Retain the existing historical-payment guard and compute the journal position before commit. */
+    public synchronized dev.ventry.raschet.data.WriteReceipt recordCheckedPayment(
+            dev.ventry.raschet.data.ClientCommand.Payment command){
+        UUID.fromString(command.getId());
+        SQLiteDatabase db=getWritableDatabase();
+        db.beginTransaction();
+        try{
+            List<Entry> all=entries();
+            int rank=1;
+            for(BookDays.Day existing:BookDays.groupPayments(all,ZoneId.systemDefault()))
+                if(existing.date.isAfter(command.getDay()))rank++;
+            boolean settled=balance(all,command.getClientId())==command.getAmount();
+            addDraftPayment(command.getClientId(),command.getAmount(),command.getNote(),command.getId(),command.getDay());
+            dev.ventry.raschet.data.WriteReceipt receipt=new dev.ventry.raschet.data.WriteReceipt(
+                    command.getDestination(),"payment",command.getClientId(),command.getDay(),rank,settled);
+            db.setTransactionSuccessful();
+            return receipt;
+        }finally{db.endTransaction();}
+    }
+
     public synchronized void editClient(String id,String name,String phone) {
         checkClient(name,phone);
         ContentValues row=new ContentValues(); row.put("name",name.trim()); row.put("phone",phone.trim());
