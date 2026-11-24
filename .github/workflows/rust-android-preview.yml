@@ -7,6 +7,7 @@ on:
       - 'rust-core/**'
       - 'scripts/build-rust-android.sh'
       - 'scripts/verify-rust-preview-apk.py'
+      - 'scripts/test-verify-rust-preview-apk.py'
       - 'tests/contracts/correction.tsv'
       - '.github/workflows/rust-android-preview.yml'
   workflow_dispatch:
@@ -31,6 +32,10 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.11.1'
+      - name: Verify build and APK gate scripts
+        run: |
+          bash -n scripts/build-rust-android.sh
+          python3 scripts/test-verify-rust-preview-apk.py
       - name: Install SDK and pinned NDK
         run: |
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install 'platforms;android-35' 'build-tools;35.0.0' 'ndk;28.2.13676358'
@@ -57,6 +62,27 @@ jobs:
           disable-animations: true
           emulator-options: -no-window -no-snapshot -noaudio -no-boot-anim -gpu swiftshader
           script: gradle -p android -PraschetRustPreview=true -Pandroid.testInstrumentationRunnerArguments.class=dev.ventry.raschet.bridge.NativeCorrectionInstrumentedTest :app:connectedDebugAndroidTest --no-daemon
+      - name: Require executed JNI instrumentation test
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from xml.etree import ElementTree
+          results = Path("android/app/build/outputs/androidTest-results/connected")
+          cases = [case for file in results.rglob("TEST-*.xml")
+                   for case in ElementTree.parse(file).iter("testcase")
+                   if case.get("classname") == "dev.ventry.raschet.bridge.NativeCorrectionInstrumentedTest"
+                   and case.get("name") == "packagedRustLibraryMatchesCorrectionContract"]
+          assert cases, "No JNI instrumentation test result"
+          assert all(not any(case.find(tag) is not None for tag in ("failure", "error", "skipped")) for case in cases)
+          print("ANDROID_JNI_RUNTIME_CONTRACT_PASS")
+          PY
+      - name: Upload verified debug preview APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Raschet-rust-jni-debug-preview
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
       - name: Upload JNI test results
         if: always()
         uses: actions/upload-artifact@v4
