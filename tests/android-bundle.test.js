@@ -10,7 +10,7 @@ test('Android UI is native and does not contain web UI runtime',()=>{
   const gradle=read('android/app/build.gradle.kts');
   const activity=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
   const manifest=read('android/app/src/main/AndroidManifest.xml');
-  assert.ok(gradle.includes('versionName = "0.8.0-beta.1"'));
+  assert.ok(gradle.includes('versionName = "0.9.0-beta.1"'));
   assert.ok(gradle.includes('applicationIdSuffix = ".nativev031"'));
   assert.ok(!gradle.includes('webkit')&&!gradle.includes('syncOfflineBook'));
   assert.ok(!gradle.includes('index.html')&&!gradle.includes('app.js'));
@@ -66,10 +66,21 @@ test('itemized debts use an additive migration and versioned validated purchase 
   const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
   const purchase=read('android/app/src/main/java/dev/ventry/raschet/Purchase.java');
   assert.ok(store.includes("ALTER TABLE entries ADD COLUMN purchase"));
-  assert.ok(store.includes('root.put("version",3)'));
+  assert.ok(store.includes('Math.max(root.getInt("version"),3)'));
   assert.ok(store.includes('purchase.total!=amount'));
   assert.ok(store.includes('last.purchase!=null&&amount!=last.amount'));
   assert.ok(purchase.includes('RoundingMode.HALF_UP'));
   assert.ok(ui.includes('ledger.addPurchase(clientId,purchase'));
   assert.ok(ui.includes('e.purchase.summary()'));
+});
+
+test('catalog persists in the shared book and purchase prices are snapshots',()=>{
+  const store=read('android/app/src/main/java/dev/ventry/raschet/LedgerStore.java');
+  const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
+  assert.ok(store.includes('CREATE TABLE products'));
+  assert.ok(store.includes('root.put("products",ps)'));
+  assert.ok(store.includes('root.put("version",4)'));
+  assert.ok(store.includes('for(Product p:newProducts)'));
+  assert.ok(ui.includes('row.applyProduct(p)'));
+  assert.ok(ui.includes('Product.filter('));
 });
