@@ -302,6 +302,9 @@ public final class MainActivity extends Activity {
         addButton(quick,"Принять оплату",false,()->chooseClient("payment"),1);
         view.addView(hero,margin(-1,-2,6));
         view.addView(quick,margin(-1,dp(stacked?2*controlHeight()+8:controlHeight()),8));
+        QuickDebtDrafts.Draft pending=new QuickDebtDrafts(this).get();
+        if(pending!=null&&!ledger.hasEntryId(pending.id)&&!ledger.hasClientId(pending.id))
+            actionRow(view,"↶","Незавершённая запись",pending.name.isEmpty()?"Продолжить черновик":pending.name,this::showQuickDebt);
         addListDivider(view);
 
         LinearLayout modes=row();
@@ -1167,7 +1170,7 @@ public final class MainActivity extends Activity {
         showDialog("Восстановить точку?",form,()->{
             vault.create(ledger); // Fail closed: do not replace if recovery point cannot be created.
             ledger.importJson(snapshot);
-            directory.clearAfterRestore();
+            directory.clearAfterRestore();new QuickDebtDrafts(this).clear();
             getPreferences(MODE_PRIVATE).edit().remove("last_json_export").apply();
             selectedClient=null;tab="Клиенты";
             return true;
@@ -1277,10 +1280,34 @@ public final class MainActivity extends Activity {
     private void showQuickDebt(){showQuickDebt(false);}
     private void showQuickDebt(boolean fromClients){showQuickDebt(fromClients,LocalDate.now());}
     private void showQuickDebt(boolean fromClients,LocalDate initialDay){
+        QuickDebtDrafts drafts=new QuickDebtDrafts(this);
+        QuickDebtDrafts.Draft previous=drafts.get();
+        if(previous!=null&&(ledger.hasEntryId(previous.id)||ledger.hasClientId(previous.id))){
+            drafts.clear();previous=null;
+        }
+        if(previous==null){showQuickDebtForm(fromClients,initialDay,null);return;}
+        final QuickDebtDrafts.Draft pending=previous;
+        LinearLayout content=stack(6);
+        content.addView(label(pending.name.isEmpty()?"Без имени":pending.name,16,TEXT,true));
+        content.addView(label("Сумма: "+(pending.amount.isEmpty()?"не указана":pending.amount+" ₽")+" · "+pending.day,13,MUTED,false));
+        addButton(content,"Продолжить черновик",true,()->{
+            if(chooser!=null)chooser.dismiss();
+            showQuickDebtForm(pending.fromClients,pending.day,pending);
+        },1);
+        addButton(content,"Удалить черновик и начать новый",false,()->{
+            if(chooser!=null)chooser.dismiss();
+            drafts.clear();showQuickDebtForm(fromClients,initialDay,null);
+        },1);
+        showDialog("Незавершённая запись",content,null);
+    }
+    private void showQuickDebtForm(boolean fromClients,LocalDate initialDay,QuickDebtDrafts.Draft previous){
+        QuickDebtDrafts drafts=new QuickDebtDrafts(this);
+        final String draftId=previous==null?java.util.UUID.randomUUID().toString():previous.id;
         LinearLayout form=stack(5);
-        EditText name=field("Имя покупателя",null);
-        EditText phone=field("Телефон (необязательно)",null);phone.setInputType(InputType.TYPE_CLASS_PHONE);
-        EditText amount=field("0,00",null);amount.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        if(previous!=null)form.addView(label("Черновик восстановлен. Проверьте клиента перед сохранением.",12,MUTED,false));
+        EditText name=field("Имя покупателя",previous==null?null:previous.name);
+        EditText phone=field("Телефон (необязательно)",previous==null?null:previous.phone);phone.setInputType(InputType.TYPE_CLASS_PHONE);
+        EditText amount=field("0,00",previous==null?null:previous.amount);amount.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);
         form.addView(formGroup("Имя покупателя",name));
         form.addView(formGroup("Телефон (необязательно)",phone));
         LinearLayout matches=stack(2);form.addView(matches);
@@ -1291,7 +1318,7 @@ public final class MainActivity extends Activity {
         TextView date=debtDateField(day);
         form.addView(formGroup("Дата записи",date));
         LinearLayout extra=stack(5);
-        EditText due=field("Без срока",null);due.setFocusable(false);due.setClickable(true);
+        EditText due=field("Без срока",previous==null?null:previous.due);due.setFocusable(false);due.setClickable(true);
         due.setOnClickListener(v->{
             LocalDate today=LocalDate.now();
             new DatePickerDialog(this,(picker,y,m,d)->due.setText(LocalDate.of(y,m+1,d).toString()),
@@ -1299,9 +1326,9 @@ public final class MainActivity extends Activity {
         });
         extra.addView(formGroup("Вернуть до (необязательно)",due));
         LinearLayout clear=stack(0);addButton(clear,"Без срока",false,()->due.setText(""),1);
-        clear.setVisibility(View.GONE);due.addTextChangedListener(watcher(v->clear.setVisibility(v.isEmpty()?View.GONE:View.VISIBLE)));
+        clear.setVisibility(due.length()==0?View.GONE:View.VISIBLE);due.addTextChangedListener(watcher(v->clear.setVisibility(v.isEmpty()?View.GONE:View.VISIBLE)));
         extra.addView(clear);
-        EditText note=field("Комментарий",null);extra.addView(formGroup("Комментарий (необязательно)",note));
+        EditText note=field("Комментарий",previous==null?null:previous.note);extra.addView(formGroup("Комментарий (необязательно)",note));
         LinearLayout toggle=stack(0);
         addButton(toggle,"Срок и комментарий",false,()->{
             boolean open=extra.getVisibility()!=View.VISIBLE;
@@ -1310,7 +1337,8 @@ public final class MainActivity extends Activity {
             String caption=open?"Скрыть дополнительные поля":"Срок и комментарий";
             button.setText(caption);button.setContentDescription(caption);
         },1);
-        form.addView(toggle);extra.setVisibility(View.GONE);form.addView(extra);
+        form.addView(toggle);extra.setVisibility(due.length()>0||note.length()>0?View.VISIBLE:View.GONE);form.addView(extra);
+        if(extra.getVisibility()==View.VISIBLE){TextView button=(TextView)toggle.getChildAt(0);button.setText("Скрыть дополнительные поля");button.setContentDescription("Скрыть дополнительные поля");}
         List<LedgerStore.Client> customers=ledger.clients();
         List<LedgerStore.Entry> snapshot=ledger.entries();
         Map<String,Long> lastAmounts=RecentDebts.lastAmounts(snapshot);
@@ -1319,6 +1347,14 @@ public final class MainActivity extends Activity {
         for(CollectionsInsights.CustomerStatus status:statuses)balances.put(status.client.id,status.balance);
         String[] selected={null};
         boolean[] updating={false},separate={false};
+        // Intentionally do not persist selected IDs or override consent: reselect the client after resume.
+        Runnable persist=()->{
+            if(updating[0])return;
+            QuickDebtDrafts.Draft value=new QuickDebtDrafts.Draft(draftId,fromClients,
+                    name.getText().toString(),phone.getText().toString(),amount.getText().toString(),
+                    day[0],due.getText().toString(),note.getText().toString());
+            if(value.isEmpty())drafts.clear();else drafts.save(value);
+        };
         Runnable refreshLimit=()->notice.update(selected[0],selected[0]==null?0L:balances.getOrDefault(selected[0],0L),previewAmount(amount));
         amount.addTextChangedListener(watcher(v->refreshLimit.run()));
         java.util.function.Consumer<LedgerStore.Client> choose=customer->{
@@ -1327,7 +1363,7 @@ public final class MainActivity extends Activity {
             matches.removeAllViews();
             matches.addView(label("Выбран существующий клиент · "+money(balances.getOrDefault(customer.id,0L)),12,ACCENT,true));
             addRecentAmount(matches,amount,lastAmounts.getOrDefault(customer.id,0L));
-            refreshLimit.run();
+            refreshLimit.run();persist.run();
         };
         Runnable refresh=()->{
             refreshLimit.run();matches.removeAllViews();
@@ -1375,7 +1411,9 @@ public final class MainActivity extends Activity {
         };
         name.addTextChangedListener(watcher(v->{if(!updating[0]){selected[0]=null;separate[0]=false;refresh.run();}}));
         phone.addTextChangedListener(watcher(v->{if(!updating[0]){selected[0]=null;separate[0]=false;refresh.run();}}));
+        for(TextView field:new TextView[]{name,phone,amount,date,due,note})field.addTextChangedListener(watcher(v->persist.run()));
         refresh.run();
+        if(previous!=null)addButton(form,"Удалить черновик",false,()->{drafts.clear();if(chooser!=null)chooser.dismiss();render();},1);
         showDialog(fromClients?"Новый клиент и долг":"Новый долг",form,()->{
             String n=name.getText().toString(),ph=phone.getText().toString();
             if(selected[0]==null&&!separate[0]&&hasExactCustomer(ledger.clients(),n,ph))
@@ -1385,7 +1423,8 @@ public final class MainActivity extends Activity {
             if(fromClients&&amount.getText().toString().trim().isEmpty()){
                 if(selected[0]!=null)throw new IllegalArgumentException("Клиент уже существует. Введите сумму долга.");
                 if(due.length()>0||!note.getText().toString().trim().isEmpty())throw new IllegalArgumentException("Введите сумму долга или очистите срок и комментарий.");
-                ledger.addClient(n,ph);
+                ledger.addDraftClient(draftId,n,ph);
+                drafts.clear();
                 tab="Клиенты";selectedClient=null;clientScope=ClientDirectory.ACTIVE;
                 clientFilter=CollectionsInsights.ALL;search="";clientVisibleLimit=60;
                 return true;
@@ -1397,7 +1436,8 @@ public final class MainActivity extends Activity {
                 if(existing.date.isAfter(day[0]))rank++;
             long cents=LedgerStore.parseAmount(amount.getText().toString());
             notice.verify(selected[0],cents);
-            ledger.recordDatedDebt(selected[0],n,ph,cents,day[0],due.getText().toString(),note.getText().toString().trim());
+            ledger.recordDatedDebt(selected[0],n,ph,cents,day[0],due.getText().toString(),note.getText().toString().trim(),draftId);
+            drafts.clear();
             bookPayments=false;clearBookFilters();
             expandedBookDays.add(day[0].toString());
             bookDayLimit=Math.max(bookDayLimit,rank);
@@ -2021,7 +2061,7 @@ public final class MainActivity extends Activity {
                     // If creating this point fails, abort before touching SQLite.
                     vault.create(ledger);
                     int[] count=ledger.importJson(backup);
-                    directory.clearAfterRestore();
+                    directory.clearAfterRestore();new QuickDebtDrafts(this).clear();
                     // A backup of the previous book is not a backup of this restored book.
                     getPreferences(MODE_PRIVATE).edit().remove("last_json_export").apply();
                     selectedClient=null;tab="Клиенты";

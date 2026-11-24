@@ -253,7 +253,7 @@ public class LedgerStoreInstrumentedTest {
         String corrected=book.exportJson();book.importJson(corrected);assertEquals(corrected,book.exportJson());
     }
 
-    @Test public void debtLimitSettingsPersistAndGuardOnlyNewDebt(){
+    @Test public void debtLimitSettingsPersistAndGuardOnlyNewDebt() throws Exception {
         String id=addCustomer();
         String storage="raschet-qa-limits-"+java.util.UUID.randomUUID();
         ClientDirectory directory=new ClientDirectory(testContext,storage);
@@ -280,5 +280,32 @@ public class LedgerStoreInstrumentedTest {
             directory.setDebtLimit(id,15000L);directory.clearAfterRestore();
             assertEquals(0L,directory.debtLimit(id));
         }finally{directory.clearAfterRestore();}
+    }
+
+    @Test public void quickDraftSurvivesReopenAndCannotPostTwice() throws Exception {
+        String storage="raschet-qa-draft-"+java.util.UUID.randomUUID();
+        QuickDebtDrafts drafts=new QuickDebtDrafts(testContext,storage);
+        String id=java.util.UUID.randomUUID().toString();
+        LocalDate day=LocalDate.now().minusDays(1);
+        try{
+            drafts.save(new QuickDebtDrafts.Draft(id,false,"Али","123","250",day,"","Хлеб"));
+            QuickDebtDrafts.Draft saved=new QuickDebtDrafts(testContext,storage).get();
+            assertEquals(id,saved.id);assertEquals(day,saved.day);assertEquals("250",saved.amount);
+            assertTrue(book.entries().isEmpty());assertTrue(book.clients().isEmpty());
+            try{book.recordDatedDebt(null,saved.name,saved.phone,0L,day,"","",id);fail("Zero amount accepted");}
+            catch(IllegalArgumentException expected){}
+            assertFalse(book.hasEntryId(id));assertTrue(book.clients().isEmpty());
+            String client=book.recordDatedDebt(null,saved.name,saved.phone,25000L,day,"",saved.note,id);
+            assertTrue(book.hasEntryId(id));
+            try{book.recordDatedDebt(null,saved.name,saved.phone,25000L,day,"",saved.note,id);fail("Duplicate draft accepted");}
+            catch(IllegalArgumentException expected){}
+            assertEquals(1,book.entries().size());assertEquals(1,book.clients().size());
+            assertEquals(25000L,LedgerStore.balance(book.entries(),client));
+            String json=book.exportJson();book.importJson(json);assertEquals(json,book.exportJson());
+            drafts.clear();assertNull(drafts.get());
+            String contactId=java.util.UUID.randomUUID().toString();
+            book.addDraftClient(contactId,"Контакт","");
+            assertTrue(book.hasClientId(contactId));
+        }finally{drafts.clear();}
     }
 }

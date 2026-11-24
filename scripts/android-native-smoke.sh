@@ -567,6 +567,33 @@ dump_ui
 grep -Fq 'Превышение 50,00' android/build/native-ui.xml
 tap_text 'Книга'
 
+# Quick debt draft must survive closing without creating a client or operation.
+tap_text '+ Записать долг'
+sleep 0.4
+fill_form_input 0 DraftBuyer
+fill_form_input 2 123
+tap_text 'Закрыть'
+sleep 0.4
+tap_text '+ Записать долг'
+sleep 0.4
+tap_text 'Продолжить черновик'
+sleep 0.4
+dump_ui
+grep -Fq 'DraftBuyer' android/build/native-ui.xml
+grep -Fq '123' android/build/native-ui.xml
+tap_text 'Сохранить'
+sleep 0.5
+dump_ui
+grep -Fq 'DraftBuyer' android/build/native-ui.xml
+tap_text '+ Записать долг'
+sleep 0.4
+dump_ui
+if grep -Fq 'Продолжить черновик' android/build/native-ui.xml; then
+  echo 'Committed draft still offered'; exit 1
+fi
+tap_text 'Закрыть'
+sleep 0.3
+
 adb logcat -d -s AndroidRuntime:E > android/build/android-runtime-errors.txt
 if grep -F 'FATAL EXCEPTION' android/build/android-runtime-errors.txt; then
   echo 'Android crash observed during onboarding smoke test'

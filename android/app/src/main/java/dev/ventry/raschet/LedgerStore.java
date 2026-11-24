@@ -118,9 +118,14 @@ public final class LedgerStore extends SQLiteOpenHelper {
         insertClient(getWritableDatabase(),name,phone);
     }
     private String insertClient(SQLiteDatabase db,String name,String phone){
+        return insertClient(db,name,phone,UUID.randomUUID().toString());
+    }
+    synchronized void addDraftClient(String id,String name,String phone){
+        insertClient(getWritableDatabase(),name,phone,id);
+    }
+    private String insertClient(SQLiteDatabase db,String name,String phone,String id){
         checkClient(name,phone);
         if(clients().size()>=MAX_CLIENTS)throw new IllegalArgumentException("Достигнут лимит клиентов.");
-        String id=UUID.randomUUID().toString();
         ContentValues row=new ContentValues();
         row.put("id",id);row.put("name",name.trim());row.put("phone",phone.trim());
         db.insertOrThrow("clients",null,row);
@@ -128,14 +133,24 @@ public final class LedgerStore extends SQLiteOpenHelper {
     }
     /** New customer and first debt commit atomically; selecting an existing ID never edits contact details. */
     public synchronized String recordDatedDebt(String existingId,String name,String phone,long amount,LocalDate day,String due,String note){
+        return recordDatedDebt(existingId,name,phone,amount,day,due,note,UUID.randomUUID().toString());
+    }
+    synchronized boolean hasEntryId(String id){
+        try(Cursor c=getReadableDatabase().rawQuery("SELECT 1 FROM entries WHERE id=?",new String[]{id})){return c.moveToFirst();}
+    }
+    synchronized boolean hasClientId(String id){
+        try(Cursor c=getReadableDatabase().rawQuery("SELECT 1 FROM clients WHERE id=?",new String[]{id})){return c.moveToFirst();}
+    }
+    public synchronized String recordDatedDebt(String existingId,String name,String phone,long amount,LocalDate day,String due,String note,String entryId){
         if(day==null||day.isAfter(LocalDate.now()))throw new IllegalArgumentException("Дата записи не может быть в будущем.");
         String timestamp=day.equals(LocalDate.now())?Instant.now().toString():
                 day.atStartOfDay(ZoneId.systemDefault()).toInstant().toString();
         SQLiteDatabase db=getWritableDatabase();
         db.beginTransaction();
         try{
+            if(hasEntryId(entryId))throw new IllegalArgumentException("Этот черновик уже сохранён. Откройте книгу.");
             String id=existingId==null?insertClient(db,name,phone):existingId;
-            insertEntry(db,id,"debt",amount,due,note,null,timestamp);
+            insertEntry(db,id,"debt",amount,due,note,null,timestamp,entryId);
             db.setTransactionSuccessful();
             return id;
         }finally{db.endTransaction();}
@@ -178,6 +193,9 @@ public final class LedgerStore extends SQLiteOpenHelper {
         }finally{db.endTransaction();}
     }
     private void insertEntry(SQLiteDatabase db,String clientId,String type,long amount,String due,String note,Purchase purchase,String timestamp){
+        insertEntry(db,clientId,type,amount,due,note,purchase,timestamp,UUID.randomUUID().toString());
+    }
+    private void insertEntry(SQLiteDatabase db,String clientId,String type,long amount,String due,String note,Purchase purchase,String timestamp,String entryId){
         if(!"debt".equals(type)&&!"payment".equals(type))throw new IllegalArgumentException("Неверная операция.");
         if(amount<=0||amount>MAX_AMOUNT)throw new IllegalArgumentException("Неверная сумма.");
         if(note==null||note.length()>200)throw new IllegalArgumentException("Комментарий слишком длинный.");
@@ -194,7 +212,7 @@ public final class LedgerStore extends SQLiteOpenHelper {
                 throw new IllegalArgumentException("Оплата превышает остаток долга.");
             if("debt".equals(type)&&amount>MAX_AMOUNT-available)
                 throw new IllegalArgumentException("Превышен максимальный остаток.");
-            Entry entry=new Entry(UUID.randomUUID().toString(),clientId,type,amount,timestamp,
+            Entry entry=new Entry(entryId,clientId,type,amount,timestamp,
                     due==null?"":due,note,"",purchase);
             db.insertOrThrow("entries",null,values(entry));
     }
