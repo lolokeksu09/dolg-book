@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Подписки · Расчёт</title>
+  <link rel="stylesheet" href="/admin/style.css">
+  <script src="/admin/app.js" type="module"></script>
+</head>
+<body class="admin-page">
+  <main>
+    <header class="app-bar"><strong>Расчёт</strong><button id="logout" type="button" hidden>Выйти</button></header>
+    <h1>Подписки магазинов</h1>
+    <p id="signin" hidden><a class="sign-in" href="/signin?next=admin">Войти в админку</a></p>
+    <form id="lookup" hidden>
+      <label id="token-label">Токен оператора
+        <input name="token" type="password" maxlength="8192" autocomplete="off" spellcheck="false" required>
+      </label>
+      <label>Номер магазина
+        <input name="shop" required maxlength="36" autocomplete="off" spellcheck="false" pattern="[a-fA-F0-9-]{36}">
+      </label>
+      <button type="submit">Найти магазин</button>
+    </form>
+    <p id="status" role="status"></p>
+    <section id="shop-result" hidden aria-labelledby="shop-name">
+      <h2 id="shop-name"></h2>
+      <dl>
+        <div><dt>Владелец</dt><dd id="owner"></dd></div>
+        <div><dt>Доступ</dt><dd id="access"></dd></div>
+        <div><dt>Оплачен до</dt><dd id="expiry"></dd></div>
+      </dl>
+      <form id="activate">
+        <label>Номер подтверждённой оплаты
+          <input name="payment" required maxlength="64" autocomplete="off" spellcheck="false" pattern="[A-Za-z0-9_\-]{1,64}">
+        </label>
+        <button id="activation-action" type="submit">Активировать на месяц</button>
+      </form>
+      <h3>Последние активации</h3>
+      <ol id="events"></ol>
+      <p id="empty" hidden>Активаций пока нет.</p>
+    </section>
+  </main>
+  <dialog id="confirm" aria-labelledby="confirmation-title">
+    <h2 id="confirmation-title">Подтвердить доступ?</h2>
+    <p id="confirmation"></p>
+    <div class="actions">
+      <button id="cancel" type="button">Отмена</button>
+      <button id="apply" type="button">Подтвердить</button>
+    </div>
+  </dialog>
+</body>
+</html>

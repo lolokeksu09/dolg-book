@@ -1,0 +1,5 @@
+.gradle/
+.kotlinc/
+build/
+app/build/
+local.properties
