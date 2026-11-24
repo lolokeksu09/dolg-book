@@ -339,4 +339,32 @@ public class LedgerStoreInstrumentedTest {
             directory.setFollowUp(contact,null,"");assertNull(directory.followUp(contact));
         }finally{directory.clearAfterRestore();}
     }
+
+    @Test public void promisedPaymentsExcludeEarlierAndCanceledReceipts() throws Exception {
+        LocalDate today=LocalDate.now();
+        String id=book.recordDatedDebt(null,"Обещание","",100000L,today,"","");
+        book.addEntry(id,"payment",10000L,"","");
+        String anchor=PaymentPromises.lastEntryId(book.entries(),id);
+        String storage="raschet-qa-promises-"+java.util.UUID.randomUUID();
+        ClientDirectory directory=new ClientDirectory(testContext,storage);
+        try{
+            directory.setFollowUp(id,today,"Вернёт часть",40000L,anchor);
+            ClientDirectory.FollowUp plan=new ClientDirectory(testContext,storage).followUp(id);
+            assertEquals(40000L,plan.amount);assertEquals(anchor,plan.anchor);
+            java.time.ZoneId zone=java.time.ZoneId.systemDefault();
+            PaymentPromises.Progress progress=PaymentPromises.calculate(book.entries(),id,plan,today,zone);
+            assertEquals(0L,progress.paid);assertFalse(progress.fulfilled());
+            book.addEntry(id,"payment",15000L,"","");
+            book.addEntry(id,"payment",25000L,"","");
+            progress=PaymentPromises.calculate(book.entries(),id,plan,today,zone);
+            assertTrue(progress.fulfilled());assertEquals(40000L,progress.onTime);
+            book.reverseLast(id,"Ошибка");
+            progress=PaymentPromises.calculate(book.entries(),id,plan,today.plusDays(1),zone);
+            assertFalse(progress.fulfilled());assertTrue(progress.missed);assertEquals(15000L,progress.paid);
+            book.addEntry(id,"payment",25000L,"","");
+            assertTrue(PaymentPromises.calculate(book.entries(),id,plan,today,zone).fulfilled());
+            assertFalse(PaymentPromises.calculate(book.entries(),id,new ClientDirectory.FollowUp(today,"",100L,"missing"),today,zone).valid);
+            directory.setFollowUp(id,null,"");assertNull(directory.followUp(id));
+        }finally{directory.clearAfterRestore();}
+    }
 }

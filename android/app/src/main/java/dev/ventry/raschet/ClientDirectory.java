@@ -43,20 +43,26 @@ final class ClientDirectory {
     }
     static final class FollowUp{
         final java.time.LocalDate date;
-        final String note;
-        FollowUp(java.time.LocalDate date,String note){this.date=date;this.note=note;}
+        final String note,anchor;
+        final long amount;
+        FollowUp(java.time.LocalDate date,String note){this(date,note,0L,"");}
+        FollowUp(java.time.LocalDate date,String note,long amount,String anchor){this.date=date;this.note=note;this.amount=amount;this.anchor=anchor;}
     }
     FollowUp followUp(String id){
         String day=prefs.getString("follow_up_date:"+id,null);
         if(day==null)return null;
-        try{return new FollowUp(java.time.LocalDate.parse(day),prefs.getString("follow_up_note:"+id,""));}
+        try{return new FollowUp(java.time.LocalDate.parse(day),prefs.getString("follow_up_note:"+id,""),prefs.getLong("promise_amount:"+id,0L),prefs.getString("promise_anchor:"+id,""));}
         catch(java.time.format.DateTimeParseException invalid){return null;}
     }
-    void setFollowUp(String id,java.time.LocalDate day,String note){
+    void setFollowUp(String id,java.time.LocalDate day,String note){setFollowUp(id,day,note,0L,"");}
+    void setFollowUp(String id,java.time.LocalDate day,String note,long amount,String anchor){
         if(id==null||id.isEmpty()||note==null||note.length()>200)throw new IllegalArgumentException("Комментарий: до 200 знаков.");
+        if(amount<0||amount>LedgerStore.MAX_AMOUNT||amount>0&&(day==null||anchor==null||anchor.isEmpty()))throw new IllegalArgumentException("Некорректное обещание оплаты.");
         SharedPreferences.Editor editor=prefs.edit();
         if(day==null)editor.remove("follow_up_date:"+id).remove("follow_up_note:"+id);
         else editor.putString("follow_up_date:"+id,day.toString()).putString("follow_up_note:"+id,note.trim());
+        if(day==null||amount==0)editor.remove("promise_amount:"+id).remove("promise_anchor:"+id);
+        else editor.putLong("promise_amount:"+id,amount).putString("promise_anchor:"+id,anchor);
         if(!editor.commit())throw new IllegalStateException("Не удалось сохранить план возврата.");
     }
     void clearAfterRestore(){prefs.edit().clear().apply();}

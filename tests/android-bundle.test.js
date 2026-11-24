@@ -10,7 +10,7 @@ test('Android UI is native and does not contain web UI runtime',()=>{
   const gradle=read('android/app/build.gradle.kts');
   const activity=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
   const manifest=read('android/app/src/main/AndroidManifest.xml');
-  assert.ok(gradle.includes('versionName = "0.23.0-beta.1"'));
+  assert.ok(gradle.includes('versionName = "0.24.0-beta.1"'));
   assert.ok(gradle.includes('applicationIdSuffix = ".nativev031"'));
   assert.ok(!gradle.includes('webkit')&&!gradle.includes('syncOfflineBook'));
   assert.ok(!gradle.includes('index.html')&&!gradle.includes('app.js'));
@@ -260,4 +260,15 @@ test('collection workspace is separate from chronological book and uses a read-o
   assert.ok(ui.includes('directory.setFollowUp(person.id,day[0]'));
   assert.ok(ui.includes('else if(fromCollections){selectedClient=null;tab="Возврат";}'));
   assert.ok(queue.includes('if(s.balance>0)'));
+});
+
+
+test('payment promises calculate progress from active receipts after the promise and only prefill payment',()=>{
+ const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
+ const model=read('android/app/src/main/java/dev/ventry/raschet/PaymentPromises.java');
+ assert.ok(ui.includes('nameRow.setMinimumHeight(dp(48))'));
+ assert.ok(ui.includes('Обещанная сумма, ₽ (необязательно)'));
+ assert.ok(ui.includes('()->amount.setText(amountInput(outstanding))'));
+ assert.ok(model.includes('canceled.contains(e.id)'));
+ assert.ok(model.includes('e.id.equals(plan.anchor)'));
 });

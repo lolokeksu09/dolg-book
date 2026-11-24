@@ -16,11 +16,14 @@ final class CollectionWorklist {
         final ClientDirectory.FollowUp followUp;
         final long limit;
         final int priority;
-        Item(CollectionsInsights.CustomerStatus s,ClientDirectory.FollowUp f,long l,LocalDate today){
-            status=s;followUp=f;limit=l;priority=priority(s,f,l,today);
+        final PaymentPromises.Progress promise;
+        Item(CollectionsInsights.CustomerStatus s,ClientDirectory.FollowUp f,long l,LocalDate today,PaymentPromises.Progress p){
+            status=s;followUp=f;limit=l;promise=p;priority=priority(s,f,l,today,p);
         }
     }
-    static int priority(CollectionsInsights.CustomerStatus s,ClientDirectory.FollowUp f,long limit,LocalDate today){
+    static int priority(CollectionsInsights.CustomerStatus s,ClientDirectory.FollowUp f,long limit,LocalDate today){return priority(s,f,limit,today,null);}
+    static int priority(CollectionsInsights.CustomerStatus s,ClientDirectory.FollowUp f,long limit,LocalDate today,PaymentPromises.Progress promise){
+        if(promise!=null&&promise.fulfilled())f=null;
         if(s.overdue>0)return LATE;
         if(f!=null&&!f.date.isAfter(today))return CONTACT;
         if(s.upcoming>0)return SOON;
@@ -38,10 +41,11 @@ final class CollectionWorklist {
             default:return "Остальные должники";
         }
     }
-    static List<Item> build(List<CollectionsInsights.CustomerStatus> statuses,ClientDirectory directory,LocalDate today){
+    static List<Item> build(List<CollectionsInsights.CustomerStatus> statuses,ClientDirectory directory,LocalDate today){return build(statuses,directory,today,java.util.Collections.emptyMap());}
+    static List<Item> build(List<CollectionsInsights.CustomerStatus> statuses,ClientDirectory directory,LocalDate today,java.util.Map<String,PaymentPromises.Progress> promises){
         List<Item> result=new ArrayList<>();
         for(CollectionsInsights.CustomerStatus s:statuses)
-            if(s.balance>0)result.add(new Item(s,directory.followUp(s.client.id),directory.debtLimit(s.client.id),today));
+            if(s.balance>0)result.add(new Item(s,directory.followUp(s.client.id),directory.debtLimit(s.client.id),today,promises.get(s.client.id)));
         result.sort(Comparator.comparingInt((Item i)->i.priority)
                 .thenComparing(i->i.followUp==null?LocalDate.MAX:i.followUp.date)
                 .thenComparing(Comparator.comparingLong((Item i)->i.status.overdue).reversed())

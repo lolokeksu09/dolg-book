@@ -626,6 +626,37 @@ dump_ui
 grep -Fq 'Нет должников по выбранным условиям.' android/build/native-ui.xml
 tap_text 'Книга'
 
+# Promise for DraftBuyer: partial receipt, then complete promised amount.
+tap_text 'Возврат долгов'
+sleep 0.4
+tap_text 'Имя или телефон'
+adb shell input text DraftBuyer
+adb shell input keyevent 4
+sleep 0.4
+tap_text 'Запланировать'
+sleep 0.4
+fill_form_input 0 100
+tap_text 'Сохранить'
+sleep 0.5
+dump_ui
+grep -Fq 'Обещано 100,00' android/build/native-ui.xml
+grep -Fq 'Осталось по обещанию: 100,00' android/build/native-ui.xml
+tap_text 'Принять оплату'
+sleep 0.4
+fill_form_input 0 40
+tap_text 'Сохранить'
+sleep 0.5
+dump_ui
+grep -Fq 'Осталось по обещанию: 60,00' android/build/native-ui.xml
+tap_text 'Принять оплату'
+sleep 0.4
+tap_text 'По обещанию: 60,00 ₽'
+tap_text 'Сохранить'
+sleep 0.5
+dump_ui
+grep -Fq 'Выполнено · получено 100,00' android/build/native-ui.xml
+tap_text 'Книга'
+
 adb logcat -d -s AndroidRuntime:E > android/build/android-runtime-errors.txt
 if grep -F 'FATAL EXCEPTION' android/build/android-runtime-errors.txt; then
   echo 'Android crash observed during onboarding smoke test'

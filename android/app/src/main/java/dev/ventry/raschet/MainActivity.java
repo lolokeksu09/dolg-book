@@ -299,11 +299,12 @@ public final class MainActivity extends Activity {
         long debt=0;
         int debtors=0,urgentCount=0;
         LocalDate today=LocalDate.now();
+        Map<String,PaymentPromises.Progress> promises=PaymentPromises.project(statuses,directory,entries,today,ZoneId.systemDefault());
         for(CollectionsInsights.CustomerStatus status:statuses){
             debt+=status.balance;
             if(status.balance>0){
                 debtors++;
-                if(CollectionWorklist.priority(status,directory.followUp(status.client.id),directory.debtLimit(status.client.id),today)<=CollectionWorklist.LIMIT)urgentCount++;
+                if(CollectionWorklist.priority(status,directory.followUp(status.client.id),directory.debtLimit(status.client.id),today,promises.get(status.client.id))<=CollectionWorklist.LIMIT)urgentCount++;
             }
         }
         LinearLayout hero=balancePanel("Общая задолженность",debt);
@@ -358,8 +359,11 @@ public final class MainActivity extends Activity {
     }
     private View collectionView(){
         LinearLayout view=screen("Возврат долгов","План работы с непогашенными долгами");
-        List<CollectionsInsights.CustomerStatus> statuses=CollectionsInsights.analyze(ledger.clients(),ledger.entries(),LocalDate.now());
-        List<CollectionWorklist.Item> work=CollectionWorklist.build(statuses,directory,LocalDate.now());
+        List<LedgerStore.Entry> entries=ledger.entries();
+        LocalDate today=LocalDate.now();
+        List<CollectionsInsights.CustomerStatus> statuses=CollectionsInsights.analyze(ledger.clients(),entries,today);
+        Map<String,PaymentPromises.Progress> promises=PaymentPromises.project(statuses,directory,entries,today,ZoneId.systemDefault());
+        List<CollectionWorklist.Item> work=CollectionWorklist.build(statuses,directory,today,promises);
         long overdue=0,upcoming=0,balance=0;
         for(CollectionWorklist.Item item:work){overdue+=item.status.overdue;upcoming+=item.status.upcoming;balance+=item.status.balance;}
         LinearLayout summary=balancePanel("К возврату всего",balance);
@@ -394,14 +398,15 @@ public final class MainActivity extends Activity {
             LinearLayout nameRow=row();nameRow.setGravity(Gravity.CENTER_VERTICAL);
             nameRow.addView(label(person.name,15,TEXT,true),new LinearLayout.LayoutParams(0,-2,1));
             nameRow.addView(label(money(status.balance),16,TEXT,true));
-            nameRow.setBackground(ripple(shape(BG,6,0)));nameRow.setMinHeight(dp(48));nameRow.setFocusable(true);
+            nameRow.setBackground(ripple(shape(BG,6,0)));nameRow.setMinimumHeight(dp(48));nameRow.setFocusable(true);
             nameRow.setOnClickListener(v->{returnToCollections=true;tab="Клиенты";selectedClient=person.id;render();});
             line.addView(nameRow);
             if(status.overdue>0)line.addView(label("Просрочено: "+money(status.overdue),12,RED,false));
             if(status.upcoming>0)line.addView(label("За 7 дней: "+money(status.upcoming)+" · ближайший срок "+status.nextDue,12,ALERT,false));
             if(item.limit>0&&status.balance>item.limit)line.addView(label("Сверх лимита: "+money(status.balance-item.limit),12,ALERT,false));
             if(item.followUp!=null){
-                line.addView(label("Связаться: "+bookDateFormat.format(item.followUp.date)+(item.followUp.note.isEmpty()?"":" · "+item.followUp.note),12,item.followUp.date.isAfter(LocalDate.now())?MUTED:ALERT,false));
+                if(item.promise!=null)appendPromise(line,item.followUp,item.promise);
+                else line.addView(label("Связаться: "+bookDateFormat.format(item.followUp.date)+(item.followUp.note.isEmpty()?"":" · "+item.followUp.note),12,item.followUp.date.isAfter(LocalDate.now())?MUTED:ALERT,false));
             }
             LinearLayout actions=row();
             addButton(actions,"Принять оплату",true,()->showEntryForm(person.id,"payment"),1);
@@ -412,6 +417,18 @@ public final class MainActivity extends Activity {
         if(visible.size()>collectionLimit)addButton(into,"Показать ещё должников",false,()->{collectionLimit+=60;fillCollections(into,work);},1);
         if(visible.isEmpty())into.addView(label(work.isEmpty()?"Непогашенных долгов нет.":"Нет должников по выбранным условиям.",14,MUTED,false));
     }
+    private void appendPromise(LinearLayout into,ClientDirectory.FollowUp plan,PaymentPromises.Progress progress){
+        into.addView(label("Обещано "+money(plan.amount)+" до "+bookDateFormat.format(plan.date),13,TEXT,true));
+        if(!progress.valid){
+            into.addView(label("Нужно обновить обещание: исходная операция не найдена.",12,ALERT,false));
+        }else{
+            String caption=progress.fulfilled()?(progress.onTime>=plan.amount?"Выполнено":"Выполнено после срока"):
+                    progress.missed?"Срок обещания прошёл":"Ожидается оплата";
+            into.addView(label(caption+" · получено "+money(Math.min(progress.paid,plan.amount))+" из "+money(plan.amount),12,progress.fulfilled()?ACCENT:progress.missed?ALERT:MUTED,false));
+            if(!progress.fulfilled())into.addView(label("Осталось по обещанию: "+money(plan.amount-progress.paid),12,MUTED,false));
+        }
+        if(!plan.note.isEmpty())into.addView(label(plan.note,12,MUTED,false));
+    }
     private void showFollowUp(LedgerStore.Client person){
         ClientDirectory.FollowUp old=directory.followUp(person.id);
         LocalDate[] day={old==null?LocalDate.now():old.date};
@@ -420,20 +437,36 @@ public final class MainActivity extends Activity {
         TextView date=label(bookDateFormat.format(day[0]),15,TEXT,true);
         date.setBackground(ripple(shape(ELEVATED,6,BORDER)));date.setPadding(dp(12),0,dp(12),0);date.setFocusable(true);
         date.setOnClickListener(v->pickReportDate("Дата следующего контакта",day[0],chosen->{day[0]=chosen;date.setText(bookDateFormat.format(chosen));}));
-        form.addView(formGroup("Дата следующего контакта",date));
+        form.addView(formGroup("Дата контакта / оплаты",date));
         LinearLayout presets=row();
         addButton(presets,"Сегодня",false,()->{day[0]=LocalDate.now();date.setText(bookDateFormat.format(day[0]));},1);
         addButton(presets,"Завтра",false,()->{day[0]=LocalDate.now().plusDays(1);date.setText(bookDateFormat.format(day[0]));},1);
         form.addView(presets,margin(-1,dp(controlHeight()),0));
+        EditText promised=field("Без обещанной суммы",old!=null&&old.amount>0?amountInput(old.amount):null);
+        promised.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        form.addView(formGroup("Обещанная сумма, ₽ (необязательно)",promised));
         EditText note=field("О чём договорились",old==null?null:old.note);
         form.addView(formGroup("Комментарий (необязательно)",note));
-        form.addView(label("План не меняет срок возврата долга и не отправляет сообщения. Хранится только на этом устройстве.",12,MUTED,false));
+        form.addView(label("Без суммы это обычный план контакта. Оплаты после создания обещания учитываются автоматически. Изменение суммы начинает новый отсчёт. План не меняет долг или срок возврата и хранится локально.",12,MUTED,false));
         if(old!=null)addButton(form,"Удалить план",false,()->{
             try{directory.setFollowUp(person.id,null,"");if(chooser!=null)chooser.dismiss();render();}catch(Exception e){message(e.getMessage());}
         },1);
         showDialog("План возврата",form,()->{
-            if(LedgerStore.balance(ledger.entries(),person.id)<=0)throw new IllegalArgumentException("Долг уже погашен.");
-            directory.setFollowUp(person.id,day[0],note.getText().toString().trim());return true;
+            List<LedgerStore.Entry> entries=ledger.entries();
+            long balance=LedgerStore.balance(entries,person.id);
+            String raw=promised.getText().toString().trim();
+            long target=raw.isEmpty()?0L:LedgerStore.parseAmount(raw);
+            String comment=note.getText().toString().trim();
+            if(target==0){
+                if(balance<=0)throw new IllegalArgumentException("Долг уже погашен.");
+                directory.setFollowUp(person.id,day[0],comment);return true;
+            }
+            boolean keep=old!=null&&old.amount==target&&!old.anchor.isEmpty()&&PaymentPromises.calculate(entries,person.id,old,LocalDate.now(),ZoneId.systemDefault()).valid;
+            if(!keep&&(target>balance||day[0].isBefore(LocalDate.now())))
+                throw new IllegalArgumentException("Новое обещание: сумма не выше остатка, дата не раньше сегодняшней.");
+            String anchor=keep?old.anchor:PaymentPromises.lastEntryId(entries,person.id);
+            if(anchor.isEmpty())throw new IllegalArgumentException("Нет исходной операции.");
+            directory.setFollowUp(person.id,day[0],comment,target,anchor);return true;
         });
     }
     private void bookModeButton(LinearLayout parent,String title,boolean payments){
@@ -738,7 +771,8 @@ public final class MainActivity extends Activity {
         long limit=directory.debtLimit(id);
         if(limit>0)total.addView(label(limitSummary(limit,amount),13,amount>=limit?ALERT:MUTED,false));
         ClientDirectory.FollowUp follow=directory.followUp(id);
-        if(amount>0&&follow!=null)total.addView(label("Связаться: "+bookDateFormat.format(follow.date)+(follow.note.isEmpty()?"":" · "+follow.note),13,follow.date.isAfter(LocalDate.now())?MUTED:ALERT,false));
+        if(follow!=null&&follow.amount>0)appendPromise(total,follow,PaymentPromises.calculate(all,id,follow,LocalDate.now(),ZoneId.systemDefault()));
+        else if(amount>0&&follow!=null)total.addView(label("Связаться: "+bookDateFormat.format(follow.date)+(follow.note.isEmpty()?"":" · "+follow.note),13,follow.date.isAfter(LocalDate.now())?MUTED:ALERT,false));
         view.addView(total,margin(-1,-2,12));
         boolean archived=directory.archived(id,amount);
         if(archived)view.addView(label("Клиент в архиве. История сохранена.",14,MUTED,true));
@@ -812,7 +846,7 @@ public final class MainActivity extends Activity {
             clientMenuAction(menu,"Долг по товарам",()->showPurchaseForm(id));
             clientMenuAction(menu,"Изменить клиента",()->showClientForm(client));
             clientMenuAction(menu,"Лимит задолженности",()->showDebtLimit(client));
-            if(amount>0)clientMenuAction(menu,"План возврата",()->showFollowUp(client));
+            if(amount>0||directory.followUp(id)!=null)clientMenuAction(menu,"План возврата",()->showFollowUp(client));
             if(ledger.lastActive(id)!=null){
                 clientMenuAction(menu,"Исправить последнюю запись",()->showCorrection(id));
                 clientMenuAction(menu,"Отменить запись",()->showReversal(id));
@@ -1808,6 +1842,12 @@ public final class MainActivity extends Activity {
             addButton(amounts,"Половина",false,()->amount.setText(amountInput(Math.max(1L,available/2))),1);
             addButton(amounts,"Весь остаток",false,()->amount.setText(amountInput(available)),1);
             content.addView(amounts,margin(-1,dp(controlHeight()),0));
+            ClientDirectory.FollowUp promise=directory.followUp(clientId);
+            if(promise!=null&&promise.amount>0){
+                PaymentPromises.Progress progress=PaymentPromises.calculate(ledger.entries(),clientId,promise,LocalDate.now(),ZoneId.systemDefault());
+                long outstanding=Math.min(available,Math.max(0L,promise.amount-progress.paid));
+                if(progress.valid&&outstanding>0)addButton(content,"По обещанию: "+money(outstanding),false,()->amount.setText(amountInput(outstanding)),1);
+            }
         }
         TextView projected=label("Остаток после записи: —",16,ACCENT,true);
         projected.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
@@ -1867,7 +1907,10 @@ public final class MainActivity extends Activity {
                 expandedBookDays.add(entryDay[0].toString());
             }else{
                 ledger.addEntry(clientId,type,cents,"",note.getText().toString().trim());
-                if(cents==available)try{directory.setFollowUp(clientId,null,"");}catch(Exception ignored){}
+                if(cents==available)try{
+                    ClientDirectory.FollowUp plan=directory.followUp(clientId);
+                    if(plan!=null&&plan.amount==0)directory.setFollowUp(clientId,null,"");
+                }catch(Exception ignored){}
             }
             drafts.clear(clientId,type);
             if(type.equals("payment")&&fromBook){
