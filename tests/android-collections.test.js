@@ -25,7 +25,11 @@ test('customer filters, full repayment form and explicit Android sharing are wir
   }
   assert.match(activity,/metricRow\(due,"Просрочено",money\(overdue\),[\s\S]*?\(\)->openClientFilter\(CollectionsInsights\.LATE\)\)/);
   assert.ok(activity.includes('CollectionsInsights.visible('));
-  assert.ok(activity.includes('CollectionsInsights.analyze('));
+  const viewModel=read('android/app/src/main/kotlin/dev/ventry/raschet/presentation/BookViewModel.kt');
+  assert.ok(viewModel.includes('CollectionsInsights.analyze(snapshot.clients, snapshot.entries, today)'));
+  assert.ok(activity.includes('data.getStatuses()'));
+  assert.ok(viewModel.includes('Dispatchers.IO'));
+  assert.ok(viewModel.includes('repeatOnLifecycle(Lifecycle.State.STARTED)'));
   assert.ok(activity.includes('showEntryForm(id,"payment",amount)'));
   assert.ok(activity.includes('Intent.createChooser(share'));
   assert.ok(activity.includes('share.setType("text/plain")'));
