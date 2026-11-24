@@ -2,6 +2,7 @@
 
 //! Pure financial arithmetic. No JNI or database I/O in this crate yet.
 
+pub mod collections;
 pub mod historical;
 pub mod projection;
 
