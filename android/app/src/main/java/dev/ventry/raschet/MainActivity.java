@@ -290,7 +290,7 @@ public final class MainActivity extends Activity {
         view.addView(hero,margin(-1,-2,8));
         addListDivider(view);
 
-        section(view,"Записи по датам","");
+        section(view,"Записи по датам","Суммы записанных долгов, не текущие остатки");
         Map<String,LedgerStore.Client> people=new HashMap<>();
         for(LedgerStore.Client customer:customers)people.put(customer.id,customer);
         List<BookDays.Day> days=BookDays.group(entries,ZoneId.systemDefault());
@@ -1159,9 +1159,14 @@ public final class MainActivity extends Activity {
                 throw new IllegalArgumentException("Выберите существующего клиента или подтвердите создание отдельного.");
             if(selected[0]!=null&&directory.archived(selected[0],LedgerStore.balance(ledger.entries(),selected[0])))
                 throw new IllegalArgumentException("Сначала верните клиента из архива.");
+            // Determine how many dates to reveal before the transaction; no potentially
+            // failing database reads after a successful save.
+            int rank=1;
+            for(BookDays.Day existing:BookDays.group(ledger.entries(),ZoneId.systemDefault()))
+                if(existing.date.isAfter(day[0]))rank++;
             ledger.recordDatedDebt(selected[0],n,ph,LedgerStore.parseAmount(amount.getText().toString()),day[0],"","");
             expandedBookDays.add(day[0].toString());
-            bookDayLimit=Math.max(bookDayLimit,BookDays.group(ledger.entries(),ZoneId.systemDefault()).size());
+            bookDayLimit=Math.max(bookDayLimit,rank);
             tab="Главная";selectedClient=null;return true;
         });
     }

@@ -380,6 +380,34 @@ tap_text 'Закрыть'
 sleep 0.3
 tap_text 'Книга'
 
+# Quick debt creates a new customer and transaction without a separate client form.
+tap_text '+ Записать долг'
+sleep 0.5
+fill_form_input 0 QuickBuyer
+fill_form_input 2 321
+tap_text 'Сохранить'
+sleep 0.6
+dump_ui
+grep -Fq 'QuickBuyer' android/build/native-ui.xml
+grep -Fq '321,00' android/build/native-ui.xml
+day=$(adb shell date +%d.%m.%y | tr -d '\r')
+tap_text "$day"
+sleep 0.3
+dump_ui
+if grep -Fq 'QuickBuyer' android/build/native-ui.xml; then
+  echo 'Collapsed date still exposes its entries'; exit 1
+fi
+tap_text "$day"
+sleep 0.3
+dump_ui
+grep -Fq 'QuickBuyer' android/build/native-ui.xml
+tap_text 'QuickBuyer'
+sleep 0.4
+dump_ui
+grep -Fq 'Остаток долга' android/build/native-ui.xml
+grep -Fq '321,00' android/build/native-ui.xml
+tap_text 'Книга'
+
 adb logcat -d -s AndroidRuntime:E > android/build/android-runtime-errors.txt
 if grep -F 'FATAL EXCEPTION' android/build/android-runtime-errors.txt; then
   echo 'Android crash observed during onboarding smoke test'
