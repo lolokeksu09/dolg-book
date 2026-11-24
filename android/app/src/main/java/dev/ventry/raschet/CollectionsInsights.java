@@ -78,16 +78,17 @@ public final class CollectionsInsights {
 
     public static List<CustomerStatus> visible(List<CustomerStatus> statuses,
             String filter, boolean amountFirst, String search) {
-        String needle = search == null ? "" : search.trim().toLowerCase(new Locale("ru", "RU"));
+        String needle=normalize(search);
+        String digits=needle.replaceAll("[^0-9]","");
+        boolean phoneQuery=!digits.isEmpty()&&needle.matches("[0-9+() .\\-]+");
         List<CustomerStatus> results = new ArrayList<>();
         for (CustomerStatus status : statuses) {
             if (OWING.equals(filter) && status.balance == 0) continue;
             if (LATE.equals(filter) && status.overdue == 0) continue;
             if (SOON.equals(filter) && status.upcoming == 0) continue;
-            if (!needle.isEmpty() &&
-                    !status.client.name.toLowerCase(new Locale("ru", "RU")).contains(needle) &&
-                    !status.client.phone.toLowerCase(new Locale("ru", "RU")).contains(needle))
-                continue;
+            boolean phoneMatch=phoneQuery&&status.client.phone.replaceAll("[^0-9]","").contains(digits);
+            if (!needle.isEmpty()&&!normalize(status.client.name).contains(needle)
+                    &&!normalize(status.client.phone).contains(needle)&&!phoneMatch)continue;
             results.add(status);
         }
         Comparator<CustomerStatus> names = Comparator
@@ -99,4 +100,9 @@ public final class CollectionsInsights {
         else results.sort(names);
         return results;
     }
+    private static String normalize(String text){
+        return text==null?"":text.trim().toLowerCase(Locale.ROOT).replace('ё','е')
+                .replaceAll("\\s+"," ");
+    }
+
 }
