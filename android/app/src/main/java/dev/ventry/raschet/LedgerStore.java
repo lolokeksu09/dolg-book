@@ -31,7 +31,7 @@ public final class LedgerStore extends SQLiteOpenHelper {
         public final String id, name, phone;
         Client(String id, String name, String phone) { this.id=id; this.name=name; this.phone=phone; }
     }
-    public static final class Entry implements dev.ventry.raschet.domain.LedgerRecord {
+    public static final class Entry implements dev.ventry.raschet.domain.DatedLedgerRecord {
         public final String id, clientId, type, date, due, note, reverses;
         public final long amount;
         public final Purchase purchase;
@@ -48,6 +48,7 @@ public final class LedgerStore extends SQLiteOpenHelper {
         @Override public long getAmountKopecks() { return amount; }
         @Override public String getDueDate() { return due; }
         @Override public String getReversedId() { return reverses; }
+        @Override public String getRecordedAt() { return date; }
     }
     public static final class Balance {
         public long amount, overdue;
