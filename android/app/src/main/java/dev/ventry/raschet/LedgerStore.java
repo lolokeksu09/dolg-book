@@ -186,11 +186,20 @@ public final class LedgerStore extends SQLiteOpenHelper {
     }
     /** Existing-client draft submission uses an immutable operation ID, just like quick debt. */
     synchronized void addDraftPayment(String clientId,long amount,String note,String entryId){
+        addDraftPayment(clientId,amount,note,entryId,LocalDate.now());
+    }
+    synchronized void addDraftPayment(String clientId,long amount,String note,String entryId,LocalDate day){
+        LocalDate today=LocalDate.now();
+        if(day==null||day.isAfter(today))throw new IllegalArgumentException("Дата оплаты не может быть в будущем.");
+        ZoneId zone=ZoneId.systemDefault();
+        String timestamp=day.equals(today)?Instant.now().toString():day.atStartOfDay(zone).toInstant().toString();
         SQLiteDatabase db=getWritableDatabase();
         db.beginTransaction();
         try{
             if(hasEntryId(entryId))throw new IllegalArgumentException("Этот черновик уже сохранён. Откройте историю.");
-            insertEntry(db,clientId,"payment",amount,"",note,null,Instant.now().toString(),entryId);
+            if(day.isBefore(today)&&amount>DatedPayments.maximum(entries(),clientId,day,today,zone))
+                throw new IllegalArgumentException("Оплата на эту дату создаст переплату в истории. Уменьшите сумму или выберите более позднюю дату.");
+            insertEntry(db,clientId,"payment",amount,"",note,null,timestamp,entryId);
             db.setTransactionSuccessful();
         }finally{db.endTransaction();}
     }

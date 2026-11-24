@@ -394,6 +394,33 @@ public class LedgerStoreInstrumentedTest {
         assertEquals(Long.valueOf(20000L),statement.remaining.get(second));
     }
 
+    @Test public void datedReceiptRejectsHistoricalOverpaymentAndUsesActualDay() throws Exception {
+        LocalDate today=LocalDate.now(), day=today.minusDays(3);
+        java.time.ZoneId zone=java.time.ZoneId.systemDefault();
+        String id=book.recordDatedDebt(null,"Дата оплаты","",10000L,day.minusDays(1),"","");
+        book.recordDatedDebt(id,"","",20000L,today.minusDays(1),"","");
+        String before=book.exportJson();
+        assertEquals(10000L,DatedPayments.maximum(book.entries(),id,day,today,zone));
+        String receipt=java.util.UUID.randomUUID().toString();
+        try{book.addDraftPayment(id,10001L,"",receipt,day);fail("Historical overpayment accepted");}
+        catch(IllegalArgumentException expected){}
+        try{book.addDraftPayment(id,1L,"",receipt,today.plusDays(1));fail("Future payment accepted");}
+        catch(IllegalArgumentException expected){}
+        assertEquals(before,book.exportJson());
+        book.addDraftPayment(id,8000L,"",receipt,day);
+        assertEquals(22000L,LedgerStore.balance(book.entries(),id));
+        assertEquals(day,BookDays.groupPayments(book.entries(),zone).get(0).date);
+        assertEquals(8000L,PeriodReport.build(book.entries(),day,day,zone).totals.payments);
+        assertEquals(2000L,DatedPayments.maximum(book.entries(),id,day,today,zone));
+        try{book.addDraftPayment(id,100L,"",receipt,day);fail("Duplicate receipt accepted");}
+        catch(IllegalArgumentException expected){}
+        String json=book.exportJson();book.importJson(json);
+        assertEquals(json,book.exportJson());
+        book.reverseLast(id,"Ошибка");
+        assertEquals(30000L,LedgerStore.balance(book.entries(),id));
+        assertEquals(2000L,DatedPayments.maximum(book.entries(),id,day,today,zone));
+    }
+
     @Test public void existingClientDraftKeepsDateAndCannotRepeatPayment() throws Exception {
         String client=addCustomer();
         LocalDate day=LocalDate.now().minusDays(3);

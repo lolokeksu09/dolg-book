@@ -10,7 +10,7 @@ test('Android UI is native and does not contain web UI runtime',()=>{
   const gradle=read('android/app/build.gradle.kts');
   const activity=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
   const manifest=read('android/app/src/main/AndroidManifest.xml');
-  assert.ok(gradle.includes('versionName = "0.25.0-beta.1"'));
+  assert.ok(gradle.includes('versionName = "0.26.0-beta.1"'));
   assert.ok(gradle.includes('applicationIdSuffix = ".nativev031"'));
   assert.ok(!gradle.includes('webkit')&&!gradle.includes('syncOfflineBook'));
   assert.ok(!gradle.includes('index.html')&&!gradle.includes('app.js'));
@@ -277,7 +277,7 @@ test('payment promises calculate progress from active receipts after the promise
 test('client drafts keep operation identity and original date across reopening',()=>{
  const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
  const draft=read('android/app/src/main/java/dev/ventry/raschet/LedgerDrafts.java');
- assert.ok(ui.includes('previous.day:LocalDate.now()'));
+ assert.ok(ui.includes('previous.day:initialDay'));
  assert.ok(ui.includes('ledger.addDraftPayment(clientId,cents'));
  assert.ok(ui.includes('new LedgerDrafts(this).clearAll()'));
  assert.ok(draft.includes('json.put("day",day.toString())'));
@@ -293,4 +293,15 @@ test('client statement allocates before filtering and reuses the existing operat
  assert.ok(ui.includes('drafts.get(id,type)'));
  assert.ok(model.includes('BookDays.group(own,zone)'));
  assert.ok(model.includes('remaining.getOrDefault(e.id,0L)<=0'));
+});
+
+
+test('backdated receipts validate historical balances and reopen the actual receipt day',()=>{
+ const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
+ const store=read('android/app/src/main/java/dev/ventry/raschet/LedgerStore.java');
+ const model=read('android/app/src/main/java/dev/ventry/raschet/DatedPayments.java');
+ assert.ok(ui.includes('"+ Оплата за этот день"'));
+ assert.ok(ui.includes('operationId[0],entryDay[0]'));
+ assert.ok(store.includes('amount>DatedPayments.maximum('));
+ assert.ok(model.includes('minimum=Math.min(minimum,running)'));
 });

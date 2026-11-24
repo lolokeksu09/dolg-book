@@ -606,6 +606,7 @@ public final class MainActivity extends Activity {
         }
         if(day.entries.size()>limit)addButton(body,"Показать ещё записи",false,()->fillBookDayRows(body,day,people,limit+60),1);
         if(!bookPayments)addButton(body,"+ Долг за этот день",false,()->showQuickDebt(false,day.date),1);
+        else addButton(body,"+ Оплата за этот день",false,()->chooseClient("payment",day.date),1);
     }
     private View tabletClientsView() {
         LinearLayout columns=row();
@@ -1627,7 +1628,8 @@ public final class MainActivity extends Activity {
         }
         return false;
     }
-    private void chooseClient(String type) {
+    private void chooseClient(String type) {chooseClient(type,LocalDate.now());}
+    private void chooseClient(String type,LocalDate initialDay) {
         if(type.equals("debt")){showQuickDebt();return;}
         List<LedgerStore.Client> customers=ledger.clients();
         if(customers.isEmpty()){message("Пока нет клиентов с долгом.");return;}
@@ -1660,7 +1662,7 @@ public final class MainActivity extends Activity {
                     button.setContentDescription("Выбрать · "+customer.name);
                     button.setFocusable(true);
                     results.addView(button);addListDivider(results);
-                    button.setOnClickListener(v->{if(chooser!=null)chooser.dismiss();showEntryForm(customer.id,type);});
+                    button.setOnClickListener(v->{if(chooser!=null)chooser.dismiss();showEntryForm(customer.id,type,0L,initialDay);});
                 }
                 if(found.isEmpty())results.addView(label(lookup.getText().toString().trim().isEmpty()?"Нет клиентов с непогашенным долгом.":"Никого не нашли. Проверьте имя или номер телефона.",14,MUTED,false));
                 if(found.size()>limit[0])addButton(results,"Показать ещё клиентов",false,()->{limit[0]+=60;run();},1);
@@ -1847,6 +1849,9 @@ public final class MainActivity extends Activity {
         showEntryForm(clientId,type,0L);
     }
     private void showEntryForm(String clientId,String type,long suggestedCents) {
+        showEntryForm(clientId,type,suggestedCents,LocalDate.now());
+    }
+    private void showEntryForm(String clientId,String type,long suggestedCents,LocalDate initialDay) {
         LedgerStore.Client c=null;
         for(LedgerStore.Client person:ledger.clients())if(person.id.equals(clientId))c=person;
         if(c==null){message("Клиент не найден.");return;}
@@ -1899,9 +1904,22 @@ public final class MainActivity extends Activity {
         };
         amount.addTextChangedListener(watcher(v->updateProjection.run()));
         updateProjection.run();
-        LocalDate[] entryDay={savedDraft&&type.equals("debt")?previous.day:LocalDate.now()};
+        LocalDate[] entryDay={savedDraft?previous.day:initialDay};
         TextView entryDate=debtDateField(entryDay);
-        if(type.equals("debt"))content.addView(formGroup("Дата записи",entryDate));
+        content.addView(formGroup(type.equals("debt")?"Дата записи":"Дата оплаты",entryDate));
+        if(type.equals("payment")){
+            TextView dateLimit=label("",12,MUTED,false);content.addView(dateLimit);
+            Runnable dateCheck=()->{
+                LocalDate today=LocalDate.now();
+                if(entryDay[0].equals(today)){dateLimit.setVisibility(View.GONE);return;}
+                long maximum=DatedPayments.maximum(ledger.entries(),clientId,entryDay[0],today,ZoneId.systemDefault());
+                dateLimit.setVisibility(View.VISIBLE);
+                dateLimit.setText("На эту дату можно принять до "+money(maximum)+". Проверьте дату фактической оплаты.");
+                dateLimit.setTextColor(maximum==0||previewAmount(amount)>maximum?RED:MUTED);
+            };
+            entryDate.addTextChangedListener(watcher(v->dateCheck.run()));
+            amount.addTextChangedListener(watcher(v->dateCheck.run()));dateCheck.run();
+        }
         EditText due=field("Без срока",savedDraft?previous.due:null);
         due.setFocusable(false);due.setClickable(true);
         due.setOnClickListener(v->{
@@ -1948,16 +1966,22 @@ public final class MainActivity extends Activity {
                 bookPayments=false;clearBookFilters();bookDayLimit=Math.max(bookDayLimit,rank);
                 expandedBookDays.add(entryDay[0].toString());
             }else{
-                ledger.addDraftPayment(clientId,cents,note.getText().toString().trim(),operationId[0]);
+                int rank=1;
+                for(BookDays.Day existing:BookDays.groupPayments(ledger.entries(),ZoneId.systemDefault()))
+                    if(existing.date.isAfter(entryDay[0]))rank++;
+                ledger.addDraftPayment(clientId,cents,note.getText().toString().trim(),operationId[0],entryDay[0]);
                 if(cents==available)try{
                     ClientDirectory.FollowUp plan=directory.followUp(clientId);
                     if(plan!=null&&plan.amount==0)directory.setFollowUp(clientId,null,"");
                 }catch(Exception ignored){}
+                if(fromBook){
+                    bookPayments=true;clearBookFilters();bookDayLimit=Math.max(bookDayLimit,rank);
+                    expandedBookDays.clear();expandedBookDays.add(entryDay[0].toString());
+                }
             }
             drafts.clear(clientId,type);
             if(type.equals("payment")&&fromBook){
-                bookPayments=true;clearBookFilters();expandedBookDays.clear();
-                expandedBookDays.add(LocalDate.now().toString());selectedClient=null;tab="Главная";
+                selectedClient=null;tab="Главная";
             }else if(fromBook){selectedClient=null;tab="Главная";}
             else if(fromCollections){selectedClient=null;tab="Возврат";}
             else{selectedClient=clientId;tab="Клиенты";}
