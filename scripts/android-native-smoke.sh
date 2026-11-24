@@ -115,7 +115,7 @@ adb exec-out screencap -p > android/build/native-clients.png
 tap_text 'Главная'
 sleep 1
 dump_ui
-grep -Fq 'ОБЩАЯ ЗАДОЛЖЕННОСТЬ' android/build/native-ui.xml
+grep -Fq 'Общая задолженность' android/build/native-ui.xml
 adb exec-out screencap -p > android/build/native-home.png
 tap_text 'История'
 sleep 0.5
@@ -279,7 +279,7 @@ if grep -Fq 'Знакомьтесь, Ventry' android/build/native-ui.xml || grep
     echo 'Onboarding shown again after completion'
     exit 1
 fi
-grep -Fq 'ОБЩАЯ ЗАДОЛЖЕННОСТЬ' android/build/native-ui.xml
+grep -Fq 'Общая задолженность' android/build/native-ui.xml
 grep -Fq '800,00' android/build/native-ui.xml
 tap_text 'Финансовый отчёт'
 sleep 0.5
