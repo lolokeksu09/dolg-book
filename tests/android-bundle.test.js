@@ -161,7 +161,7 @@ test('book starts directly with a dated debt form and expandable daily journal',
   assert.ok(ui.includes('expandedBookDays.add(key)'));
   assert.ok(ui.includes('formGroup("Дата записи",date)'));
   assert.ok(ui.includes('hasExactCustomer('));
-  assert.ok(store.includes('insertEntry(db,id,"debt",amount,due,note,null,timestamp)'));
+  assert.ok(store.includes('insertEntry(db,id,"debt",amount,due,note,null,timestamp,entryId)'));
 });
 
 
