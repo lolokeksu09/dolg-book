@@ -394,6 +394,14 @@ public class LedgerStoreInstrumentedTest {
         assertEquals(Long.valueOf(20000L),statement.remaining.get(second));
     }
 
+    @Test public void correctionDatePickerUsesSavedDueDateAndSafeFallback() {
+        LocalDate today=LocalDate.of(2026,11,24);
+        assertEquals(LocalDate.of(2026,12,3),MainActivity.correctionDueDate("2026-12-03",today));
+        assertEquals(today,MainActivity.correctionDueDate("",today));
+        assertEquals(today,MainActivity.correctionDueDate("invalid",today));
+        assertEquals(today,MainActivity.correctionDueDate(null,today));
+    }
+
     @Test public void correctionPreviewMatchesTransactionAndRejectsImpossibleAmounts() throws Exception {
         String id=addCustomer();
         book.addEntry(id,"debt",10000L,"","");
