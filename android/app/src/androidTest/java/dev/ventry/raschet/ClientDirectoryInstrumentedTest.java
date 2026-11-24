@@ -32,6 +32,15 @@ public class ClientDirectoryInstrumentedTest {
             directory.clearAfterRestore();assertFalse(directory.favorite("a"));
         }finally{directory.clearAfterRestore();}
     }
+    @Test public void normalizedSearchFindsYoAndFormattedPhone(){
+        LedgerStore.Client client=new LedgerStore.Client("a","Алёна","+7 (999) 123-45-67");
+        var status=new CollectionsInsights.CustomerStatus(client,100,0,0,null);
+        var list=Arrays.asList(status);
+        assertEquals(1,CollectionsInsights.visible(list,CollectionsInsights.ALL,false,"алена").size());
+        assertEquals(1,CollectionsInsights.visible(list,CollectionsInsights.ALL,false,"9991234567").size());
+        assertEquals(0,CollectionsInsights.visible(list,CollectionsInsights.ALL,false,"unknown").size());
+        assertEquals(0,CollectionsInsights.visible(list,CollectionsInsights.LATE,false,"алена").size());
+    }
     @Test public void relockBoundary(){
         assertFalse(BookPrivacy.shouldRelock(false,0,90000));
         assertFalse(BookPrivacy.shouldRelock(true,-1,90000));

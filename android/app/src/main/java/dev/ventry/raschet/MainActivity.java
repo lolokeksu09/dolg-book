@@ -1068,7 +1068,8 @@ public final class MainActivity extends Activity {
         showDialog(client==null?"Новый клиент":"Изменить клиента",content,()->{
             if(client==null){
                 ledger.addClient(name.getText().toString(),phone.getText().toString());
-                tab="Клиенты";selectedClient=null;
+                tab="Клиенты";selectedClient=null;clientScope=ClientDirectory.ACTIVE;
+                clientFilter=CollectionsInsights.ALL;search="";clientVisibleLimit=60;
             }else ledger.editClient(client.id,name.getText().toString(),phone.getText().toString());
             return true;
         });
