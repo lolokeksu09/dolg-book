@@ -19,7 +19,7 @@ test('Android UI is native and does not contain web UI runtime',()=>{
     assert.ok(!activity.includes(unwanted),'Development or website section leaked into customer app: '+unwanted);
   assert.ok(activity.includes('ic_nav_home')&&activity.includes('ic_nav_people'));
   assert.ok(!manifest.includes('android.permission.INTERNET'));
-  for(const screen of ['homeView()', 'clientsView()', 'detailView(', 'historyView()', 'settingsView()'])
+  for(const screen of ['homeView(data)', 'clientsView(data)', 'detailView(', 'historyView()', 'settingsView()'])
     assert.ok(activity.includes(screen),'Missing native view '+screen);
 });
 
@@ -103,8 +103,8 @@ test('compact book keeps essential controls and hides redundant empty-state filt
   const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
   assert.ok(ui.includes('private int controlHeight(){return largeText?54:48;}'));
   assert.ok(ui.includes('private int navHeight(){return largeText?68:56;}'));
-  const clients=ui.slice(ui.indexOf('private View clientsView()'),ui.indexOf('private void showClientFilters()'));
-  assert.ok(clients.indexOf('if(ledger.clients().isEmpty())')<clients.indexOf('"+ Добавить клиента"'));
+  const clients=ui.slice(ui.indexOf('private View clientsView(BookScreenData data)'),ui.indexOf('private void showClientFilters()'));
+  assert.ok(clients.indexOf('if(data.getSnapshot().getClients().isEmpty())')<clients.indexOf('"+ Добавить клиента"'));
   assert.ok(clients.includes('this::showClientFilters'));
   assert.ok(!clients.includes('filterGrid'));
   assert.ok(ui.includes('if(settingsExpanded.equals("privacy"))'));
@@ -256,7 +256,7 @@ test('quick form drafts resume explicitly and use stable operation IDs',()=>{
 test('collection workspace is separate from chronological book and uses a read-only worklist',()=>{
   const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
   const queue=read('android/app/src/main/java/dev/ventry/raschet/CollectionWorklist.java');
-  assert.ok(ui.includes('tab.equals("Возврат")?collectionView()'));
+  assert.ok(ui.includes('tab.equals("Возврат")?collectionView(data)'));
   assert.ok(ui.includes('directory.setFollowUp(person.id,day[0]'));
   assert.ok(ui.includes('else if(fromCollections){selectedClient=null;tab="Возврат";}'));
   assert.ok(queue.includes('if(s.balance>0)'));
