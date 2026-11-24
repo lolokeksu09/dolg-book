@@ -86,9 +86,6 @@ public final class MainActivity extends Activity {
     private LocalDate reportFrom=LocalDate.now().withDayOfMonth(1),reportTo=LocalDate.now();
     private LocalDate historyFrom,historyTo,pendingReportFrom,pendingReportTo;
     private int reportDaysLimit=14;
-    private String catalogSearch="",catalogCategory="";
-    private boolean catalogFavorites,catalogArchive;
-    private int catalogLimit=40;
     private boolean tablet=false, largeText=false, saving=false;
     private int historyVisibleLimit=100, detailVisibleLimit=80;
     private final int pad=18;
@@ -243,8 +240,7 @@ public final class MainActivity extends Activity {
                     tab.equals("Главная")?homeView():
                     tab.equals("Клиенты")?clientsView():
                     tab.equals("История")?historyView():
-                    tab.equals("Отчёт")?reportView():
-                    tab.equals("Каталог")?catalogView():settingsView();
+                    tab.equals("Отчёт")?reportView():settingsView();
             page.addView(contents,new FrameLayout.LayoutParams(-1,-1));
         }catch(Exception e){
             LinearLayout error=screen("Ошибка чтения книги","Данные не были изменены.");
@@ -332,8 +328,6 @@ public final class MainActivity extends Activity {
         }
 
         section(view,"Быстрые действия","Операции в несколько касаний");
-        actionRow(view,"＋","Долг по товарам","Состав покупки, количество и скидка",()->chooseClient("purchase"));
-        actionRow(view,"▤","Каталог товаров","Цены, категории и быстрый выбор",this::openCatalog);
         actionRow(view,"＋","Новый клиент","Добавить человека в книгу",()->showClientForm(null));
         actionRow(view,"▤","Все клиенты","Остаток и история по каждому",()->{tab="Клиенты";render();});
         if(!entries.isEmpty()){
@@ -543,7 +537,7 @@ public final class MainActivity extends Activity {
         addButton(tools,"Отменить запись",false,()->showReversal(id),1);
         if(!archived)view.addView(tools,margin(-1,dp(48),10));
         LinearLayout extraActions=stack(7);
-        if(!archived)addButton(extraActions,"Долг по товарам",true,()->showPurchaseForm(id),1);
+        if(!archived)addButton(extraActions,"Долг по товарам",false,()->showPurchaseForm(id),1);
         if(amount>0)
             addButton(extraActions,"Погасить весь остаток",false,
                     ()->showEntryForm(id,"payment",amount),1);
@@ -737,7 +731,6 @@ public final class MainActivity extends Activity {
         section(view,"Магазин","Название показывается только в приложении");
         actionRow(view,"✎",shopName,"Изменить название",()->showShopName());
         view.addView(textSizeSetting(),margin(-1,-2,8));
-        actionRow(view,"▤","Каталог товаров","Управление ассортиментом и ценами",this::openCatalog);
         section(view,"Напоминания о долгах","Проверка раз в сутки. Android может задерживать уведомления.");
         view.addView(reminderSetting(),margin(-1,-2,14));
         section(view,"Конфиденциальность","Защита от посторонних на общем устройстве");
@@ -1037,7 +1030,7 @@ public final class MainActivity extends Activity {
                     button.setPadding(dp(14),dp(16),dp(14),dp(16));
                     button.setBackground(ripple(shape(ELEVATED,14,BORDER)));
                     results.addView(button);
-                    button.setOnClickListener(v->{if(chooser!=null)chooser.dismiss();if(type.equals("purchase"))showPurchaseForm(customer.id);else showEntryForm(customer.id,type);});
+                    button.setOnClickListener(v->{if(chooser!=null)chooser.dismiss();showEntryForm(customer.id,type);});
                 }
                 if(found.isEmpty())results.addView(label("Нет подходящих клиентов.",14,MUTED,false));
                 if(found.size()>limit[0])addButton(results,"Показать ещё клиентов",false,()->{limit[0]+=60;run();},1);
@@ -1100,99 +1093,10 @@ public final class MainActivity extends Activity {
             return true;
         });
     }
-    private void openCatalog(){
-        tab="Каталог";selectedClient=null;catalogSearch="";catalogCategory="";
-        catalogFavorites=false;catalogArchive=false;catalogLimit=40;render();
-    }
-    private View catalogView(){
-        List<Product> products=ledger.products();
-        LinearLayout view=screen("Каталог товаров","Цены для новых покупок. Старые записи не меняются.");
-        addButton(view,"+ Новый товар",true,()->showProductForm(null),1);
-        EditText search=field("Найти товар или категорию",catalogSearch);
-        search.setSingleLine(true);view.addView(search,margin(-1,dp(54),9));
-        LinearLayout scope=row();
-        addButton(scope,"Все",!catalogArchive&&!catalogFavorites,()->{catalogArchive=false;catalogFavorites=false;catalogLimit=40;render();},1);
-        addButton(scope,"Избранные",catalogFavorites,()->{catalogArchive=false;catalogFavorites=true;catalogLimit=40;render();},1);
-        addButton(scope,"Архив",catalogArchive,()->{catalogArchive=true;catalogFavorites=false;catalogLimit=40;render();},1);
-        view.addView(scope,margin(-1,dp(54),8));
-        java.util.Set<String> categories=new java.util.TreeSet<>();
-        for(Product p:products)if(p.archived==catalogArchive&&!p.category.isEmpty())categories.add(p.category);
-        List<String> categoryValues=new ArrayList<>();categoryValues.add("");categoryValues.addAll(categories);
-        if(!categoryValues.contains(catalogCategory))catalogCategory="";
-        List<String> choices=new ArrayList<>(categoryValues);choices.set(0,"Все категории");
-        android.widget.Spinner categoriesPicker=new android.widget.Spinner(this);
-        android.widget.ArrayAdapter<String> adapter=new android.widget.ArrayAdapter<>(this,android.R.layout.simple_spinner_item,choices);
-        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
-        categoriesPicker.setAdapter(adapter);categoriesPicker.setContentDescription("Категория товаров");
-        categoriesPicker.setSelection(categoryValues.indexOf(catalogCategory));
-        view.addView(categoriesPicker,margin(-1,dp(48),8));
-        LinearLayout results=stack(7);view.addView(results);
-        Runnable fill=new Runnable(){
-            @Override public void run(){
-                results.removeAllViews();
-                List<Product> found=Product.filter(products,catalogSearch,catalogCategory,catalogFavorites,catalogArchive);
-                results.addView(label("Найдено: "+found.size(),13,MUTED,false));
-                int shown=0;
-                for(Product p:found){
-                    if(shown++>=catalogLimit)break;
-                    LinearLayout item=card();
-                    item.addView(label((p.favorite?"★ ":"")+p.name,18,TEXT,true));
-                    item.addView(label((p.category.isEmpty()?"Без категории":p.category)+" · "+p.unit,13,MUTED,false));
-                    item.addView(label(money(p.price)+" / "+p.unit,21,ACCENT,true));
-                    addButton(item,"Изменить товар",false,()->showProductForm(p),1);
-                    addButton(item,p.archived?"Вернуть товар":"В архив",false,()->{
-                        LinearLayout confirm=stack(8);
-                        confirm.addView(label(p.archived?"Товар снова появится в выборе покупки.":"Товар будет скрыт из новых покупок. Старые операции сохранятся.",14,MUTED,false));
-                        showDialog(p.archived?"Вернуть товар?":"Архивировать товар?",confirm,()->{
-                            ledger.saveProduct(new Product(p.id,p.name,p.category,p.unit,p.price,p.favorite,!p.archived));
-                            return true;
-                        });
-                    },1);
-                    results.addView(item,margin(-1,-2,7));
-                }
-                if(found.isEmpty())results.addView(label("Нет подходящих товаров.",15,MUTED,false));
-                if(found.size()>catalogLimit)addButton(results,"Показать ещё товары",false,()->{catalogLimit+=40;run();},1);
-            }
-        };
-        search.addTextChangedListener(watcher(v->{catalogSearch=v;catalogLimit=40;fill.run();}));
-        categoriesPicker.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener(){
-            @Override public void onItemSelected(android.widget.AdapterView<?> parent,View selected,int position,long id){
-                catalogCategory=categoryValues.get(position);catalogLimit=40;fill.run();
-            }
-            @Override public void onNothingSelected(android.widget.AdapterView<?> parent){}
-        });
-        fill.run();return scroll(view);
-    }
-    private void showProductForm(Product old){
-        LinearLayout form=stack(10);
-        EditText name=field("Название товара",old==null?"":old.name);
-        EditText category=field("Например, овощи",old==null?"":old.category);
-        EditText price=field("0,00",old==null?"":PeriodReport.rubles(old.price));
-        price.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);
-        form.addView(formGroup("Название",name));form.addView(formGroup("Категория",category));
-        form.addView(formGroup("Цена за единицу, ₽",price));
-        android.widget.Spinner unit=new android.widget.Spinner(this);
-        android.widget.ArrayAdapter<String> adapter=new android.widget.ArrayAdapter<>(this,android.R.layout.simple_spinner_item,Product.UNITS);
-        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);unit.setAdapter(adapter);
-        unit.setContentDescription("Единица измерения");
-        if(old!=null)unit.setSelection(java.util.Arrays.asList(Product.UNITS).indexOf(old.unit));
-        form.addView(label("Единица измерения",14,MUTED,true));form.addView(unit,margin(-1,dp(48),4));
-        Switch favorite=new Switch(this);favorite.setText("В избранное");favorite.setTextColor(TEXT);
-        favorite.setChecked(old!=null&&old.favorite);form.addView(favorite);
-        showDialog(old==null?"Новый товар":"Изменить товар",form,()->{
-            long cents=LedgerStore.parseAmount(price.getText().toString());
-            String n=name.getText().toString(),cat=category.getText().toString(),u=unit.getSelectedItem().toString();
-            Product product=old==null?Product.create(n,cat,u,cents,favorite.isChecked()):
-                new Product(old.id,n,cat,u,cents,favorite.isChecked(),old.archived);
-            ledger.saveProduct(product);catalogSearch="";catalogCategory="";catalogFavorites=false;catalogArchive=product.archived;
-            return true;
-        });
-    }
     private final class PurchaseRow {
         final EditText name,quantity,price;
-        final TextView subtotal,unitLabel;
+        final TextView subtotal;
         final LinearLayout block;
-        String unit="";
         PurchaseRow(){
             block=card();
             name=field("Название товара",null);
@@ -1202,7 +1106,6 @@ public final class MainActivity extends Activity {
             quantity.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);
             price.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);
             block.addView(formGroup("Товар",name));
-            unitLabel=label("Единица: не задана",13,MUTED,false);block.addView(unitLabel);
             LinearLayout numbers=row();
             numbers.addView(formGroup("Количество",quantity),new LinearLayout.LayoutParams(0,-2,1));
             numbers.addView(formGroup("Цена, ₽",price),new LinearLayout.LayoutParams(0,-2,1));
@@ -1212,11 +1115,7 @@ public final class MainActivity extends Activity {
         }
         Purchase.Item item(){
             return new Purchase.Item(name.getText().toString(),Purchase.quantity(quantity.getText().toString()),
-                    LedgerStore.parseAmount(price.getText().toString()),unit);
-        }
-        void applyProduct(Product p){
-            unit=p.unit;unitLabel.setText("Единица: "+unit);
-            name.setText(p.name);price.setText(PeriodReport.rubles(p.price));
+                    LedgerStore.parseAmount(price.getText().toString()));
         }
     }
     private void showPurchaseForm(String clientId){
@@ -1256,7 +1155,6 @@ public final class MainActivity extends Activity {
         Runnable add=()->{
             if(items.size()>=Purchase.MAX_ITEMS){message("Максимум 8 позиций в одной покупке.");return;}
             PurchaseRow r=new PurchaseRow();items.add(r);rows.addView(r.block,margin(-1,-2,8));
-            addCatalogPicker(r,update);
             addButton(r.block,"Удалить позицию",false,()->{
                 if(items.size()==1){message("Оставьте хотя бы одну позицию.");return;}
                 items.remove(r);rows.removeView(r.block);update.run();
@@ -1290,35 +1188,6 @@ public final class MainActivity extends Activity {
             ledger.addPurchase(clientId,purchase,due.getText().toString(),note.getText().toString().trim());
             selectedClient=clientId;tab="Клиенты";return true;
         });
-    }
-    private void addCatalogPicker(PurchaseRow row,Runnable update){
-        List<Product> products=ledger.products();
-        LinearLayout picker=stack(6);picker.setVisibility(View.GONE);
-        addButton(row.block,"Выбрать из каталога",false,()->picker.setVisibility(
-                picker.getVisibility()==View.VISIBLE?View.GONE:View.VISIBLE),1);
-        addButton(row.block,"Без единицы измерения",false,()->{
-            row.unit="";row.unitLabel.setText("Единица: не задана");update.run();
-        },1);
-        EditText search=field("Поиск в каталоге",null);search.setSingleLine(true);picker.addView(search);
-        LinearLayout list=stack(5);picker.addView(list);
-        int[] limit={12};
-        Runnable fill=new Runnable(){
-            @Override public void run(){
-                list.removeAllViews();
-                List<Product> found=Product.filter(products,search.getText().toString(),"",false,false);
-                int shown=0;
-                for(Product p:found){
-                    if(shown++>=limit[0])break;
-                    addButton(list,p.name+" · "+money(p.price)+"/"+p.unit,false,()->{
-                        row.applyProduct(p);picker.setVisibility(View.GONE);update.run();
-                    },1);
-                }
-                if(found.isEmpty())list.addView(label("Каталог пуст или ничего не найдено.",13,MUTED,false));
-                if(found.size()>limit[0])addButton(list,"Ещё товары",false,()->{limit[0]+=12;run();},1);
-            }
-        };
-        search.addTextChangedListener(watcher(v->{limit[0]=12;fill.run();}));fill.run();
-        row.block.addView(picker);
     }
     private void showPurchaseDetails(LedgerStore.Entry entry){
         Purchase p=entry.purchase;

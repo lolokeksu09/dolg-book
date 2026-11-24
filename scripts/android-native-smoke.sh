@@ -293,37 +293,28 @@ sleep 0.4
 dump_ui
 grep -Fq '800,00' android/build/native-ui.xml
 
-# Create a reusable product, then record a debt using the catalog.
-tap_text 'Каталог товаров'
-sleep 0.4
-tap_text '+ Новый товар'
-sleep 0.4
-tap_text 'Название товара'
-adb shell input text QA-Apple
-adb shell input keyevent 4
-sleep 0.3
-tap_text 'Например, овощи'
-adb shell input text QA-Food
-adb shell input keyevent 4
-sleep 0.3
-tap_text '0,00'
-adb shell input text 150
-adb shell input keyevent 4
-sleep 0.3
-tap_text 'Сохранить'
-sleep 0.5
+# Simplified book: catalog no longer exists, manual itemized debt remains optional.
 dump_ui
-grep -Fq 'QA-Apple' android/build/native-ui.xml
-adb exec-out screencap -p > android/build/native-product-catalog.png
+if grep -Fq 'Каталог товаров' android/build/native-ui.xml; then
+  echo 'Unexpected catalog on home'; exit 1
+fi
 tap_text 'Клиенты'
 sleep 0.4
 tap_text 'TestBuyer'
 sleep 0.4
 tap_text 'Долг по товарам'
 sleep 0.4
-tap_text 'Выбрать из каталога'
-sleep 0.4
-tap_text 'QA-Apple · 150,00 ₽/шт'
+dump_ui
+if grep -Fq 'Выбрать из каталога' android/build/native-ui.xml; then
+  echo 'Unexpected catalog picker'; exit 1
+fi
+tap_text 'Название товара'
+adb shell input text QA-Apple
+adb shell input keyevent 4
+sleep 0.3
+tap_text '0,00'
+adb shell input text 150
+adb shell input keyevent 4
 sleep 0.4
 adb exec-out screencap -p > android/build/native-purchase-form.png
 tap_text 'Сохранить'

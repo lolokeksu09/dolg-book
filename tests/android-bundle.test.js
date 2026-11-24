@@ -10,7 +10,7 @@ test('Android UI is native and does not contain web UI runtime',()=>{
   const gradle=read('android/app/build.gradle.kts');
   const activity=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
   const manifest=read('android/app/src/main/AndroidManifest.xml');
-  assert.ok(gradle.includes('versionName = "0.9.0-beta.1"'));
+  assert.ok(gradle.includes('versionName = "0.10.0-beta.1"'));
   assert.ok(gradle.includes('applicationIdSuffix = ".nativev031"'));
   assert.ok(!gradle.includes('webkit')&&!gradle.includes('syncOfflineBook'));
   assert.ok(!gradle.includes('index.html')&&!gradle.includes('app.js'));
@@ -74,13 +74,17 @@ test('itemized debts use an additive migration and versioned validated purchase 
   assert.ok(ui.includes('e.purchase.summary()'));
 });
 
-test('catalog persists in the shared book and purchase prices are snapshots',()=>{
+test('legacy catalog data stays portable but the standalone catalog and picker are removed',()=>{
   const store=read('android/app/src/main/java/dev/ventry/raschet/LedgerStore.java');
   const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
   assert.ok(store.includes('CREATE TABLE products'));
   assert.ok(store.includes('root.put("products",ps)'));
   assert.ok(store.includes('root.put("version",4)'));
   assert.ok(store.includes('for(Product p:newProducts)'));
-  assert.ok(ui.includes('row.applyProduct(p)'));
-  assert.ok(ui.includes('Product.filter('));
+  assert.doesNotMatch(ui,/\b(?:openCatalog|catalogView|showProductForm|addCatalogPicker|applyProduct)\s*\(/);
+  assert.doesNotMatch(ui,/ledger\.(?:products|saveProduct)\s*\(/);
+  assert.ok(!ui.includes('Каталог товаров'));
+  assert.ok(!ui.includes('Выбрать из каталога'));
+  assert.ok(ui.includes('ledger.addPurchase(clientId,purchase'));
+  assert.ok(ui.includes('showPurchaseDetails('));
 });
