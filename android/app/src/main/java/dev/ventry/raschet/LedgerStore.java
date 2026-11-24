@@ -31,7 +31,7 @@ public final class LedgerStore extends SQLiteOpenHelper {
         public final String id, name, phone;
         Client(String id, String name, String phone) { this.id=id; this.name=name; this.phone=phone; }
     }
-    public static final class Entry {
+    public static final class Entry implements dev.ventry.raschet.domain.LedgerRecord {
         public final String id, clientId, type, date, due, note, reverses;
         public final long amount;
         public final Purchase purchase;
@@ -42,6 +42,12 @@ public final class LedgerStore extends SQLiteOpenHelper {
             this.id=id; this.clientId=clientId; this.type=type; this.amount=amount;
             this.date=date; this.due=due; this.note=note; this.reverses=reverses;this.purchase=purchase;
         }
+        @Override public String getEntryId() { return id; }
+        @Override public String getOwnerId() { return clientId; }
+        @Override public String getOperation() { return type; }
+        @Override public long getAmountKopecks() { return amount; }
+        @Override public String getDueDate() { return due; }
+        @Override public String getReversedId() { return reverses; }
     }
     public static final class Balance {
         public long amount, overdue;
@@ -329,29 +335,13 @@ public final class LedgerStore extends SQLiteOpenHelper {
         return row;
     }
     public static Set<String> canceled(List<Entry> list) {
-        Set<String> removed=new HashSet<>();
-        for(Entry e:list)if("reversal".equals(e.type))removed.add(e.reverses);
-        return removed;
+        return dev.ventry.raschet.domain.LedgerProjection.canceled(list);
     }
     public static long balance(List<Entry> list,String clientId) {
-        Set<String> reversed=canceled(list);
-        long sum=0;
-        for(Entry e:list) if(e.clientId.equals(clientId)&&!"reversal".equals(e.type)&&!reversed.contains(e.id))
-            sum+= "debt".equals(e.type) ? e.amount : -e.amount;
-        return sum;
+        return dev.ventry.raschet.domain.LedgerProjection.balance(list,clientId);
     }
     public static long overdue(List<Entry> list,String clientId,LocalDate today) {
-        Set<String> reversed=canceled(list);
-        long totalPaid=0;
-        for(Entry e:list)if(e.clientId.equals(clientId)&&"payment".equals(e.type)&&!reversed.contains(e.id))totalPaid+=e.amount;
-        long overdue=0;
-        for(Entry e:list){
-            if(!e.clientId.equals(clientId)||!"debt".equals(e.type)||reversed.contains(e.id))continue;
-            long paid=Math.min(totalPaid,e.amount);
-            totalPaid-=paid;
-            if(!e.due.isEmpty() && e.due.compareTo(today.toString())<0)overdue+=e.amount-paid;
-        }
-        return overdue;
+        return dev.ventry.raschet.domain.LedgerProjection.overdue(list,clientId,today.toString());
     }
 
     /** Compatible with the original web book JSON format, including v1 and v2 reversals. */
