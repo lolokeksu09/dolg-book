@@ -169,9 +169,9 @@ test('client creation routes to the shared optional debt form and existing clien
   const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
   assert.ok(ui.includes('if(client==null){showQuickDebt(true);return;}'));
   assert.ok(ui.includes('fromClients&&amount.getText().toString().trim().isEmpty()'));
-  assert.ok(ui.includes('ledger.recordDatedDebt(selected[0]'));
+  assert.ok(ui.includes('new ClientCommand.Debt(draftId,selected[0]'));
   assert.ok(ui.includes('formGroup(type.equals("debt")?"Дата записи":"Дата оплаты",entryDate)'));
-  assert.ok(ui.includes('ledger.recordDatedDebt(clientId,"","",cents,entryDay[0]'));
+  assert.ok(ui.includes('new ClientCommand.Debt(operationId[0],clientId,"","",cents,entryDay[0]'));
 });
 
 
@@ -208,7 +208,7 @@ test('payment journal is separate from unpaid debt and shortcuts only prefill th
   assert.ok(ui.includes('BookDays.groupPayments(entries,ZoneId.systemDefault())'));
   assert.ok(ui.includes('bookModeButton(modes,"Оплаты по датам",true)'));
   assert.ok(ui.includes('amount.setText(amountInput(available))'));
-  assert.ok(ui.includes('if(type.equals("payment")&&fromBook)'));
+  assert.ok(ui.includes('"payment".equals(receipt.getKind())&&receipt.getDestination()==WriteDestination.BOOK'));
   assert.ok(days.includes('if(!"payment".equals(e.type))continue;'));
 });
 
@@ -235,8 +235,8 @@ test('operation inspector uses exact selected IDs and history search',()=>{
 
 test('all new debt forms check the local client credit limit before storing debt',()=>{
   const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
-  assert.ok(ui.includes('notice.verify(selected[0],cents)'));
-  assert.ok(ui.includes('notice.verify(clientId,cents)'));
+  assert.ok(ui.includes('separate[0],notice.confirmation()'));
+  assert.ok(ui.includes('false,notice.confirmation(),false,destination'));
   assert.ok(ui.includes('notice.verify(clientId,purchase.total)'));
   assert.ok(ui.includes('DebtLimits.requireConsent('));
   assert.ok(ui.includes('consent.setChecked(false)'));
@@ -248,7 +248,7 @@ test('quick form drafts resume explicitly and use stable operation IDs',()=>{
   const store=read('android/app/src/main/java/dev/ventry/raschet/LedgerStore.java');
   assert.ok(ui.includes('Продолжить черновик'));
   assert.ok(ui.includes('QuickDebtDrafts.Draft pending'));
-  assert.ok(ui.includes('notice.verify(selected[0],cents)'));
+  assert.ok(ui.includes('separate[0],notice.confirmation()'));
   assert.ok(store.includes('if(hasEntryId(entryId))'));
 });
 
@@ -278,7 +278,7 @@ test('client drafts keep operation identity and original date across reopening',
  const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
  const draft=read('android/app/src/main/java/dev/ventry/raschet/LedgerDrafts.java');
  assert.ok(ui.includes('previous.day:initialDay'));
- assert.ok(ui.includes('ledger.addDraftPayment(clientId,cents'));
+ assert.ok(ui.includes('new ClientCommand.Payment(operationId[0],clientId,cents'));
  assert.ok(ui.includes('new LedgerDrafts(this).clearAll()'));
  assert.ok(draft.includes('json.put("day",day.toString())'));
 });
@@ -329,4 +329,19 @@ test('correction and reversal previews use the same balance guard and exact sele
  assert.ok(ui.includes('LedgerStore.correctedBalance(currentBalance,original,'));
  assert.ok(ui.includes('Остаток после отмены: '));
  assert.ok(store.includes('correctedBalance(balance(all,clientId),last,amount)'));
+});
+
+test('financial commands revalidate consent and preserve existing transactional write guards',()=>{
+  const store=read('android/app/src/main/java/dev/ventry/raschet/LedgerStore.java');
+  const repository=read('android/app/src/main/kotlin/dev/ventry/raschet/data/LedgerRepository.kt');
+  const service=read('android/app/src/main/kotlin/dev/ventry/raschet/ClientWriteService.kt');
+  const debt=store.slice(store.indexOf('WriteReceipt recordCheckedDebt('),store.indexOf('WriteReceipt recordCheckedPayment('));
+  assert.ok(debt.includes('db.beginTransaction()'));
+  assert.ok(debt.includes('DebtApproval.matches('));
+  assert.ok(debt.includes('DebtLimits.requireConsent('));
+  assert.ok(debt.includes('recordDatedDebt(client,'));
+  assert.ok(debt.includes('db.setTransactionSuccessful()'));
+  assert.ok(repository.includes('store.recordCheckedDebt(command, context)'));
+  assert.ok(repository.includes('store.recordCheckedPayment(command)'));
+  assert.ok(service.includes('drafts.get(clientId, kind)?.id == id'));
 });
