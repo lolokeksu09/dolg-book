@@ -12,21 +12,25 @@ import org.json.JSONObject;
 final class Purchase {
     static final int MAX_ITEMS=8;
     static final class Item {
-        final String name;
+        final String name,unit;
         final long quantityMilli,unitPrice,total;
-        Item(String name,long quantityMilli,long unitPrice){
+        Item(String name,long quantityMilli,long unitPrice){this(name,quantityMilli,unitPrice,"");}
+        Item(String name,long quantityMilli,long unitPrice,String unit){
             if(name==null||name.trim().isEmpty()||name.trim().length()>80
                     ||quantityMilli<=0||quantityMilli>1_000_000L
                     ||unitPrice<=0||unitPrice>LedgerStore.MAX_AMOUNT)
                 throw new IllegalArgumentException("Проверьте название, количество (до 1000) и цену.");
             this.name=name.trim();this.quantityMilli=quantityMilli;this.unitPrice=unitPrice;
+            if(unit==null||(!unit.isEmpty()&&!Product.validUnit(unit)))throw new IllegalArgumentException("Неверная единица измерения.");
+            if("шт".equals(unit)&&quantityMilli%1000!=0)throw new IllegalArgumentException("Штучный товар: только целое количество.");
+            this.unit=unit;
             total=BigDecimal.valueOf(quantityMilli,3).multiply(BigDecimal.valueOf(unitPrice))
                     .setScale(0,RoundingMode.HALF_UP).longValueExact();
             if(total<=0||total>LedgerStore.MAX_AMOUNT)
                 throw new IllegalArgumentException("Недопустимая сумма позиции.");
         }
         String quantity(){return BigDecimal.valueOf(quantityMilli,3).stripTrailingZeros().toPlainString().replace('.',',');}
-        String description(){return name+" · "+quantity()+" × "+PeriodReport.rubles(unitPrice)+" ₽ = "+PeriodReport.rubles(total)+" ₽";}
+        String description(){return name+" · "+quantity()+(unit.isEmpty()?"":" "+unit)+" × "+PeriodReport.rubles(unitPrice)+" ₽ = "+PeriodReport.rubles(total)+" ₽";}
     }
     final List<Item> items;
     final long subtotal,discount,total;
@@ -51,11 +55,15 @@ final class Purchase {
         if(!v.matches("\\d{1,10}(\\.\\d{1,2})?"))throw new IllegalArgumentException("Введите скидку в рублях.");
         return new BigDecimal(v).movePointRight(2).longValueExact();
     }
+    boolean hasUnits(){for(Item i:items)if(!i.unit.isEmpty())return true;return false;}
     String encode(){
         try{
             JSONArray rows=new JSONArray();
-            for(Item i:items)rows.put(new JSONObject().put("name",i.name)
-                    .put("quantityMilli",i.quantityMilli).put("unitPrice",i.unitPrice));
+            for(Item i:items){
+                JSONObject item=new JSONObject().put("name",i.name).put("quantityMilli",i.quantityMilli).put("unitPrice",i.unitPrice);
+                if(!i.unit.isEmpty())item.put("unit",i.unit);
+                rows.put(item);
+            }
             return new JSONObject().put("items",rows).put("discount",discount).toString();
         }catch(org.json.JSONException e){throw new IllegalStateException(e);}
     }
@@ -74,7 +82,7 @@ final class Purchase {
             List<Item> rows=new ArrayList<>();
             for(int j=0;j<array.length();j++){
                 JSONObject item=array.getJSONObject(j);
-                rows.add(new Item(item.getString("name"),integer(item,"quantityMilli"),integer(item,"unitPrice")));
+                rows.add(new Item(item.getString("name"),integer(item,"quantityMilli"),integer(item,"unitPrice"),item.optString("unit","")));
             }
             return new Purchase(rows,integer(data,"discount"));
         }catch(org.json.JSONException e){throw new IllegalArgumentException("Некорректный состав покупки.",e);}

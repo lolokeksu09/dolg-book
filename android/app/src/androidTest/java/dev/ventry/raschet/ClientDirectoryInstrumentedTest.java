@@ -10,8 +10,8 @@ import static org.junit.Assert.*;
 @RunWith(AndroidJUnit4.class)
 public class ClientDirectoryInstrumentedTest {
     @Test public void archiveNeverHidesAnOutstandingDebtAndFavoritesAreReversible(){
-        Context ctx=InstrumentationRegistry.getInstrumentation().getContext();
-        ClientDirectory directory=new ClientDirectory(ctx);
+        Context ctx=InstrumentationRegistry.getInstrumentation().getTargetContext();
+        ClientDirectory directory=new ClientDirectory(ctx,"raschet_client_directory_qa_only");
         directory.clearAfterRestore();
         try{
             LedgerStore.Client c=new LedgerStore.Client("a","Алёна","+7 (999) 123-45-67");

@@ -12,7 +12,10 @@ final class ClientDirectory {
     static final String ACTIVE="Рабочие", FAVORITES="Избранные", ARCHIVE="Архив";
     private final SharedPreferences prefs;
     ClientDirectory(Context context){
-        prefs=context.getSharedPreferences("raschet_client_directory",Context.MODE_PRIVATE);
+        this(context,"raschet_client_directory");
+    }
+    ClientDirectory(Context context,String storage){
+        prefs=context.getSharedPreferences(storage,Context.MODE_PRIVATE);
     }
     private Set<String> ids(String key){
         return new HashSet<>(prefs.getStringSet(key,java.util.Collections.emptySet()));

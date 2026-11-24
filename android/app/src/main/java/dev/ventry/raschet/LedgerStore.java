@@ -48,18 +48,53 @@ public final class LedgerStore extends SQLiteOpenHelper {
     public LedgerStore(Context context) { this(context,"raschet-ledger.db"); }
     // Package-private for instrumentation: a distinct database name prevents any
     // test from overwriting or deleting real customer records.
-    LedgerStore(Context context,String databaseName) { super(context,databaseName,null,2); }
+    LedgerStore(Context context,String databaseName) { super(context,databaseName,null,3); }
     @Override public void onCreate(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE clients (id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, phone TEXT NOT NULL)");
         db.execSQL("CREATE TABLE entries (seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE, client_id TEXT NOT NULL REFERENCES clients(id), type TEXT NOT NULL, amount INTEGER NOT NULL, date TEXT NOT NULL, due TEXT NOT NULL, note TEXT NOT NULL, reverses TEXT NOT NULL, purchase TEXT NOT NULL DEFAULT '')");
         db.execSQL("CREATE INDEX entries_client_seq ON entries(client_id, seq)");
+        createCatalog(db);
     }
     @Override public void onUpgrade(SQLiteDatabase db,int oldVersion,int newVersion) {
-        if(oldVersion==1&&newVersion==2){
-            db.execSQL("ALTER TABLE entries ADD COLUMN purchase TEXT NOT NULL DEFAULT ''");
-            return;
-        }
+        if(oldVersion<1||newVersion!=3)throw new IllegalStateException("Unsupported migration");
+        if(oldVersion==1)db.execSQL("ALTER TABLE entries ADD COLUMN purchase TEXT NOT NULL DEFAULT ''");
+        if(oldVersion<=2){createCatalog(db);return;}
         throw new IllegalStateException("Database migration missing; keep existing customer data");
+    }
+    private static void createCatalog(SQLiteDatabase db){
+        db.execSQL("CREATE TABLE products (id TEXT PRIMARY KEY NOT NULL,name TEXT NOT NULL,category TEXT NOT NULL,unit TEXT NOT NULL,price INTEGER NOT NULL,favorite INTEGER NOT NULL,archived INTEGER NOT NULL)");
+    }
+    public synchronized List<Product> products(){
+        List<Product> result=new ArrayList<>();
+        try(Cursor c=getReadableDatabase().rawQuery("SELECT id,name,category,unit,price,favorite,archived FROM products ORDER BY name COLLATE NOCASE,id",null)){
+            while(c.moveToNext())result.add(new Product(c.getString(0),c.getString(1),c.getString(2),c.getString(3),c.getLong(4),c.getInt(5)!=0,c.getInt(6)!=0));
+        }
+        return result;
+    }
+    public synchronized void saveProduct(Product product){
+        SQLiteDatabase db=getWritableDatabase();
+        db.beginTransaction();
+        try{
+            List<Product> all=products();
+            boolean exists=false;
+            for(Product p:all){
+                if(p.id.equals(product.id)){exists=true;continue;}
+                if(!product.archived&&!p.archived&&p.sameName(product))
+                    throw new IllegalArgumentException("Такой товар уже есть в этой категории.");
+            }
+            if(!exists&&all.size()>=Product.MAX_PRODUCTS)throw new IllegalArgumentException("Достигнут лимит каталога.");
+            if(exists){
+                if(db.update("products",productValues(product),"id=?",new String[]{product.id})!=1)
+                    throw new IllegalStateException("Товар не найден.");
+            }else db.insertOrThrow("products",null,productValues(product));
+            db.setTransactionSuccessful();
+        }finally{db.endTransaction();}
+    }
+    private static ContentValues productValues(Product p){
+        ContentValues row=new ContentValues();
+        row.put("id",p.id);row.put("name",p.name);row.put("category",p.category);
+        row.put("unit",p.unit);row.put("price",p.price);row.put("favorite",p.favorite?1:0);row.put("archived",p.archived?1:0);
+        return row;
     }
     @Override public void onConfigure(SQLiteDatabase db) { super.onConfigure(db); db.setForeignKeyConstraintsEnabled(true); }
 
@@ -261,8 +296,15 @@ public final class LedgerStore extends SQLiteOpenHelper {
             JSONObject object=new JSONObject().put("id",e.id).put("clientId",e.clientId).put("type",e.type)
                 .put("amount",e.amount).put("date",e.date).put("due",e.due).put("note",e.note);
             if("reversal".equals(e.type))object.put("reverses",e.reverses);
-            if(e.purchase!=null){root.put("version",3);object.put("purchase",new JSONObject(e.purchase.encode()));}
+            if(e.purchase!=null){root.put("version",e.purchase.hasUnits()?4:Math.max(root.getInt("version"),3));object.put("purchase",new JSONObject(e.purchase.encode()));}
             es.put(object);
+        }
+        List<Product> catalog=products();
+        if(!catalog.isEmpty()||root.getInt("version")==4){
+            root.put("version",4);
+            JSONArray ps=new JSONArray();
+            for(Product p:catalog)ps.put(p.json());
+            root.put("products",ps);
         }
         return root.put("clients",cs).put("entries",es).toString(2);
     }
@@ -271,7 +313,19 @@ public final class LedgerStore extends SQLiteOpenHelper {
     public synchronized int[] importJson(String source) throws JSONException {
         JSONObject book=new JSONObject(source);
         int version=book.getInt("version");
-        if(version!=1 && version!=2 && version!=3)throw new IllegalArgumentException("Поддерживаются копии v1, v2 и v3.");
+        if(version<1||version>4)throw new IllegalArgumentException("Поддерживаются копии v1–v4.");
+        List<Product> newProducts=new ArrayList<>();
+        if(version==4){
+            JSONArray ps=book.getJSONArray("products");
+            if(ps.length()>Product.MAX_PRODUCTS)throw new IllegalArgumentException("Каталог слишком большой.");
+            Set<String> productIds=new HashSet<>(),productKeys=new HashSet<>();
+            for(int i=0;i<ps.length();i++){
+                Product p=Product.fromJson(ps.getJSONObject(i));
+                if(!productIds.add(p.id)||(!p.archived&&!productKeys.add(p.normalizedKey())))
+                    throw new IllegalArgumentException("Дубли в каталоге.");
+                newProducts.add(p);
+            }
+        }else if(book.has("products"))throw new IllegalArgumentException("Каталог требует JSON v4.");
         JSONArray cs=book.getJSONArray("clients"),es=book.getJSONArray("entries");
         if(cs.length()>MAX_CLIENTS||es.length()>MAX_ENTRIES)throw new IllegalArgumentException("Книга слишком большая.");
         List<Client> newClients=new ArrayList<>();
@@ -310,9 +364,9 @@ public final class LedgerStore extends SQLiteOpenHelper {
             }
             Purchase purchase=null;
             if(j.has("purchase")){
-                if(version!=3||!type.equals("debt"))throw new IllegalArgumentException("Состав покупки разрешён только для долга в v3.");
+                if(version<3||!type.equals("debt"))throw new IllegalArgumentException("Состав покупки разрешён только для долга в v3/v4.");
                 purchase=Purchase.decode(j.getJSONObject("purchase").toString());
-                if(purchase.total!=amount)throw new IllegalArgumentException("Сумма покупки не совпадает с долгом.");
+                if(purchase.total!=amount||(version<4&&purchase.hasUnits()))throw new IllegalArgumentException("Неверный состав или сумма покупки.");
             }
             Entry e=new Entry(id,cid,type,amount,date,due,note,reverses,purchase);
             long delta;
@@ -338,6 +392,8 @@ public final class LedgerStore extends SQLiteOpenHelper {
         SQLiteDatabase db=getWritableDatabase();
         db.beginTransaction();
         try {
+            db.delete("products",null,null);
+            for(Product p:newProducts)db.insertOrThrow("products",null,productValues(p));
             db.delete("entries",null,null);
             db.delete("clients",null,null);
             for(Client c:newClients){
