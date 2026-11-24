@@ -36,7 +36,7 @@ public class ClientCommandInstrumentedTest {
             book.addEntry(first,"debt",10000L,"","");
             repository.saveClient(new ClientCommand.Edit(first,"Edited",""));
             assertEquals(2,repository.snapshot().getClients().size());
-            assertEquals("Edited",repository.snapshot().getClients().stream().filter(c->c.id.equals(first)).findFirst().orElseThrow().name);
+            assertEquals("Edited",repository.snapshot().getClients().stream().filter(c->c.id.equals(first)).findFirst().get().name);
             assertEquals(10000L,LedgerStore.balance(repository.snapshot().getEntries(),first));
             assertEquals(1,repository.snapshot().getEntries().size());
         } finally {
