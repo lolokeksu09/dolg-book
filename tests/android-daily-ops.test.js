@@ -48,6 +48,6 @@ test('tablet adaptation and bounded history belong to 0.5 beta',()=>{
   assert.ok(activity.includes('shown>=historyVisibleLimit'));
   assert.ok(activity.includes('shown>=detailVisibleLimit'));
   const gradle=read('android/app/build.gradle.kts');
-  assert.ok(gradle.includes('versionCode = 33'));
-  assert.ok(gradle.includes('versionName = "0.28.0-beta.1"'));
+  assert.ok(gradle.includes('versionCode = 34'));
+  assert.ok(gradle.includes('versionName = "0.29.0-beta.1"'));
 });
