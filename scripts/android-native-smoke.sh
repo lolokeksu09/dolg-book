@@ -260,7 +260,38 @@ tap_text 'Операции периода'
 sleep 0.4
 tap_text 'Сбросить даты'
 sleep 0.3
+tap_text 'Клиенты'
+sleep 0.4
+tap_text 'Рабочие'
+sleep 0.3
+tap_text '+ Добавить клиента'
+sleep 0.4
+fill_form_input 0 ArchiveBuyer
+tap_text 'Сохранить'
+sleep 0.5
+tap_text 'ArchiveBuyer'
+sleep 0.4
+tap_text 'В избранное'
+sleep 0.4
+tap_text 'В архив'
+sleep 0.5
+dump_ui
+grep -Fq 'ArchiveBuyer' android/build/native-ui.xml
+adb exec-out screencap -p > android/build/native-client-archive.png
+tap_text 'ArchiveBuyer'
+sleep 0.4
+tap_text 'Вернуть из архива'
+sleep 0.4
+tap_text 'Избранные'
+sleep 0.4
+dump_ui
+grep -Fq 'ArchiveBuyer' android/build/native-ui.xml
+tap_text 'Рабочие'
+sleep 0.3
 tap_text 'Главная'
+sleep 0.4
+dump_ui
+grep -Fq '800,00' android/build/native-ui.xml
 
 adb logcat -d -s AndroidRuntime:E > android/build/android-runtime-errors.txt
 if grep -F 'FATAL EXCEPTION' android/build/android-runtime-errors.txt; then

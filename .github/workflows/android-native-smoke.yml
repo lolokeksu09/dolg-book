@@ -59,6 +59,7 @@ jobs:
             android/build/native-settings-large.png
             android/build/native-ledger-800.png
             android/build/native-period-report.png
+            android/build/native-client-archive.png
             android/build/native-ui.xml
             android/build/android-runtime-errors.txt
           if-no-files-found: warn
