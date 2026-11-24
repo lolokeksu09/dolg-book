@@ -1,6 +1,10 @@
 package dev.ventry.raschet;
 
-import android.app.Activity;
+import androidx.activity.ComponentActivity;
+import androidx.lifecycle.ViewModelProvider;
+import dev.ventry.raschet.presentation.BookViewModel;
+import dev.ventry.raschet.presentation.BookScreenData;
+import dev.ventry.raschet.presentation.ReadState;
 import android.app.DatePickerDialog;
 import android.app.Dialog;
 import android.Manifest;
@@ -55,7 +59,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /** Native Android debt ledger, with platform views and SQLite persistence. */
-public final class MainActivity extends Activity {
+public final class MainActivity extends ComponentActivity {
     // Shared visual vocabulary; domain calculations remain in the ledger classes.
     private static final int BG=LedgerTheme.BG, PANEL=LedgerTheme.PANEL, ELEVATED=LedgerTheme.ELEVATED;
     private static final int BORDER=LedgerTheme.BORDER, TEXT=LedgerTheme.TEXT, MUTED=LedgerTheme.MUTED;
@@ -69,7 +73,8 @@ public final class MainActivity extends Activity {
     private static final int[] ICONS={R.drawable.ic_nav_home,R.drawable.ic_nav_people,R.drawable.ic_nav_history,R.drawable.ic_nav_settings};
     private final DateTimeFormatter dayFormat=DateTimeFormatter.ofPattern("d MMM yyyy",new Locale("ru","RU"));
     private LedgerStore ledger;
-    private dev.ventry.raschet.data.LedgerRepository repository;
+    private BookViewModel bookViewModel;
+    private boolean reloadOnStart,firstStartPending;
     private RecoveryVault vault;
     private ClientDirectory directory;
     private BookPrivacy privacy;
@@ -114,7 +119,7 @@ public final class MainActivity extends Activity {
         getWindow().setNavigationBarColor(BG);
         getWindow().getDecorView().setSystemUiVisibility(0);
         ledger=new LedgerStore(this);
-        repository=new dev.ventry.raschet.data.SqliteLedgerRepository(ledger);
+        bookViewModel=new ViewModelProvider(this).get(BookViewModel.class);
         vault=new RecoveryVault(this);
         directory=new ClientDirectory(this);
         privacy=new BookPrivacy(this);
@@ -124,6 +129,7 @@ public final class MainActivity extends Activity {
         largeText=getPreferences(MODE_PRIVATE).getBoolean("large",false);
         if(state!=null){
             tab=state.getString("tab","Главная");selectedClient=state.getString("client");
+            firstStartPending=state.getBoolean("first_start_pending",false);
             search=state.getString("search","");
             clientFilter=state.getString("client_filter",CollectionsInsights.ALL);
             clientScope=state.getString("client_scope",ClientDirectory.ACTIVE);
@@ -153,15 +159,17 @@ public final class MainActivity extends Activity {
             reportDaysLimit=state.getInt("report_days_limit",14);
             settingsExpanded=state.getString("settings_expanded","");
         }
-        else if(getIntent().getBooleanExtra(EXTRA_FIRST_START,false)&&ledger.clients().isEmpty())tab="Клиенты";
+        else firstStartPending=getIntent().getBooleanExtra(EXTRA_FIRST_START,false);
         tablet=getResources().getConfiguration().screenWidthDp>=720;
         View shell=createShell();
         if(!unlocked)shell.setVisibility(View.INVISIBLE);
         setContentView(shell);
+        bookViewModel.observe(this,this::onBookState);
         render();
     }
     @Override protected void onSaveInstanceState(Bundle out) {
         out.putString("tab",tab);out.putString("client",selectedClient);
+        out.putBoolean("first_start_pending",firstStartPending);
         out.putString("search",search);
         out.putString("client_filter",clientFilter);
         out.putString("client_scope",clientScope);
@@ -245,7 +253,7 @@ public final class MainActivity extends Activity {
         return root;
     }
     private void render() {
-        if(!unlocked){root.setVisibility(View.INVISIBLE);return;}
+        if(!unlocked){bookViewModel.clear();page.removeAllViews();root.setVisibility(View.INVISIBLE);return;}
         root.setVisibility(View.VISIBLE);
         if(!tablet){navigation.getLayoutParams().height=dp(navHeight());navigation.requestLayout();}
         navigation.removeAllViews();
@@ -273,22 +281,57 @@ public final class MainActivity extends Activity {
             item.setContentDescription(caption);
             item.setSelected(active);
             item.setFocusable(true);
-            item.setOnClickListener(v->{tab=destination;selectedClient=null;returnToCollections=false;settingsExpanded="";render();});
+            item.setOnClickListener(v->{firstStartPending=false;tab=destination;selectedClient=null;returnToCollections=false;settingsExpanded="";render();});
             LinearLayout.LayoutParams ip=tablet?new LinearLayout.LayoutParams(-1,dp(controlHeight())):
                     new LinearLayout.LayoutParams(0,-1,1);
             if(tablet)ip.bottomMargin=dp(6);else {ip.leftMargin=dp(2);ip.rightMargin=dp(2);}
             navigation.addView(item,ip);
         }
         page.removeAllViews();
+        if(needsBookSnapshot()){
+            LinearLayout loading=screen("Загрузка книги","Читаем сохранённые записи…");
+            page.addView(scroll(loading),new FrameLayout.LayoutParams(-1,-1));
+            bookViewModel.refresh();
+        }else{
+            bookViewModel.clear();
+            renderContent(null);
+        }
+    }
+    private boolean tabletClientScreen(){
+        return tablet&&getResources().getConfiguration().screenWidthDp>=1100&&tab.equals("Клиенты");
+    }
+    private boolean needsBookSnapshot(){
+        return tabletClientScreen()||(selectedClient==null&&
+                (tab.equals("Главная")||tab.equals("Клиенты")||tab.equals("Возврат")));
+    }
+    private void onBookState(ReadState<?> state){
+        if(!unlocked||isFinishing()||isDestroyed()||!needsBookSnapshot()
+                ||state!=bookViewModel.getState().getValue())return;
+        if(state instanceof ReadState.Ready<?> ready){
+            BookScreenData data=(BookScreenData)ready.getValue();
+            if(firstStartPending){
+                firstStartPending=false;
+                if(tab.equals("Главная")&&data.getSnapshot().getClients().isEmpty()){
+                    tab="Клиенты";render();return;
+                }
+            }
+            renderContent(data);
+        }else if(state instanceof ReadState.Failed){
+            page.removeAllViews();
+            LinearLayout error=screen("Ошибка чтения книги","Данные не были изменены.");
+            addButton(error,"Повторить",true,this::render,1);
+            page.addView(scroll(error),new FrameLayout.LayoutParams(-1,-1));
+        }
+    }
+    private void renderContent(BookScreenData data){
+        page.removeAllViews();
         try {
-            View contents=tablet
-                    &&getResources().getConfiguration().screenWidthDp>=1100
-                    &&tab.equals("Клиенты")?tabletClientsView():
+            View contents=tabletClientScreen()?tabletClientsView(data):
                     selectedClient!=null?detailView(selectedClient):
-                    tab.equals("Главная")?homeView():
-                    tab.equals("Клиенты")?clientsView():
+                    tab.equals("Главная")?homeView(data):
+                    tab.equals("Клиенты")?clientsView(data):
                     tab.equals("История")?historyView():
-                    tab.equals("Возврат")?collectionView():
+                    tab.equals("Возврат")?collectionView(data):
                     tab.equals("Отчёт")?reportView():settingsView();
             page.addView(contents,new FrameLayout.LayoutParams(-1,-1));
         }catch(Exception e){
@@ -297,16 +340,14 @@ public final class MainActivity extends Activity {
             page.addView(scroll(error));
         }
     }
-    private View homeView() {
-        LinearLayout view=screen("Долговая книга","Сегодня · "+dayFormat.format(LocalDate.now()));
-        dev.ventry.raschet.data.LedgerSnapshot snapshot=repository.snapshot();
-        List<LedgerStore.Client> customers=snapshot.getClients();
-        List<LedgerStore.Entry> entries=snapshot.getEntries();
-        List<CollectionsInsights.CustomerStatus> statuses=
-                CollectionsInsights.analyze(customers,entries,LocalDate.now());
+    private View homeView(BookScreenData data) {
+        LocalDate today=data.getToday();
+        LinearLayout view=screen("Долговая книга","Сегодня · "+dayFormat.format(today));
+        List<LedgerStore.Client> customers=data.getSnapshot().getClients();
+        List<LedgerStore.Entry> entries=data.getSnapshot().getEntries();
+        List<CollectionsInsights.CustomerStatus> statuses=data.getStatuses();
         long debt=0;
         int debtors=0,urgentCount=0;
-        LocalDate today=LocalDate.now();
         Map<String,PaymentPromises.Progress> promises=PaymentPromises.project(statuses,directory,entries,today,ZoneId.systemDefault());
         for(CollectionsInsights.CustomerStatus status:statuses){
             debt+=status.balance;
@@ -365,12 +406,11 @@ public final class MainActivity extends Activity {
     private void openCollections(){
         collectionQuery="";collectionUrgent=false;collectionLimit=60;returnToCollections=false;selectedClient=null;tab="Возврат";render();
     }
-    private View collectionView(){
+    private View collectionView(BookScreenData data){
         LinearLayout view=screen("Возврат долгов","План работы с непогашенными долгами");
-        dev.ventry.raschet.data.LedgerSnapshot snapshot=repository.snapshot();
-        List<LedgerStore.Entry> entries=snapshot.getEntries();
-        LocalDate today=LocalDate.now();
-        List<CollectionsInsights.CustomerStatus> statuses=CollectionsInsights.analyze(snapshot.getClients(),entries,today);
+        List<LedgerStore.Entry> entries=data.getSnapshot().getEntries();
+        LocalDate today=data.getToday();
+        List<CollectionsInsights.CustomerStatus> statuses=data.getStatuses();
         Map<String,PaymentPromises.Progress> promises=PaymentPromises.project(statuses,directory,entries,today,ZoneId.systemDefault());
         List<CollectionWorklist.Item> work=CollectionWorklist.build(statuses,directory,today,promises);
         long overdue=0,upcoming=0,balance=0;
@@ -614,10 +654,10 @@ public final class MainActivity extends Activity {
         if(!bookPayments)addButton(body,"+ Долг за этот день",false,()->showQuickDebt(false,day.date),1);
         else addButton(body,"+ Оплата за этот день",false,()->chooseClient("payment",day.date),1);
     }
-    private View tabletClientsView() {
+    private View tabletClientsView(BookScreenData data) {
         LinearLayout columns=row();
         columns.setBackgroundColor(BG);
-        View list=clientsView();
+        View list=clientsView(data);
         columns.addView(list,new LinearLayout.LayoutParams(0,-1,38f));
         View divider=new View(this);
         divider.setBackgroundColor(BORDER);
@@ -633,9 +673,9 @@ public final class MainActivity extends Activity {
     private void openClientFilter(String filter) {
         clientFilter=filter;clientScope=ClientDirectory.ACTIVE;clientVisibleLimit=60;search="";returnToCollections=false;selectedClient=null;tab="Клиенты";render();
     }
-    private View clientsView() {
+    private View clientsView(BookScreenData data) {
         LinearLayout view=screen("Клиенты","");
-        if(ledger.clients().isEmpty()){
+        if(data.getSnapshot().getClients().isEmpty()){
             view.addView(emptyState(R.drawable.ic_nav_people,"Пока нет клиентов",
                     "Добавьте клиента, чтобы записывать долги и оплаты.",
                     "Добавить первого клиента",()->showClientForm(null)));
@@ -664,9 +704,7 @@ public final class MainActivity extends Activity {
                 (clientsRecentFirst?" · недавние":clientsAmountFirst?" · по остатку":" · по имени"),MUTED,this::showClientFilters);
         LinearLayout results=stack(0);view.addView(results);
         // Build due/balance projections once per render, not on every typed character.
-        dev.ventry.raschet.data.LedgerSnapshot snapshot=repository.snapshot();
-        List<CollectionsInsights.CustomerStatus> cached=
-                CollectionsInsights.analyze(snapshot.getClients(),snapshot.getEntries(),LocalDate.now());
+        List<CollectionsInsights.CustomerStatus> cached=data.getStatuses();
         Runnable fill=()->fillClients(results,cached);
         searchInput.addTextChangedListener(watcher(value->{search=value;clientVisibleLimit=60;fill.run();}));
         fill.run();
@@ -1441,10 +1479,12 @@ public final class MainActivity extends Activity {
         super.onStart();
         if(privacy!=null&&BookPrivacy.shouldRelock(privacy.enabled(),stoppedAt,android.os.SystemClock.elapsedRealtime())){
             unlocked=false;
+            bookViewModel.clear();
             if(chooser!=null)chooser.dismiss();
-            if(root!=null)root.setVisibility(View.INVISIBLE);
+            if(root!=null){page.removeAllViews();root.setVisibility(View.INVISIBLE);}
         }
         stoppedAt=-1;
+        if(reloadOnStart&&unlocked){reloadOnStart=false;render();}
     }
     @Override protected void onResume(){
         super.onResume();
@@ -1455,6 +1495,8 @@ public final class MainActivity extends Activity {
     }
     @Override protected void onStop(){
         if(privacy!=null&&!authInFlight)stoppedAt=android.os.SystemClock.elapsedRealtime();
+        reloadOnStart=true;
+        bookViewModel.clear();
         super.onStop();
     }
     private void showQuickDebt(){showQuickDebt(false);}
@@ -2271,7 +2313,7 @@ public final class MainActivity extends Activity {
             }
             if(request==BookPrivacy.ENABLE)privacy.setEnabled(true);
             if(request==BookPrivacy.DISABLE)privacy.setEnabled(false);
-            unlocked=true;stoppedAt=-1;applyPrivacyFlag();render();return;
+            unlocked=true;stoppedAt=-1;reloadOnStart=false;applyPrivacyFlag();render();return;
         }
         if(request==REQUEST_EXPORT){
             boolean canExport=pendingExport;
@@ -2347,7 +2389,7 @@ public final class MainActivity extends Activity {
         else if(!tab.equals("Главная")){tab="Главная";render();}
         else super.onBackPressed();
     }
-    @Override protected void onDestroy() {if(ledger!=null)ledger.close();super.onDestroy();}
+    @Override protected void onDestroy() {if(bookViewModel!=null)bookViewModel.clear();if(ledger!=null)ledger.close();super.onDestroy();}
     private void message(String m) {Toast.makeText(this,m,Toast.LENGTH_LONG).show();}
 
     private LinearLayout screen(String title,String subtitle) {
