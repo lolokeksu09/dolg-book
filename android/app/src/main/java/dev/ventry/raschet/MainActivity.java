@@ -2049,7 +2049,16 @@ public final class MainActivity extends Activity {
         content.addView(label(kind+" · "+person.name,16,TEXT,true));
         content.addView(balancePanel("Сумма записи",entry.amount));
         content.addView(label("Дата: "+formatDate(entry.date),14,MUTED,false));
-        content.addView(label("Статус: "+(canceled?"отменена":entry.type.equals("reversal")?"отмена":"действует"),13,canceled?ALERT:MUTED,false));
+        String operationStatus=canceled?"отменена":entry.type.equals("reversal")?"отмена":"действует";
+        if(active&&"debt".equals(entry.type)){
+            Long remaining=ClientStatement.build(entries,entry.clientId,ZoneId.systemDefault()).remaining.get(entry.id);
+            if(remaining!=null){
+                operationStatus=remaining==0?"погашен":remaining<entry.amount?"частично погашен":"не погашен";
+                content.addView(label("Осталось по записи: "+money(remaining),16,remaining==0?MUTED:ACCENT,true));
+            }
+        }
+        content.addView(label("Статус: "+operationStatus,13,canceled?ALERT:MUTED,false));
+        content.addView(label("Текущий долг клиента: "+money(balance),13,MUTED,false));
         if(!entry.due.isEmpty())content.addView(label("Вернуть до: "+entry.due,14,TEXT,false));
         if(!entry.note.isEmpty())content.addView(label(entry.note,14,TEXT,false));
         if(entry.type.equals("reversal")){
@@ -2069,17 +2078,22 @@ public final class MainActivity extends Activity {
         });
         if(active&&!directory.archived(entry.clientId,balance)){
             if(last!=null&&last.id.equals(entry.id)){
-                clientMenuAction(content,"Исправить эту запись",()->showCorrection(entry.clientId));
-                clientMenuAction(content,"Отменить эту запись",()->showReversal(entry.clientId));
+                clientMenuAction(content,"Исправить эту запись",()->showCorrection(entry.clientId,entry.id));
+                clientMenuAction(content,"Отменить эту запись",()->showReversal(entry.clientId,entry.id));
             }else content.addView(label("Для сохранения совместимости копий изменить можно только последнюю действующую операцию клиента.",12,MUTED,false));
         }
         showDialog("Сведения об операции",content,null);
     }
-    private void showCorrection(String clientId) {
+    private void showCorrection(String clientId){showCorrection(clientId,null);}
+    private void showCorrection(String clientId,String expectedId) {
         LedgerStore.Entry original=ledger.lastActive(clientId);
         if(original==null){message("Нет действующей записи для исправления.");return;}
-        LinearLayout content=stack(10);
-        content.addView(label("Можно исправить только последнюю действующую запись. Старая сумма и причина останутся в истории.",13,MUTED,false));
+        if(expectedId!=null&&!expectedId.equals(original.id)){message("Запись уже не последняя. Откройте актуальную историю.");return;}
+        long currentBalance=LedgerStore.balance(ledger.entries(),clientId);
+        LinearLayout content=stack(7);
+        content.addView(label(("debt".equals(original.type)?"Долг":"Оплата")+" · "+formatDate(original.date),14,TEXT,true));
+        content.addView(label("Исходная сумма: "+money(original.amount)+" · текущий долг: "+money(currentBalance),13,MUTED,false));
+        content.addView(label("Исправление записывается сегодняшней датой. Исходная запись остаётся в истории.",12,MUTED,false));
         String formatted=String.format(Locale.ROOT,"%d,%02d",
                 original.amount/100,original.amount%100);
         EditText amount=field("Сумма",formatted);
@@ -2089,6 +2103,15 @@ public final class MainActivity extends Activity {
             content.addView(label("Сумма связана с товарами. Для изменения состава отмените последнюю покупку и запишите новую.",13,ALERT,false));
         }
         content.addView(formGroup("Исправленная сумма, ₽",amount));
+        TextView projection=label("",15,ACCENT,true);
+        projection.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);content.addView(projection);
+        Runnable preview=()->{
+            try{
+                long next=LedgerStore.correctedBalance(currentBalance,original,LedgerStore.parseAmount(amount.getText().toString()));
+                projection.setText("Остаток после исправления: "+money(next));projection.setTextColor(ACCENT);
+            }catch(IllegalArgumentException error){projection.setText(error.getMessage());projection.setTextColor(RED);}
+        };
+        amount.addTextChangedListener(watcher(v->preview.run()));preview.run();
         EditText due=field("Без срока",original.due);
         due.setFocusable(false);due.setClickable(true);
         due.setOnClickListener(v->{
@@ -2097,7 +2120,14 @@ public final class MainActivity extends Activity {
                     String.format(Locale.ROOT,"%04d-%02d-%02d",y,m+1,d)),
                     today.getYear(),today.getMonthValue()-1,today.getDayOfMonth()).show();
         });
-        if(original.type.equals("debt"))content.addView(formGroup("Вернуть до",due));
+        if(original.type.equals("debt")){
+            content.addView(formGroup("Вернуть до",due));
+            LinearLayout clearDue=stack(0);
+            addButton(clearDue,"Без срока",false,()->due.setText(""),1);
+            clearDue.setVisibility(due.getText().length()==0?View.GONE:View.VISIBLE);
+            due.addTextChangedListener(watcher(v->clearDue.setVisibility(v.isEmpty()?View.GONE:View.VISIBLE)));
+            content.addView(clearDue);
+        }
         EditText note=field("Комментарий",original.note);
         content.addView(formGroup("Комментарий",note));
         EditText reason=field("Почему исправлено",null);
@@ -2109,12 +2139,21 @@ public final class MainActivity extends Activity {
             selectedClient=clientId;tab="Клиенты";return true;
         });
     }
-    private void showReversal(String clientId) {
+    private void showReversal(String clientId){showReversal(clientId,null);}
+    private void showReversal(String clientId,String expectedId) {
         LedgerStore.Entry last=ledger.lastActive(clientId);
         if(last==null){message("Отменять пока нечего.");return;}
-        LinearLayout content=stack(12);
-        content.addView(label((last.type.equals("debt")?"Долг":"Оплата")+" "+money(last.amount)
-                +". Операция останется в истории с отметкой об отмене.",14,MUTED,false));
+        if(expectedId!=null&&!expectedId.equals(last.id)){message("Запись уже не последняя. Откройте актуальную историю.");return;}
+        long balance=LedgerStore.balance(ledger.entries(),clientId);
+        long after;
+        try{after=LedgerStore.correctedBalance(balance,last,0L);}
+        catch(IllegalArgumentException invalid){message(invalid.getMessage());return;}
+        LinearLayout content=stack(7);
+        content.addView(label((last.type.equals("debt")?"Долг":"Оплата")+" · "+formatDate(last.date),14,TEXT,true));
+        content.addView(label("Отменяемая сумма: "+money(last.amount),15,TEXT,true));
+        content.addView(label("Текущий долг: "+money(balance),13,MUTED,false));
+        content.addView(label("Остаток после отмены: "+money(after),16,after>balance?ALERT:ACCENT,true));
+        content.addView(label("Отмена записывается сегодняшней датой. Исходная операция остаётся в истории.",12,MUTED,false));
         EditText reason=field("Например, запись внесена ошибочно",null);
         content.addView(formGroup("Причина отмены",reason));
         showDialog("Отменить последнюю запись",content,()->{

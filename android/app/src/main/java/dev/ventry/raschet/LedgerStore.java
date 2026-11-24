@@ -259,6 +259,7 @@ public final class LedgerStore extends SQLiteOpenHelper {
             if(last==null)throw new IllegalArgumentException("Нет действующей операции для отмены.");
             if(expectedId!=null&&!expectedId.equals(last.id))throw new IllegalArgumentException("Запись уже не последняя. Откройте актуальную историю.");
             List<Entry> all=entries();
+            if(all.size()>=MAX_ENTRIES)throw new IllegalArgumentException("Достигнут лимит операций.");
             long b=balance(all,clientId);
             if("debt".equals(last.type)&&b<last.amount)
                 throw new IllegalArgumentException("Этот долг уже частично погашен. Сначала отмените последнюю оплату.");
@@ -297,16 +298,7 @@ public final class LedgerStore extends SQLiteOpenHelper {
             List<Entry> all=entries();
             if(all.size()+2>MAX_ENTRIES)
                 throw new IllegalArgumentException("Недостаточно места в истории операций.");
-            long available=balance(all,clientId);
-            long withoutOld="debt".equals(last.type)
-                    ?available-last.amount:available+last.amount;
-            if(withoutOld<0)
-                throw new IllegalArgumentException(
-                        "Этот долг уже погашался. Сначала исправьте последнюю оплату.");
-            long updated="debt".equals(last.type)
-                    ?withoutOld+amount:withoutOld-amount;
-            if(updated<0||updated>MAX_AMOUNT)
-                throw new IllegalArgumentException("Исправление создаёт переплату или превышение.");
+            correctedBalance(balance(all,clientId),last,amount);
             if(last.purchase!=null&&amount!=last.amount)
                 throw new IllegalArgumentException("Для изменения суммы покупки отмените её и создайте новую с правильными товарами.");
             if(last.amount==amount&&last.due.equals(due)&&last.note.equals(note))
@@ -320,6 +312,17 @@ public final class LedgerStore extends SQLiteOpenHelper {
             db.insertOrThrow("entries",null,values(corrected));
             db.setTransactionSuccessful();
         }finally{db.endTransaction();}
+    }
+
+    /** Same balance guard for correction preview and actual transaction. Zero is reversal only. */
+    static long correctedBalance(long available,Entry last,long amount){
+        if(last==null||amount<0||amount>MAX_AMOUNT||(!"debt".equals(last.type)&&!"payment".equals(last.type)))
+            throw new IllegalArgumentException("Неверная операция.");
+        long withoutOld="debt".equals(last.type)?available-last.amount:available+last.amount;
+        if(withoutOld<0)throw new IllegalArgumentException("Этот долг уже погашался. Сначала исправьте последнюю оплату.");
+        long updated="debt".equals(last.type)?withoutOld+amount:withoutOld-amount;
+        if(updated<0||updated>MAX_AMOUNT)throw new IllegalArgumentException("Исправление создаёт переплату или превышение.");
+        return updated;
     }
 
     private static ContentValues values(Entry entry) {

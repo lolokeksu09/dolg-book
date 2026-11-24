@@ -10,7 +10,7 @@ test('Android UI is native and does not contain web UI runtime',()=>{
   const gradle=read('android/app/build.gradle.kts');
   const activity=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
   const manifest=read('android/app/src/main/AndroidManifest.xml');
-  assert.ok(gradle.includes('versionName = "0.27.0-beta.1"'));
+  assert.ok(gradle.includes('versionName = "0.28.0-beta.1"'));
   assert.ok(gradle.includes('applicationIdSuffix = ".nativev031"'));
   assert.ok(!gradle.includes('webkit')&&!gradle.includes('syncOfflineBook'));
   assert.ok(!gradle.includes('index.html')&&!gradle.includes('app.js'));
@@ -316,4 +316,15 @@ test('client directory supports cleared balances and recent insertion order with
  assert.ok(model.includes('CLEAR.equals(filter) && status.balance != 0'));
  assert.ok(model.includes('item.lastOperationIndex'));
  assert.ok(search.includes('wanted.substring(1).equals(actual.substring(1))'));
+});
+
+
+test('correction and reversal previews use the same balance guard and exact selected operation',()=>{
+ const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
+ const store=read('android/app/src/main/java/dev/ventry/raschet/LedgerStore.java');
+ assert.ok(ui.includes('showCorrection(entry.clientId,entry.id)'));
+ assert.ok(ui.includes('showReversal(entry.clientId,entry.id)'));
+ assert.ok(ui.includes('LedgerStore.correctedBalance(currentBalance,original,'));
+ assert.ok(ui.includes('Остаток после отмены: '));
+ assert.ok(store.includes('correctedBalance(balance(all,clientId),last,amount)'));
 });

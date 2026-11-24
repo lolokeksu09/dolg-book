@@ -394,6 +394,27 @@ public class LedgerStoreInstrumentedTest {
         assertEquals(Long.valueOf(20000L),statement.remaining.get(second));
     }
 
+    @Test public void correctionPreviewMatchesTransactionAndRejectsImpossibleAmounts() throws Exception {
+        String id=addCustomer();
+        book.addEntry(id,"debt",10000L,"","");
+        book.addEntry(id,"payment",4000L,"","");
+        LedgerStore.Entry payment=book.lastActive(id);
+        assertEquals(10000L,LedgerStore.correctedBalance(6000L,payment,0L));
+        assertEquals(7000L,LedgerStore.correctedBalance(6000L,payment,3000L));
+        String before=book.exportJson();
+        try{LedgerStore.correctedBalance(6000L,payment,10001L);fail("Invalid preview accepted");}
+        catch(IllegalArgumentException expected){}
+        try{book.correctSelected(id,payment.id,10001L,"","","Ошибка");fail("Invalid correction accepted");}
+        catch(IllegalArgumentException expected){}
+        assertEquals(before,book.exportJson());
+        book.correctSelected(id,payment.id,3000L,"","","Исправление");
+        assertEquals(7000L,LedgerStore.balance(book.entries(),id));
+        try{book.reverseSelected(id,payment.id,"Устаревшая запись");fail("Stale operation accepted");}
+        catch(IllegalArgumentException expected){}
+        book.reverseLast(id,"Отмена");
+        assertEquals(10000L,LedgerStore.balance(book.entries(),id));
+    }
+
     @Test public void directoryFiltersRecentOperationsAndMatchesRussianPhonePrefixes() throws Exception {
         LocalDate today=LocalDate.now();
         String alice=book.recordDatedDebt(null,"Али","8 (999) 123-45-67",10000L,today,"","");

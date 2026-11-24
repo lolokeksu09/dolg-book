@@ -16,8 +16,9 @@ else
   adb install -r "$APK"
 fi
 adb logcat -c
+# Preserve the failing UI and runtime evidence even when an early assertion fails.
+trap 'rc=$?; if [[ "$rc" -ne 0 ]]; then echo "Smoke failed at line ${LINENO} (exit $rc)" >&2; adb exec-out screencap -p > android/build/native-failure.png || true; adb logcat -d -s AndroidRuntime:E ActivityManager:W > android/build/android-runtime-errors.txt || true; fi' EXIT
 adb shell am start -W -n "$PACKAGE/dev.ventry.raschet.SplashActivity"
-sleep 4
 
 dump_ui() {
   adb shell uiautomator dump /sdcard/raschet-ui.xml >/dev/null
@@ -49,7 +50,20 @@ PY
   echo "Cannot find tap target after scrolling: $target" >&2
   return 1
 }
-dump_ui
+# Wait for the actual onboarding screen; only recover the known unrelated launcher ANR.
+ready=false
+for attempt in 1 2 3 4 5 6; do
+  sleep 1
+  dump_ui
+  if grep -Fq 'Знакомьтесь, Ventry' android/build/native-ui.xml; then ready=true; break; fi
+  if grep -Fq "Pixel Launcher isn't responding" android/build/native-ui.xml; then
+    echo "System Pixel Launcher ANR before onboarding; closing only that system dialog" >&2
+    cp android/build/native-ui.xml android/build/native-launcher-anr.xml
+    tap_text 'Close app'
+    adb shell am start -W -n "$PACKAGE/dev.ventry.raschet.SplashActivity"
+  fi
+done
+if [[ "$ready" != true ]]; then echo 'Expected fresh onboarding did not appear' >&2; exit 1; fi
 grep -Fq 'Знакомьтесь, Ventry' android/build/native-ui.xml
 grep -Fq 'ПЕРВЫЙ ПРОДУКТ VENTRY' android/build/native-ui.xml
 grep -Fq 'Долговая книга для небольшого магазина' android/build/native-ui.xml
