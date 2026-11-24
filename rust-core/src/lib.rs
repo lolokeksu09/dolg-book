@@ -2,6 +2,7 @@
 
 //! Pure financial arithmetic. No JNI or database I/O in this crate yet.
 
+pub mod historical;
 pub mod projection;
 
 pub const MAX_AMOUNT: i64 = 100_000_000_000;
