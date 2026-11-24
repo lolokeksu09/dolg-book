@@ -6,7 +6,9 @@ plugins {
 android {
     namespace = "dev.ventry.raschet"
     compileSdk = 35
+    buildFeatures { buildConfig = true }
     defaultConfig {
+        buildConfigField("boolean", "RUST_PREVIEW", "false")
         applicationId = "dev.ventry.raschet"
         minSdk = 26
         targetSdk = 35
@@ -36,6 +38,7 @@ android.sourceSets.getByName("test").resources.srcDir(rootProject.projectDir.par
 // Opt-in debug-only native preview. Ordinary APKs and signed releases stay Kotlin-only.
 val rustPreview = providers.gradleProperty("raschetRustPreview").orNull == "true"
 if (rustPreview) {
+    android.buildTypes.getByName("debug").buildConfigField("boolean", "RUST_PREVIEW", "true")
     val nativeRoot = layout.buildDirectory.dir("generated/rustPreview")
     val nativeLibs = nativeRoot.map { it.dir("jniLibs") }
     val nativeAssets = nativeRoot.map { it.dir("testAssets") }
