@@ -229,4 +229,27 @@ public class LedgerStoreInstrumentedTest {
         assertEquals(10000L,LedgerStore.balance(book.entries(),a));
         assertEquals(5,book.entries().size());
     }
+
+    @Test public void historySearchSortsActualDatesAndRejectsStaleCorrection() throws Exception {
+        LocalDate now=LocalDate.now();
+        String a=book.recordDatedDebt(null,"Фёдор","+7 123 456 78 90",10000L,now,"","Молоко");
+        String first=book.lastActive(a).id;
+        book.recordDatedDebt(a,"","",20000L,now.minusDays(2),"","Хлеб");
+        String second=book.lastActive(a).id;
+        book.recordDatedDebt(null,"Анна","",30000L,now.minusDays(1),"","");
+        java.util.Map<String,LedgerStore.Client> people=new java.util.HashMap<>();
+        for(LedgerStore.Client c:book.clients())people.put(c.id,c);
+        List<LedgerStore.Entry> all=book.entries();
+        List<LedgerStore.Entry> visible=HistoryRows.select(all,people,null,"федор",null,null,"Все",java.time.ZoneId.systemDefault());
+        assertEquals(2,visible.size());assertEquals(first,visible.get(0).id);assertEquals(second,visible.get(1).id);
+        assertEquals(1,HistoryRows.select(all,people,a,"хлеб",null,null,"Долги",java.time.ZoneId.systemDefault()).size());
+        assertEquals(2,HistoryRows.select(all,people,null,"1234567890",null,null,"Все",java.time.ZoneId.systemDefault()).size());
+        String before=book.exportJson();
+        try{book.correctSelected(a,first,5000L,"","","Ошибка");fail("Stale correction accepted");}catch(IllegalArgumentException expected){}
+        try{book.reverseSelected(a,first,"Ошибка");fail("Stale cancellation accepted");}catch(IllegalArgumentException expected){}
+        assertEquals(before,book.exportJson());
+        book.correctSelected(a,second,15000L,"","","Исправление");
+        assertEquals(25000L,LedgerStore.balance(book.entries(),a));
+        String corrected=book.exportJson();book.importJson(corrected);assertEquals(corrected,book.exportJson());
+    }
 }

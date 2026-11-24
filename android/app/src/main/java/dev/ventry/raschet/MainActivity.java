@@ -79,6 +79,8 @@ public final class MainActivity extends Activity {
     private TextView shopCaption;
     private FrameLayout page;
     private String tab="Главная", selectedClient=null, search="", historyFilter="Все";
+    private String historyQuery="";
+    private String historyClientId=null;
     private String clientFilter=CollectionsInsights.ALL;
     private boolean clientsAmountFirst;
     private String shopName="Мой магазин";
@@ -121,6 +123,7 @@ public final class MainActivity extends Activity {
             authInFlight=state.getBoolean("auth_in_flight",false);
             clientsAmountFirst=state.getBoolean("clients_amount_first",false);
             historyVisibleLimit=state.getInt("history_visible_limit",100);
+            historyQuery=state.getString("history_query","");historyClientId=state.getString("history_client_id");
             detailVisibleLimit=state.getInt("detail_visible_limit",80);
             bookDayLimit=state.getInt("book_day_limit",30);
             bookFrom=readDate(state,"book_from");bookTo=readDate(state,"book_to");
@@ -154,6 +157,7 @@ public final class MainActivity extends Activity {
         out.putBoolean("auth_in_flight",authInFlight);
         out.putBoolean("clients_amount_first",clientsAmountFirst);
         out.putInt("history_visible_limit",historyVisibleLimit);
+        out.putString("history_query",historyQuery);out.putString("history_client_id",historyClientId);
         out.putInt("detail_visible_limit",detailVisibleLimit);
         out.putInt("book_day_limit",bookDayLimit);
         saveDate(out,"book_from",bookFrom);saveDate(out,"book_to",bookTo);
@@ -451,6 +455,8 @@ public final class MainActivity extends Activity {
             TextView sum=label(money(e.amount),15,canceled?MUTED:bookPayments?ACCENT:TEXT,true);
             if(canceled)sum.setPaintFlags(sum.getPaintFlags()|android.graphics.Paint.STRIKE_THRU_TEXT_FLAG);
             item.addView(sum);
+            sum.setContentDescription("Запись · "+person.name+" · "+money(e.amount));
+            sum.setFocusable(true);sum.setOnClickListener(v->showOperation(e.id));
             item.setFocusable(true);item.setOnClickListener(v->{selectedClient=e.clientId;tab="Клиенты";render();});
             if(!bookPayments&&!canceled&&unpaid>0){
                 TextView pay=label("Оплата",12,ACCENT,true);pay.setGravity(Gravity.CENTER);
@@ -791,7 +797,7 @@ public final class MainActivity extends Activity {
         view.addView(summary,margin(-1,-2,10));
         LinearLayout actions=stack(8);
         addButton(actions,"Операции периода",true,()->{
-            historyFrom=reportFrom;historyTo=reportTo;historyFilter="Все";historyVisibleLimit=100;
+            historyFrom=reportFrom;historyTo=reportTo;historyFilter="Все";historyQuery="";historyClientId=null;historyVisibleLimit=100;
             tab="История";render();
         },1);
         addButton(actions,"Экспорт отчёта CSV",false,this::exportReport,1);
@@ -856,22 +862,32 @@ public final class MainActivity extends Activity {
         actionRow(view,"▤","Период истории",historyFrom==null?"Все даты":dayFormat.format(historyFrom)+" — "+dayFormat.format(historyTo),
                 ()->choosePeriod(false));
         if(historyFrom!=null)addButton(view,"Сбросить даты",false,()->{historyFrom=null;historyTo=null;historyVisibleLimit=100;render();},1);
-        Map<String,String> names=new HashMap<>();
-        for(LedgerStore.Client c:ledger.clients())names.put(c.id,c.name);
+        Map<String,LedgerStore.Client> people=new HashMap<>();
+        for(LedgerStore.Client c:ledger.clients())people.put(c.id,c);
+        if(historyClientId!=null){
+            LedgerStore.Client chosen=people.get(historyClientId);
+            addButton(view,"Клиент: "+(chosen==null?"—":chosen.name)+" · сбросить",false,()->{
+                historyClientId=null;historyVisibleLimit=100;render();
+            },1);
+        }
+        EditText lookup=field("Имя, телефон или комментарий",historyQuery);
+        lookup.setSingleLine(true);
+        LinearLayout results=stack(0);
+        view.addView(formGroup("Поиск операций",lookup));
         List<LedgerStore.Entry> all=ledger.entries();
+        Runnable refresh=()->fillHistoryResults(results,all,people);
+        lookup.addTextChangedListener(watcher(value->{historyQuery=value;historyVisibleLimit=100;refresh.run();}));
+        view.addView(results);refresh.run();
+        return scroll(view);
+    }
+    private void fillHistoryResults(LinearLayout view,List<LedgerStore.Entry> all,Map<String,LedgerStore.Client> people){
+        view.removeAllViews();
         Set<String> canceled=LedgerStore.canceled(all);
+        List<LedgerStore.Entry> visible=HistoryRows.select(all,people,historyClientId,historyQuery,historyFrom,historyTo,historyFilter,ZoneId.systemDefault());
         int shown=0;
         boolean moreHistory=false;
         LocalDate lastHistoryDay=null;
-        for(int i=all.size()-1;i>=0;i--){
-            LedgerStore.Entry e=all.get(i);
-            if(historyFrom!=null){
-                LocalDate date=PeriodReport.dateOf(e,ZoneId.systemDefault());
-                if(date.isBefore(historyFrom)||date.isAfter(historyTo))continue;
-            }
-            if(!historyFilter.equals("Все") && !(historyFilter.equals("Долги")&&e.type.equals("debt"))
-                    &&!(historyFilter.equals("Оплаты")&&e.type.equals("payment"))
-                    &&!(historyFilter.equals("Отмены")&&e.type.equals("reversal")))continue;
+        for(LedgerStore.Entry e:visible){
             if(shown>=historyVisibleLimit){moreHistory=true;break;}
             LocalDate date=PeriodReport.dateOf(e,ZoneId.systemDefault());
             if(!date.equals(lastHistoryDay)){
@@ -881,7 +897,8 @@ public final class MainActivity extends Activity {
                 view.addView(dateHeading,margin(-1,-2,2));
                 lastHistoryDay=date;
             }
-            view.addView(entryCard(e,names.get(e.clientId),canceled.contains(e.id),false));
+            LedgerStore.Client person=people.get(e.clientId);
+            view.addView(entryCard(e,person==null?null:person.name,canceled.contains(e.id),false));
             addListDivider(view);shown++;
         }
         if(moreHistory)addButton(view,"Показать ещё операции",false,()->{
@@ -894,9 +911,8 @@ public final class MainActivity extends Activity {
                     ()->{if(ledger.clients().isEmpty())showClientForm(null);else chooseClient("debt");}));
             else view.addView(emptyState(R.drawable.ic_nav_history,
                     "Нет операций в фильтре", "Выберите другой тип операции или посмотрите всю историю.",
-                    "Показать все", ()->{historyFilter="Все";historyFrom=null;historyTo=null;historyVisibleLimit=100;render();}));
+                    "Показать все", ()->{historyFilter="Все";historyFrom=null;historyTo=null;historyQuery="";historyClientId=null;historyVisibleLimit=100;render();}));
         }
-        return scroll(view);
     }
     private View settingsView() {
         LinearLayout view=screen("Настройки","");
@@ -992,6 +1008,10 @@ public final class MainActivity extends Activity {
         if(canceled)sum.setPaintFlags(sum.getPaintFlags()|android.graphics.Paint.STRIKE_THRU_TEXT_FLAG);
         sum.setGravity(Gravity.END|Gravity.CENTER_VERTICAL);
         card.addView(sum);
+        card.setBackground(ripple(shape(BG,8,0)));card.setFocusable(true);
+        card.setOnClickListener(v->showOperation(e.id));
+        sum.setContentDescription("Запись · "+money(e.amount));
+        sum.setFocusable(true);sum.setOnClickListener(v->showOperation(e.id));
         return card;
     }
     private LinearLayout emptyState(int iconRes,String title,String subtitle,
@@ -1674,6 +1694,50 @@ public final class MainActivity extends Activity {
         try{startActivity(Intent.createChooser(share,"Поделиться сводкой клиента"));}
         catch(ActivityNotFoundException e){message("Нет приложения для отправки сводки.");}
     }
+    private void showOperation(String entryId){
+        List<LedgerStore.Entry> entries=ledger.entries();
+        LedgerStore.Entry found=null;
+        for(LedgerStore.Entry e:entries)if(e.id.equals(entryId)){found=e;break;}
+        if(found==null){message("Запись не найдена.");return;}
+        final LedgerStore.Entry entry=found;
+        LedgerStore.Client person=null;
+        for(LedgerStore.Client c:ledger.clients())if(c.id.equals(entry.clientId)){person=c;break;}
+        if(person==null){message("Клиент не найден.");return;}
+        boolean canceled=LedgerStore.canceled(entries).contains(entry.id);
+        long balance=LedgerStore.balance(entries,entry.clientId);
+        boolean active=!canceled&&!entry.type.equals("reversal");
+        LedgerStore.Entry last=ledger.lastActive(entry.clientId);
+        LinearLayout content=stack(6);
+        String kind=entry.type.equals("debt")?"Долг":entry.type.equals("payment")?"Оплата":"Отмена";
+        content.addView(label(kind+" · "+person.name,16,TEXT,true));
+        content.addView(balancePanel("Сумма записи",entry.amount));
+        content.addView(label("Дата: "+formatDate(entry.date),14,MUTED,false));
+        content.addView(label("Статус: "+(canceled?"отменена":entry.type.equals("reversal")?"отмена":"действует"),13,canceled?ALERT:MUTED,false));
+        if(!entry.due.isEmpty())content.addView(label("Вернуть до: "+entry.due,14,TEXT,false));
+        if(!entry.note.isEmpty())content.addView(label(entry.note,14,TEXT,false));
+        if(entry.type.equals("reversal")){
+            for(LedgerStore.Entry source:entries)if(source.id.equals(entry.reverses)){
+                clientMenuAction(content,"Исходная запись · "+money(source.amount),()->showOperation(source.id));break;
+            }
+        }else if(canceled){
+            for(LedgerStore.Entry reversal:entries)if(entry.id.equals(reversal.reverses)){
+                clientMenuAction(content,"Причина отмены",()->showOperation(reversal.id));break;
+            }
+        }
+        if(entry.purchase!=null)clientMenuAction(content,"Состав покупки",()->showPurchaseDetails(entry));
+        clientMenuAction(content,"Карточка клиента",()->{selectedClient=entry.clientId;tab="Клиенты";render();});
+        clientMenuAction(content,"Все операции клиента",()->{
+            historyClientId=entry.clientId;historyQuery="";historyFrom=null;historyTo=null;historyFilter="Все";
+            historyVisibleLimit=100;selectedClient=null;tab="История";render();
+        });
+        if(active&&!directory.archived(entry.clientId,balance)){
+            if(last!=null&&last.id.equals(entry.id)){
+                clientMenuAction(content,"Исправить эту запись",()->showCorrection(entry.clientId));
+                clientMenuAction(content,"Отменить эту запись",()->showReversal(entry.clientId));
+            }else content.addView(label("Для сохранения совместимости копий изменить можно только последнюю действующую операцию клиента.",12,MUTED,false));
+        }
+        showDialog("Сведения об операции",content,null);
+    }
     private void showCorrection(String clientId) {
         LedgerStore.Entry original=ledger.lastActive(clientId);
         if(original==null){message("Нет действующей записи для исправления.");return;}
@@ -1702,7 +1766,7 @@ public final class MainActivity extends Activity {
         EditText reason=field("Почему исправлено",null);
         content.addView(formGroup("Причина исправления (обязательно)",reason));
         showDialog("Исправить последнюю запись",content,()->{
-            ledger.correctLast(clientId,LedgerStore.parseAmount(amount.getText().toString()),
+            ledger.correctSelected(clientId,original.id,LedgerStore.parseAmount(amount.getText().toString()),
                     original.type.equals("debt")?due.getText().toString():"",
                     note.getText().toString().trim(),reason.getText().toString());
             selectedClient=clientId;tab="Клиенты";return true;
@@ -1717,7 +1781,7 @@ public final class MainActivity extends Activity {
         EditText reason=field("Например, запись внесена ошибочно",null);
         content.addView(formGroup("Причина отмены",reason));
         showDialog("Отменить последнюю запись",content,()->{
-            ledger.reverseLast(clientId,reason.getText().toString());return true;
+            ledger.reverseSelected(clientId,last.id,reason.getText().toString());return true;
         });
     }
     private interface SaveAction { boolean save() throws Exception; }

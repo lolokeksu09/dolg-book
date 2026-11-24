@@ -209,6 +209,10 @@ public final class LedgerStore extends SQLiteOpenHelper {
         return null;
     }
     public synchronized void reverseLast(String clientId,String reason) {
+        reverseSelected(clientId,null,reason);
+    }
+    /** A dialog may be stale: never reverse a different operation than the one displayed. */
+    public synchronized void reverseSelected(String clientId,String expectedId,String reason) {
         if(reason==null||reason.trim().isEmpty()||reason.trim().length()>200)
             throw new IllegalArgumentException("Укажите причину отмены.");
         SQLiteDatabase db=getWritableDatabase();
@@ -216,6 +220,7 @@ public final class LedgerStore extends SQLiteOpenHelper {
         try {
             Entry last=lastActive(clientId);
             if(last==null)throw new IllegalArgumentException("Нет действующей операции для отмены.");
+            if(expectedId!=null&&!expectedId.equals(last.id))throw new IllegalArgumentException("Запись уже не последняя. Откройте актуальную историю.");
             List<Entry> all=entries();
             long b=balance(all,clientId);
             if("debt".equals(last.type)&&b<last.amount)
@@ -232,6 +237,9 @@ public final class LedgerStore extends SQLiteOpenHelper {
      */
     public synchronized void correctLast(String clientId,long amount,String due,
             String note,String reason) {
+        correctSelected(clientId,null,amount,due,note,reason);
+    }
+    public synchronized void correctSelected(String clientId,String expectedId,long amount,String due,String note,String reason) {
         if(reason==null||reason.trim().isEmpty()||reason.trim().length()>200)
             throw new IllegalArgumentException("Укажите причину исправления.");
         if(note==null||note.length()>200)
@@ -243,6 +251,7 @@ public final class LedgerStore extends SQLiteOpenHelper {
         try {
             Entry last=lastActive(clientId);
             if(last==null)throw new IllegalArgumentException("Нет операции для исправления.");
+            if(expectedId!=null&&!expectedId.equals(last.id))throw new IllegalArgumentException("Запись уже не последняя. Откройте актуальную историю.");
             if("debt".equals(last.type)){
                 if(due==null)due="";
                 if(!due.isEmpty())try{LocalDate.parse(due);}

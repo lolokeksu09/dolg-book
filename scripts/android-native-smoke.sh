@@ -513,6 +513,29 @@ grep -Fq 'Остаток долга' android/build/native-ui.xml
 grep -Fq '100,00' android/build/native-ui.xml
 tap_text 'Книга'
 
+# History search and inspection of the exact operation.
+tap_text 'История'
+sleep 0.4
+tap_text 'Имя, телефон или комментарий'
+adb shell input text DirectoryBuyer
+adb shell input keyevent 4
+sleep 0.4
+dump_ui
+grep -Fq 'DirectoryBuyer' android/build/native-ui.xml
+if grep -Fq 'QuickBuyer' android/build/native-ui.xml; then
+  echo 'History search leaked another client'; exit 1
+fi
+tap_text 'Запись · 100,00 ₽'
+sleep 0.4
+dump_ui
+grep -Fq 'Сведения об операции' android/build/native-ui.xml
+grep -Fq 'Исправить эту запись' android/build/native-ui.xml
+tap_text 'Все операции клиента'
+sleep 0.4
+dump_ui
+grep -Fq 'Клиент: DirectoryBuyer' android/build/native-ui.xml
+tap_text 'Книга'
+
 adb logcat -d -s AndroidRuntime:E > android/build/android-runtime-errors.txt
 if grep -F 'FATAL EXCEPTION' android/build/android-runtime-errors.txt; then
   echo 'Android crash observed during onboarding smoke test'
