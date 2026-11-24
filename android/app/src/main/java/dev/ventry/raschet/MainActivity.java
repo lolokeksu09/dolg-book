@@ -5,6 +5,8 @@ import androidx.lifecycle.ViewModelProvider;
 import dev.ventry.raschet.presentation.BookViewModel;
 import dev.ventry.raschet.presentation.BookScreenData;
 import dev.ventry.raschet.presentation.ReadState;
+import dev.ventry.raschet.presentation.WriteState;
+import dev.ventry.raschet.data.ClientCommand;
 import android.app.DatePickerDialog;
 import android.app.Dialog;
 import android.Manifest;
@@ -55,8 +57,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 /** Native Android debt ledger, with platform views and SQLite persistence. */
 public final class MainActivity extends ComponentActivity {
@@ -67,7 +67,6 @@ public final class MainActivity extends ComponentActivity {
     private static final int REQUEST_IMPORT=101, REQUEST_EXPORT=102, REQUEST_PDF=103, REQUEST_REPORT=105, MAX_IMPORT=5*1024*1024;
     private static final String RECOVERY_PREFS="raschet_local_recovery";
     private static final int NOTIFICATION_PERMISSION_REQUEST=104;
-    private static final ExecutorService RECOVERY_WORK=Executors.newSingleThreadExecutor();
     public static final String EXTRA_FIRST_START = "dev.ventry.raschet.FIRST_START";
     private static final String[] TABS={"Главная","Клиенты","История","Настройки"};
     private static final int[] ICONS={R.drawable.ic_nav_home,R.drawable.ic_nav_people,R.drawable.ic_nav_history,R.drawable.ic_nav_settings};
@@ -75,6 +74,9 @@ public final class MainActivity extends ComponentActivity {
     private LedgerStore ledger;
     private BookViewModel bookViewModel;
     private boolean reloadOnStart,firstStartPending;
+    private Dialog pendingClientDialog;
+    private TextView pendingClientError;
+    private final Map<View,Boolean> pendingClientEnabled=new java.util.IdentityHashMap<>();
     private RecoveryVault vault;
     private ClientDirectory directory;
     private BookPrivacy privacy;
@@ -165,6 +167,7 @@ public final class MainActivity extends ComponentActivity {
         if(!unlocked)shell.setVisibility(View.INVISIBLE);
         setContentView(shell);
         bookViewModel.observe(this,this::onBookState);
+        bookViewModel.observeWrites(this,this::onClientWriteState);
         render();
     }
     @Override protected void onSaveInstanceState(Bundle out) {
@@ -257,6 +260,11 @@ public final class MainActivity extends ComponentActivity {
         root.setVisibility(View.VISIBLE);
         if(!tablet){navigation.getLayoutParams().height=dp(navHeight());navigation.requestLayout();}
         navigation.removeAllViews();
+        if(bookViewModel.hasPendingWrite()){
+            page.removeAllViews();
+            page.addView(scroll(screen("Сохранение клиента","Дождитесь завершения записи.")),new FrameLayout.LayoutParams(-1,-1));
+            return;
+        }
         for(int i=0;i<TABS.length;i++){
             final String destination=TABS[i];
             String caption=destination.equals("Главная")?"Книга":destination;
@@ -305,7 +313,7 @@ public final class MainActivity extends ComponentActivity {
                 (tab.equals("Главная")||tab.equals("Клиенты")||tab.equals("Возврат")));
     }
     private void onBookState(ReadState<?> state){
-        if(!unlocked||isFinishing()||isDestroyed()||!needsBookSnapshot()
+        if(!unlocked||isFinishing()||isDestroyed()||bookViewModel.hasPendingWrite()||!needsBookSnapshot()
                 ||state!=bookViewModel.getState().getValue())return;
         if(state instanceof ReadState.Ready<?> ready){
             BookScreenData data=(BookScreenData)ready.getValue();
@@ -1419,21 +1427,7 @@ public final class MainActivity extends ComponentActivity {
         row.addView(toggle,new LinearLayout.LayoutParams(-2,dp(52)));
         return row;
     }
-    private void enqueueRecovery() {
-        if(!recoveryPrefs().getBoolean("enabled",false))return;
-        android.content.Context app=getApplicationContext();
-        RECOVERY_WORK.execute(()->{
-            try(LedgerStore snapshotBook=new LedgerStore(app)){
-                new RecoveryVault(app).create(snapshotBook);
-                app.getSharedPreferences(RECOVERY_PREFS,MODE_PRIVATE).edit()
-                    .putLong("last_success",System.currentTimeMillis())
-                    .remove("last_error").apply();
-            }catch(Exception e){
-                app.getSharedPreferences(RECOVERY_PREFS,MODE_PRIVATE).edit()
-                    .putString("last_error","Не удалось создать локальную копию").apply();
-            }
-        });
-    }
+    private void enqueueRecovery() {RecoveryScheduler.enqueue(getApplicationContext());}
     private LinearLayout textSizeSetting() {
         LinearLayout row=row();
         row.setGravity(Gravity.CENTER_VERTICAL);
@@ -1490,6 +1484,7 @@ public final class MainActivity extends ComponentActivity {
         }
         stoppedAt=-1;
         if(reloadOnStart&&unlocked){reloadOnStart=false;render();}
+        if(unlocked)onClientWriteState(bookViewModel.getWriteState().getValue());
     }
     @Override protected void onResume(){
         super.onResume();
@@ -1646,15 +1641,6 @@ public final class MainActivity extends ComponentActivity {
                 throw new IllegalArgumentException("Выберите существующего клиента или подтвердите создание отдельного.");
             if(selected[0]!=null&&directory.archived(selected[0],LedgerStore.balance(ledger.entries(),selected[0])))
                 throw new IllegalArgumentException("Сначала верните клиента из архива.");
-            if(fromClients&&amount.getText().toString().trim().isEmpty()){
-                if(selected[0]!=null)throw new IllegalArgumentException("Клиент уже существует. Введите сумму долга.");
-                if(due.length()>0||!note.getText().toString().trim().isEmpty())throw new IllegalArgumentException("Введите сумму долга или очистите срок и комментарий.");
-                ledger.addDraftClient(draftId,n,ph);
-                drafts.clear();
-                tab="Клиенты";selectedClient=null;clientScope=ClientDirectory.ACTIVE;
-                clientFilter=CollectionsInsights.ALL;search="";clientVisibleLimit=60;
-                return true;
-            }
             // Determine how many dates to reveal before the transaction; no potentially
             // failing database reads after a successful save.
             int rank=1;
@@ -1672,8 +1658,15 @@ public final class MainActivity extends ComponentActivity {
                 search="";clientVisibleLimit=60;
             }else tab="Главная";
             selectedClient=null;return true;
+        },()->{
+            if(fromClients&&amount.getText().toString().trim().isEmpty()){
+                if(selected[0]!=null)throw new IllegalArgumentException("Клиент уже существует. Введите сумму долга.");
+                if(due.length()>0||!note.getText().toString().trim().isEmpty())throw new IllegalArgumentException("Введите сумму долга или очистите срок и комментарий.");
+                return new ClientCommand.Create(draftId,name.getText().toString(),phone.getText().toString(),separate[0]);
+            }
+            return null;
         });
-        if(chooser!=null)chooser.setOnDismissListener(v->{if(!saving&&unlocked)render();});
+        if(chooser!=null)chooser.setOnDismissListener(v->{if(!saving&&unlocked&&!bookViewModel.hasPendingWrite())render();});
     }
     private void addRecentAmount(LinearLayout into,EditText amount,long cents){
         if(cents>0)addButton(into,"Повторить сумму: "+money(cents),false,()->amount.setText(amountInput(cents)),1);
@@ -1776,10 +1769,8 @@ public final class MainActivity extends ComponentActivity {
         name.addTextChangedListener(watcher(value->detectDuplicates.run()));
         phone.addTextChangedListener(watcher(value->detectDuplicates.run()));
         detectDuplicates.run();
-        showDialog("Изменить клиента",content,()->{
-            ledger.editClient(client.id,name.getText().toString(),phone.getText().toString());
-            return true;
-        });
+        showDialog("Изменить клиента",content,null,()->
+                new ClientCommand.Edit(client.id,name.getText().toString(),phone.getText().toString()));
     }
     private void showShopName() {
         LinearLayout content=stack(10);
@@ -2218,7 +2209,12 @@ public final class MainActivity extends ComponentActivity {
         });
     }
     private interface SaveAction { boolean save() throws Exception; }
+    private interface ClientCommandFactory { ClientCommand command() throws Exception; }
     private void showDialog(String title,LinearLayout form,SaveAction save) {
+        showDialog(title,form,save,null);
+    }
+    private void showDialog(String title,LinearLayout form,SaveAction save,ClientCommandFactory clientCommand) {
+        if(bookViewModel.hasPendingWrite())return;
         Dialog dialog=new Dialog(this);
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
         LinearLayout box=stack(7);
@@ -2245,10 +2241,17 @@ public final class MainActivity extends ComponentActivity {
         box.addView(error);
         LinearLayout buttons=row();
         addButton(buttons,"Закрыть",false,dialog::dismiss,1);
-        if(save!=null)addButton(buttons,"Сохранить",true,()->{
-            if(saving)return;
+        if(save!=null||clientCommand!=null)addButton(buttons,"Сохранить",true,()->{
+            if(saving||bookViewModel.hasPendingWrite())return;
             saving=true;
-            try{if(save.save()){dialog.dismiss();render();enqueueRecovery();message("Сохранено.");}}
+            try{
+                ClientCommand command=clientCommand==null?null:clientCommand.command();
+                if(command!=null){
+                    beginClientWrite(command,dialog,form,buttons,error);
+                    return;
+                }
+                if(save!=null&&save.save()){dialog.dismiss();render();enqueueRecovery();message("Сохранено.");}
+            }
             catch(Exception ex){error.setText(ex.getMessage()==null?"Не удалось сохранить запись.":ex.getMessage());error.setVisibility(View.VISIBLE);}
             finally{saving=false;}
         },1);
@@ -2268,6 +2271,55 @@ public final class MainActivity extends ComponentActivity {
         dialog.show();
         if(window!=null)window.setLayout(Math.min(getResources().getDisplayMetrics().widthPixels-dp(26),dp(510)),
                 WindowManager.LayoutParams.WRAP_CONTENT);
+    }
+    private void disableForClientWrite(View view){
+        pendingClientEnabled.put(view,view.isEnabled());
+        view.setEnabled(false);
+        if(view instanceof ViewGroup group){
+            for(int i=0;i<group.getChildCount();i++)disableForClientWrite(group.getChildAt(i));
+        }
+    }
+    private void beginClientWrite(ClientCommand command,Dialog dialog,LinearLayout form,LinearLayout buttons,TextView error){
+        pendingClientDialog=dialog;pendingClientError=error;
+        pendingClientEnabled.clear();
+        disableForClientWrite(form);disableForClientWrite(buttons);
+        dialog.setCancelable(false);
+        error.setText("Сохранение…");error.setVisibility(View.VISIBLE);
+        if(!bookViewModel.submitClient(command)){
+            restoreClientDialog();
+            throw new IllegalStateException("Дождитесь завершения предыдущей записи.");
+        }
+    }
+    private void restoreClientDialog(){
+        for(Map.Entry<View,Boolean> state:pendingClientEnabled.entrySet())state.getKey().setEnabled(state.getValue());
+        pendingClientEnabled.clear();
+        if(pendingClientDialog!=null)pendingClientDialog.setCancelable(true);
+        pendingClientDialog=null;pendingClientError=null;
+    }
+    private void onClientWriteState(WriteState<Boolean> state){
+        if(!unlocked||isFinishing()||isDestroyed()||state!=bookViewModel.getWriteState().getValue())return;
+        if(!(state instanceof WriteState.Done)&&!(state instanceof WriteState.Failed))return;
+        Dialog dialog=pendingClientDialog;
+        TextView error=pendingClientError;
+        restoreClientDialog();
+        bookViewModel.acknowledgeWrite(state);
+        if(state instanceof WriteState.Done<?> done){
+            if(Boolean.TRUE.equals(done.getValue())){
+                tab="Клиенты";selectedClient=null;clientScope=ClientDirectory.ACTIVE;
+                clientFilter=CollectionsInsights.ALL;search="";clientVisibleLimit=60;
+            }
+            saving=true;
+            try{if(dialog!=null&&dialog.isShowing())dialog.dismiss();}
+            finally{saving=false;}
+            render();message("Сохранено.");
+        }else if(state instanceof WriteState.Failed failed){
+            if(dialog!=null&&dialog.isShowing()&&error!=null){
+                error.setText(failed.getMessage());error.setVisibility(View.VISIBLE);
+                render();
+            }else{
+                render();message(failed.getMessage());
+            }
+        }
     }
     private void pickImport() {
         Intent picker=new Intent(Intent.ACTION_OPEN_DOCUMENT);
@@ -2318,7 +2370,8 @@ public final class MainActivity extends ComponentActivity {
             }
             if(request==BookPrivacy.ENABLE)privacy.setEnabled(true);
             if(request==BookPrivacy.DISABLE)privacy.setEnabled(false);
-            unlocked=true;stoppedAt=-1;reloadOnStart=false;applyPrivacyFlag();render();return;
+            unlocked=true;stoppedAt=-1;reloadOnStart=false;applyPrivacyFlag();render();
+            onClientWriteState(bookViewModel.getWriteState().getValue());return;
         }
         if(request==REQUEST_EXPORT){
             boolean canExport=pendingExport;
@@ -2390,6 +2443,7 @@ public final class MainActivity extends ComponentActivity {
     }
     @Override public void onBackPressed() {
         if(!unlocked){finishAndRemoveTask();return;}
+        if(bookViewModel.hasPendingWrite())return;
         if(selectedClient!=null){selectedClient=null;tab=returnToCollections?"Возврат":"Клиенты";returnToCollections=false;render();}
         else if(!tab.equals("Главная")){tab="Главная";render();}
         else super.onBackPressed();
