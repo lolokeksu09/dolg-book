@@ -408,6 +408,36 @@ grep -Fq 'Остаток долга' android/build/native-ui.xml
 grep -Fq '321,00' android/build/native-ui.xml
 tap_text 'Книга'
 
+# Client directory plus can create a customer and the first debt in the same form.
+tap_text 'Клиенты'
+sleep 0.4
+tap_text '+ Добавить клиента'
+sleep 0.4
+dump_ui
+grep -Fq 'Дата записи' android/build/native-ui.xml
+fill_form_input 0 DirectoryBuyer
+fill_form_input 2 222
+tap_text 'Сохранить'
+sleep 0.5
+dump_ui
+grep -Fq 'DirectoryBuyer' android/build/native-ui.xml
+grep -Fq '222,00' android/build/native-ui.xml
+tap_text 'DirectoryBuyer'
+sleep 0.4
+tap_text '+ Долг'
+sleep 0.4
+dump_ui
+grep -Fq 'Дата записи' android/build/native-ui.xml
+fill_form_input 0 100
+tap_text 'Сохранить'
+sleep 0.5
+dump_ui
+grep -Fq '322,00' android/build/native-ui.xml
+tap_text 'Книга'
+sleep 0.4
+dump_ui
+grep -Fq 'DirectoryBuyer' android/build/native-ui.xml
+
 adb logcat -d -s AndroidRuntime:E > android/build/android-runtime-errors.txt
 if grep -F 'FATAL EXCEPTION' android/build/android-runtime-errors.txt; then
   echo 'Android crash observed during onboarding smoke test'

@@ -1093,7 +1093,8 @@ public final class MainActivity extends Activity {
         if(privacy!=null&&!authInFlight)stoppedAt=android.os.SystemClock.elapsedRealtime();
         super.onStop();
     }
-    private void showQuickDebt(){
+    private void showQuickDebt(){showQuickDebt(false);}
+    private void showQuickDebt(boolean fromClients){
         LinearLayout form=stack(6);
         EditText name=field("Имя покупателя",null);
         EditText phone=field("Телефон (необязательно)",null);phone.setInputType(InputType.TYPE_CLASS_PHONE);
@@ -1101,17 +1102,10 @@ public final class MainActivity extends Activity {
         form.addView(formGroup("Имя покупателя",name));
         form.addView(formGroup("Телефон (необязательно)",phone));
         LinearLayout matches=stack(2);form.addView(matches);
-        form.addView(formGroup("Сумма долга, ₽",amount));
+        form.addView(formGroup(fromClients?"Сумма долга, ₽ (необязательно)":"Сумма долга, ₽",amount));
+        if(fromClients)form.addView(label("Без суммы сохраняется только клиент.",12,MUTED,false));
         LocalDate[] day={LocalDate.now()};
-        TextView date=label(bookDateFormat.format(day[0]),15,TEXT,true);
-        date.setPadding(dp(11),0,dp(11),0);date.setGravity(Gravity.CENTER_VERTICAL);
-        date.setBackground(ripple(shape(ELEVATED,6,BORDER)));date.setFocusable(true);
-        date.setOnClickListener(v->{
-            DatePickerDialog picker=new DatePickerDialog(this,(widget,y,m,d)->{
-                day[0]=LocalDate.of(y,m+1,d);date.setText(bookDateFormat.format(day[0]));
-            },day[0].getYear(),day[0].getMonthValue()-1,day[0].getDayOfMonth());
-            picker.getDatePicker().setMaxDate(System.currentTimeMillis());picker.show();
-        });
+        TextView date=debtDateField(day);
         form.addView(formGroup("Дата записи",date));
         List<LedgerStore.Client> customers=ledger.clients();
         List<CollectionsInsights.CustomerStatus> statuses=CollectionsInsights.analyze(customers,ledger.entries(),LocalDate.now());
@@ -1153,12 +1147,19 @@ public final class MainActivity extends Activity {
         };
         name.addTextChangedListener(watcher(v->{if(!updating[0]){selected[0]=null;separate[0]=false;refresh.run();}}));
         phone.addTextChangedListener(watcher(v->{if(!updating[0]){selected[0]=null;separate[0]=false;refresh.run();}}));
-        showDialog("Новый долг",form,()->{
+        showDialog(fromClients?"Новый клиент и долг":"Новый долг",form,()->{
             String n=name.getText().toString(),ph=phone.getText().toString();
             if(selected[0]==null&&!separate[0]&&hasExactCustomer(ledger.clients(),n,ph))
                 throw new IllegalArgumentException("Выберите существующего клиента или подтвердите создание отдельного.");
             if(selected[0]!=null&&directory.archived(selected[0],LedgerStore.balance(ledger.entries(),selected[0])))
                 throw new IllegalArgumentException("Сначала верните клиента из архива.");
+            if(fromClients&&amount.getText().toString().trim().isEmpty()){
+                if(selected[0]!=null)throw new IllegalArgumentException("Клиент уже существует. Введите сумму долга.");
+                ledger.addClient(n,ph);
+                tab="Клиенты";selectedClient=null;clientScope=ClientDirectory.ACTIVE;
+                clientFilter=CollectionsInsights.ALL;search="";clientVisibleLimit=60;
+                return true;
+            }
             // Determine how many dates to reveal before the transaction; no potentially
             // failing database reads after a successful save.
             int rank=1;
@@ -1167,8 +1168,24 @@ public final class MainActivity extends Activity {
             ledger.recordDatedDebt(selected[0],n,ph,LedgerStore.parseAmount(amount.getText().toString()),day[0],"","");
             expandedBookDays.add(day[0].toString());
             bookDayLimit=Math.max(bookDayLimit,rank);
-            tab="Главная";selectedClient=null;return true;
+            if(fromClients){
+                tab="Клиенты";clientScope=ClientDirectory.ACTIVE;clientFilter=CollectionsInsights.ALL;
+                search="";clientVisibleLimit=60;
+            }else tab="Главная";
+            selectedClient=null;return true;
         });
+    }
+    private TextView debtDateField(LocalDate[] day){
+        TextView date=label(bookDateFormat.format(day[0]),15,TEXT,true);
+        date.setPadding(dp(11),0,dp(11),0);date.setGravity(Gravity.CENTER_VERTICAL);
+        date.setBackground(ripple(shape(ELEVATED,6,BORDER)));date.setFocusable(true);
+        date.setOnClickListener(v->{
+            DatePickerDialog picker=new DatePickerDialog(this,(widget,y,m,d)->{
+                day[0]=LocalDate.of(y,m+1,d);date.setText(bookDateFormat.format(day[0]));
+            },day[0].getYear(),day[0].getMonthValue()-1,day[0].getDayOfMonth());
+            picker.getDatePicker().setMaxDate(System.currentTimeMillis());picker.show();
+        });
+        return date;
     }
     private static boolean hasExactCustomer(List<LedgerStore.Client> people,String name,String phone){
         String n=name.trim(),d=phone.replaceAll("[^0-9]","");
@@ -1181,7 +1198,7 @@ public final class MainActivity extends Activity {
     private void chooseClient(String type) {
         if(type.equals("debt")){showQuickDebt();return;}
         List<LedgerStore.Client> customers=ledger.clients();
-        if(customers.isEmpty()){showClientForm(null);return;}
+        if(customers.isEmpty()){message("Пока нет клиентов с долгом.");return;}
         LinearLayout content=stack(8);
         List<CollectionsInsights.CustomerStatus> statuses=directory.select(
                 CollectionsInsights.analyze(customers,ledger.entries(),LocalDate.now()),ClientDirectory.ACTIVE);
@@ -1215,6 +1232,7 @@ public final class MainActivity extends Activity {
     }
     private Dialog chooser;
     private void showClientForm(LedgerStore.Client client) {
+        if(client==null){showQuickDebt(true);return;}
         LinearLayout content=stack(12);
         EditText name=field("Имя клиента",client==null?"":client.name);
         EditText phone=field("Телефон (необязательно)",client==null?"":client.phone);
@@ -1245,12 +1263,8 @@ public final class MainActivity extends Activity {
         name.addTextChangedListener(watcher(value->detectDuplicates.run()));
         phone.addTextChangedListener(watcher(value->detectDuplicates.run()));
         detectDuplicates.run();
-        showDialog(client==null?"Новый клиент":"Изменить клиента",content,()->{
-            if(client==null){
-                ledger.addClient(name.getText().toString(),phone.getText().toString());
-                tab="Клиенты";selectedClient=null;clientScope=ClientDirectory.ACTIVE;
-                clientFilter=CollectionsInsights.ALL;search="";clientVisibleLimit=60;
-            }else ledger.editClient(client.id,name.getText().toString(),phone.getText().toString());
+        showDialog("Изменить клиента",content,()->{
+            ledger.editClient(client.id,name.getText().toString(),phone.getText().toString());
             return true;
         });
     }
@@ -1419,6 +1433,8 @@ public final class MainActivity extends Activity {
         };
         amount.addTextChangedListener(watcher(v->updateProjection.run()));
         updateProjection.run();
+        LocalDate[] entryDay={LocalDate.now()};
+        if(type.equals("debt"))content.addView(formGroup("Дата записи",debtDateField(entryDay)));
         EditText due=field("Без срока",savedDraft?previous.due:null);
         due.setFocusable(false);due.setClickable(true);
         due.setOnClickListener(v->{
@@ -1449,9 +1465,13 @@ public final class MainActivity extends Activity {
             },1);
         }
         showDialog(type.equals("debt")?"Новый долг":"Принять оплату",content,()->{
-            ledger.addEntry(clientId,type,LedgerStore.parseAmount(amount.getText().toString()),
-                    type.equals("debt")?due.getText().toString():"",
-                    note.getText().toString().trim());
+            long cents=LedgerStore.parseAmount(amount.getText().toString());
+            if(type.equals("debt")){
+                if(directory.archived(clientId,LedgerStore.balance(ledger.entries(),clientId)))
+                    throw new IllegalArgumentException("Сначала верните клиента из архива.");
+                ledger.recordDatedDebt(clientId,"","",cents,entryDay[0],due.getText().toString(),note.getText().toString().trim());
+                expandedBookDays.add(entryDay[0].toString());
+            }else ledger.addEntry(clientId,type,cents,"",note.getText().toString().trim());
             drafts.clear(clientId,type);
             selectedClient=clientId;tab="Клиенты";
             return true;
