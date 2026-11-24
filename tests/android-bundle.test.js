@@ -10,7 +10,7 @@ test('Android UI is native and does not contain web UI runtime',()=>{
   const gradle=read('android/app/build.gradle.kts');
   const activity=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
   const manifest=read('android/app/src/main/AndroidManifest.xml');
-  assert.ok(gradle.includes('versionName = "0.22.0-beta.1"'));
+  assert.ok(gradle.includes('versionName = "0.23.0-beta.1"'));
   assert.ok(gradle.includes('applicationIdSuffix = ".nativev031"'));
   assert.ok(!gradle.includes('webkit')&&!gradle.includes('syncOfflineBook'));
   assert.ok(!gradle.includes('index.html')&&!gradle.includes('app.js'));
@@ -147,7 +147,7 @@ test('AMOLED ledger uses shared semantic palette and real metric rows',()=>{
   for(const screen of ['MainActivity','IntroActivity','SplashActivity']) assert.ok(read('android/app/src/main/java/dev/ventry/raschet/'+screen+'.java').includes('LedgerTheme.BG'));
   assert.ok(ui.includes('balancePanel("Общая задолженность",debt)'));
   assert.ok(ui.includes('metricRow(due,"Просрочено",money(overdue)'));
-  assert.ok(ui.includes('metricRow(due,"Должников",debtors'));
+  assert.ok(ui.includes('metricRow(view,"Возврат долгов"'));
   assert.ok(ui.includes('android.R.attr.state_focused'));
   assert.ok(ui.includes('STRIKE_THRU_TEXT_FLAG'));
 });
@@ -250,4 +250,14 @@ test('quick form drafts resume explicitly and use stable operation IDs',()=>{
   assert.ok(ui.includes('QuickDebtDrafts.Draft pending'));
   assert.ok(ui.includes('notice.verify(selected[0],cents)'));
   assert.ok(store.includes('if(hasEntryId(entryId))'));
+});
+
+
+test('collection workspace is separate from chronological book and uses a read-only worklist',()=>{
+  const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
+  const queue=read('android/app/src/main/java/dev/ventry/raschet/CollectionWorklist.java');
+  assert.ok(ui.includes('tab.equals("Возврат")?collectionView()'));
+  assert.ok(ui.includes('directory.setFollowUp(person.id,day[0]'));
+  assert.ok(ui.includes('else if(fromCollections){selectedClient=null;tab="Возврат";}'));
+  assert.ok(queue.includes('if(s.balance>0)'));
 });

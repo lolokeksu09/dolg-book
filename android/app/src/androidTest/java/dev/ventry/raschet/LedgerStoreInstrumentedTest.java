@@ -308,4 +308,35 @@ public class LedgerStoreInstrumentedTest {
             assertTrue(book.hasClientId(contactId));
         }finally{drafts.clear();}
     }
+
+    @Test public void collectionWorklistPrioritizesUniqueDebtorsAndDoesNotModifyBook() throws Exception {
+        LocalDate today=LocalDate.now();
+        String storage="raschet-qa-collections-"+java.util.UUID.randomUUID();
+        ClientDirectory directory=new ClientDirectory(testContext,storage);
+        try{
+            String late=book.recordDatedDebt(null,"Просрочка","",10000L,today.minusDays(2),today.minusDays(1).toString(),"");
+            String contact=book.recordDatedDebt(null,"Контакт","",20000L,today,"","");
+            String soon=book.recordDatedDebt(null,"Срок","",30000L,today,today.plusDays(3).toString(),"");
+            String limit=book.recordDatedDebt(null,"Лимит","",40000L,today,"","");
+            String planned=book.recordDatedDebt(null,"План","",50000L,today,"","");
+            String paid=book.recordDatedDebt(null,"Оплачено","",60000L,today,"","");
+            book.addEntry(paid,"payment",60000L,"","");
+            String original=book.exportJson();
+            directory.setFollowUp(contact,today,"Позвонить");
+            directory.setFollowUp(late,today,"Уточнить срок");
+            directory.setFollowUp(planned,today.plusDays(14),"Позже");
+            directory.setFollowUp(paid,today,"Не показывать");
+            directory.setDebtLimit(limit,10000L);
+            List<CollectionWorklist.Item> rows=CollectionWorklist.build(CollectionsInsights.analyze(book.clients(),book.entries(),today),directory,today);
+            assertEquals(5,rows.size());
+            assertEquals(late,rows.get(0).status.client.id);assertEquals(contact,rows.get(1).status.client.id);
+            assertEquals(soon,rows.get(2).status.client.id);assertEquals(limit,rows.get(3).status.client.id);
+            assertEquals(planned,rows.get(4).status.client.id);
+            assertEquals(4,CollectionWorklist.select(rows,"",true).size());
+            assertEquals(1,CollectionWorklist.select(rows,"контакт",false).size());
+            assertEquals("Позвонить",new ClientDirectory(testContext,storage).followUp(contact).note);
+            assertEquals(original,book.exportJson());
+            directory.setFollowUp(contact,null,"");assertNull(directory.followUp(contact));
+        }finally{directory.clearAfterRestore();}
+    }
 }

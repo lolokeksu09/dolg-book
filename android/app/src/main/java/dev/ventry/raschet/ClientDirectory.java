@@ -41,6 +41,24 @@ final class ClientDirectory {
         if(cents==0)editor.remove("debt_limit:"+id);else editor.putLong("debt_limit:"+id,cents);
         if(!editor.commit())throw new IllegalStateException("Не удалось сохранить лимит.");
     }
+    static final class FollowUp{
+        final java.time.LocalDate date;
+        final String note;
+        FollowUp(java.time.LocalDate date,String note){this.date=date;this.note=note;}
+    }
+    FollowUp followUp(String id){
+        String day=prefs.getString("follow_up_date:"+id,null);
+        if(day==null)return null;
+        try{return new FollowUp(java.time.LocalDate.parse(day),prefs.getString("follow_up_note:"+id,""));}
+        catch(java.time.format.DateTimeParseException invalid){return null;}
+    }
+    void setFollowUp(String id,java.time.LocalDate day,String note){
+        if(id==null||id.isEmpty()||note==null||note.length()>200)throw new IllegalArgumentException("Комментарий: до 200 знаков.");
+        SharedPreferences.Editor editor=prefs.edit();
+        if(day==null)editor.remove("follow_up_date:"+id).remove("follow_up_note:"+id);
+        else editor.putString("follow_up_date:"+id,day.toString()).putString("follow_up_note:"+id,note.trim());
+        if(!editor.commit())throw new IllegalStateException("Не удалось сохранить план возврата.");
+    }
     void clearAfterRestore(){prefs.edit().clear().apply();}
     List<CollectionsInsights.CustomerStatus> select(List<CollectionsInsights.CustomerStatus> source,String scope){
         Set<String> archived=ids("archived"),favorites=ids("favorites");
