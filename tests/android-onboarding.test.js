@@ -48,7 +48,7 @@ test('intro first presents Ventry then preserves three interactive lessons',()=>
 
 test('native navigation and empty states are accessible, with actionable call-to-action',()=>{
   const activity=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
-  assert.ok(activity.includes('private int navHeight(){return largeText?72:64;}'), 'navigation has compact and large-text heights');
+  assert.ok(activity.includes('private int navHeight(){return largeText?68:56;}'), 'navigation has compact and large-text heights');
   assert.ok(activity.includes('setSingleLine(true)'));
   assert.ok(activity.includes('setContentDescription(destination)'));
   assert.ok(activity.includes('setSelected(destination.equals(tab))'));
