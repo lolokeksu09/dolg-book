@@ -1,5 +1,6 @@
 plugins {
-    id("com.android.application") version "8.9.2"
+    id("com.android.application") version "8.10.1"
+    id("org.jetbrains.kotlin.android") version "2.2.21"
 }
 
 android {
@@ -24,7 +25,16 @@ android {
     }
 }
 
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+    }
+}
+
+android.sourceSets.getByName("test").resources.srcDir(rootProject.projectDir.parentFile.resolve("tests/contracts"))
+
 dependencies {
+    testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test:runner:1.6.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
 }
