@@ -141,6 +141,26 @@ public final class LedgerStore extends SQLiteOpenHelper {
     synchronized void addDraftClient(String id,String name,String phone){
         insertClient(getWritableDatabase(),name,phone,id);
     }
+    /** Duplicate consent and stable draft ID checked within the write transaction. */
+    public synchronized void addCheckedDraftClient(String id,String name,String phone,boolean allowDuplicate){
+        UUID.fromString(id);
+        checkClient(name,phone);
+        SQLiteDatabase db=getWritableDatabase();
+        db.beginTransaction();
+        try{
+            if(hasClientId(id)||hasEntryId(id))
+                throw new IllegalArgumentException("Этот черновик уже сохранён. Откройте книгу.");
+            if(!allowDuplicate){
+                String n=name.trim(),d=phone.replaceAll("[^0-9]","");
+                for(Client other:clients()){
+                    if(other.name.trim().equalsIgnoreCase(n)||ClientSearch.sameNumber(other.phone,d))
+                        throw new IllegalArgumentException("Выберите существующего клиента или подтвердите создание отдельного.");
+                }
+            }
+            insertClient(db,name,phone,id);
+            db.setTransactionSuccessful();
+        }finally{db.endTransaction();}
+    }
     private String insertClient(SQLiteDatabase db,String name,String phone,String id){
         checkClient(name,phone);
         if(clients().size()>=MAX_CLIENTS)throw new IllegalArgumentException("Достигнут лимит клиентов.");
