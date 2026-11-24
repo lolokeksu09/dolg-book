@@ -811,7 +811,12 @@ public final class MainActivity extends ComponentActivity {
     private View detailView(String id) {
         LedgerStore.Client client=null;
         for(LedgerStore.Client c:ledger.clients())if(c.id.equals(id))client=c;
-        if(client==null){selectedClient=null;return clientsView();}
+        if(client==null){
+            selectedClient=null;
+            return scroll(emptyState(R.drawable.ic_nav_people,"Клиент не найден",
+                    "Запись могла измениться после восстановления книги.",
+                    "К списку клиентов",()->{tab="Клиенты";render();}));
+        }
         final LedgerStore.Client current=client;
         if(!id.equals(detailFilterClient)){detailFilterClient=id;detailFilter=ClientStatement.ALL;detailVisibleLimit=80;}
         List<LedgerStore.Entry> all=ledger.entries();
