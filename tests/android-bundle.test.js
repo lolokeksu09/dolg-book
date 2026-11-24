@@ -10,7 +10,7 @@ test('Android UI is native and does not contain web UI runtime',()=>{
   const gradle=read('android/app/build.gradle.kts');
   const activity=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
   const manifest=read('android/app/src/main/AndroidManifest.xml');
-  assert.ok(gradle.includes('versionName = "0.17.1-beta.1"'));
+  assert.ok(gradle.includes('versionName = "0.18.0-beta.1"'));
   assert.ok(gradle.includes('applicationIdSuffix = ".nativev031"'));
   assert.ok(!gradle.includes('webkit')&&!gradle.includes('syncOfflineBook'));
   assert.ok(!gradle.includes('index.html')&&!gradle.includes('app.js'));
@@ -199,4 +199,15 @@ test('launcher has adaptive and themed icon resources without changing the Ventr
   assert.ok(foreground.includes('android:fillType="evenOdd"'));
   assert.equal(foreground.replace('#48CF99','#FFFFFF'),mono);
   assert.ok(read(res+'drawable/ic_ventry.xml').includes('Faithful Android vector'));
+});
+
+
+test('payment journal is separate from unpaid debt and shortcuts only prefill the amount',()=>{
+  const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
+  const days=read('android/app/src/main/java/dev/ventry/raschet/BookDays.java');
+  assert.ok(ui.includes('BookDays.groupPayments(entries,ZoneId.systemDefault())'));
+  assert.ok(ui.includes('bookModeButton(modes,"Оплаты по датам",true)'));
+  assert.ok(ui.includes('amount.setText(amountInput(available))'));
+  assert.ok(ui.includes('if(type.equals("payment")&&fromBook)'));
+  assert.ok(days.includes('if(!"payment".equals(e.type))continue;'));
 });

@@ -464,6 +464,31 @@ grep -Fq "$day" android/build/native-ui.xml
 tap_text 'Закрыть'
 sleep 0.3
 
+# Payments journal: full-balance shortcut prefills only, explicit save posts once.
+tap_text 'Книга'
+sleep 0.4
+tap_text 'Оплаты по датам'
+sleep 0.4
+dump_ui
+grep -Fq 'Полученные оплаты' android/build/native-ui.xml
+grep -Fq '400,00' android/build/native-ui.xml
+tap_text 'Принять оплату'
+sleep 0.4
+tap_text 'Выбрать · DirectoryBuyer'
+sleep 0.4
+tap_text 'Весь остаток'
+sleep 0.4
+dump_ui
+grep -Fq 'Остаток после записи: 0,00' android/build/native-ui.xml
+tap_text 'Сохранить'
+sleep 0.5
+dump_ui
+grep -Fq 'Полученные оплаты' android/build/native-ui.xml
+grep -Fq 'DirectoryBuyer' android/build/native-ui.xml
+grep -Fq '322,00' android/build/native-ui.xml
+tap_text 'Долги по датам'
+sleep 0.4
+
 adb logcat -d -s AndroidRuntime:E > android/build/android-runtime-errors.txt
 if grep -F 'FATAL EXCEPTION' android/build/android-runtime-errors.txt; then
   echo 'Android crash observed during onboarding smoke test'

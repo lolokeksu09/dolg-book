@@ -48,6 +48,18 @@ final class BookDays {
         }
         return new ArrayList<>(grouped.values());
     }
+    /** Payment journal uses original receipt date; reversed receipts remain visible but do not count. */
+    static List<Day> groupPayments(List<LedgerStore.Entry> entries,ZoneId zone){
+        Set<String> reversed=LedgerStore.canceled(entries);
+        Map<LocalDate,Day> grouped=new TreeMap<>(Collections.reverseOrder());
+        for(int i=entries.size()-1;i>=0;i--){
+            LedgerStore.Entry e=entries.get(i);
+            if(!"payment".equals(e.type))continue;
+            LocalDate date=PeriodReport.dateOf(e,zone);
+            grouped.computeIfAbsent(date,Day::new).add(e,reversed.contains(e.id),0L);
+        }
+        return new ArrayList<>(grouped.values());
+    }
     static List<Day> select(List<Day> days,Map<String,LedgerStore.Client> clients,
             LocalDate from,LocalDate to,String query,boolean onlyUnpaid){
         String needle=normalize(query);

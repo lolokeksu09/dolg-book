@@ -197,4 +197,22 @@ public class LedgerStoreInstrumentedTest {
         days=BookDays.group(book.entries(),java.time.ZoneId.systemDefault());
         assertEquals(120000L,days.get(1).remaining);assertEquals(80000L,days.get(0).remaining);
     }
+
+    @Test public void paymentJournalKeepsReversedReceiptsAndFiltersByClient(){
+        String a=book.recordDatedDebt(null,"Али","",100000L,LocalDate.now().minusDays(2),"","");
+        String b=book.recordDatedDebt(null,"Лейла","",20000L,LocalDate.now(),"","");
+        book.addEntry(a,"payment",40000L,"","");
+        book.addEntry(a,"payment",10000L,"","");
+        book.reverseLast(a,"Ошибочная оплата");
+        book.addEntry(b,"payment",20000L,"","");
+        List<BookDays.Day> days=BookDays.groupPayments(book.entries(),java.time.ZoneId.systemDefault());
+        assertEquals(1,days.size());assertEquals(3,days.get(0).entries.size());
+        assertEquals(60000L,days.get(0).recorded);assertEquals(1,days.get(0).canceled.size());
+        java.util.Map<String,LedgerStore.Client> people=new java.util.HashMap<>();
+        for(LedgerStore.Client c:book.clients())people.put(c.id,c);
+        List<BookDays.Day> filtered=BookDays.select(days,people,LocalDate.now(),LocalDate.now(),"али",false);
+        assertEquals(1,filtered.size());assertEquals(40000L,filtered.get(0).recorded);
+        assertEquals(2,filtered.get(0).entries.size());assertEquals(60000L,LedgerStore.balance(book.entries(),a));
+        assertEquals(0L,LedgerStore.balance(book.entries(),b));
+    }
 }

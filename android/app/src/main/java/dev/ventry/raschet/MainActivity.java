@@ -92,7 +92,7 @@ public final class MainActivity extends Activity {
     private final Set<String> expandedBookDays=new java.util.HashSet<>();
     private LocalDate bookFrom,bookTo;
     private String bookQuery="";
-    private boolean bookOnlyUnpaid,bookAutoExpand;
+    private boolean bookOnlyUnpaid,bookAutoExpand,bookPayments;
     private final DateTimeFormatter bookDateFormat=DateTimeFormatter.ofPattern("dd.MM.yy",new Locale("ru","RU"));
     private final int pad=14;
     private String settingsExpanded="";
@@ -125,6 +125,7 @@ public final class MainActivity extends Activity {
             bookDayLimit=state.getInt("book_day_limit",30);
             bookFrom=readDate(state,"book_from");bookTo=readDate(state,"book_to");
             bookQuery=state.getString("book_query","");bookOnlyUnpaid=state.getBoolean("book_unpaid",false);
+            bookPayments=state.getBoolean("book_payments",false);
             ArrayList<String> expanded=state.getStringArrayList("expanded_book_days");
             if(expanded!=null)expandedBookDays.addAll(expanded);
             pendingExport=state.getBoolean("pending_export");
@@ -157,6 +158,7 @@ public final class MainActivity extends Activity {
         out.putInt("book_day_limit",bookDayLimit);
         saveDate(out,"book_from",bookFrom);saveDate(out,"book_to",bookTo);
         out.putString("book_query",bookQuery);out.putBoolean("book_unpaid",bookOnlyUnpaid);
+        out.putBoolean("book_payments",bookPayments);
         out.putStringArrayList("expanded_book_days",new ArrayList<>(expandedBookDays));
         out.putBoolean("pending_export",pendingExport);
         out.putBoolean("pending_export_csv",pendingExportCsv);
@@ -297,23 +299,28 @@ public final class MainActivity extends Activity {
         view.addView(quick,margin(-1,dp(stacked?2*controlHeight()+8:controlHeight()),8));
         addListDivider(view);
 
-        section(view,"Записи по датам","Записано и осталось по каждой дате");
+        LinearLayout modes=row();
+        bookModeButton(modes,"Долги по датам",false);
+        bookModeButton(modes,"Оплаты по датам",true);
+        view.addView(modes,margin(-1,dp(controlHeight()),8));
+        section(view,bookPayments?"Полученные оплаты":"Записи по датам",
+                bookPayments?"Суммы без отменённых оплат":"Записано и осталось по каждой дате");
         Map<String,LedgerStore.Client> people=new HashMap<>();
         for(LedgerStore.Client customer:customers)people.put(customer.id,customer);
-        List<BookDays.Day> allDays=BookDays.group(entries,ZoneId.systemDefault());
+        List<BookDays.Day> allDays=bookPayments?BookDays.groupPayments(entries,ZoneId.systemDefault()):BookDays.group(entries,ZoneId.systemDefault());
         List<BookDays.Day> days=BookDays.select(allDays,people,bookFrom,bookTo,bookQuery,bookOnlyUnpaid);
         if(!allDays.isEmpty()){
             metricRow(view,"Фильтры книги",bookFilterSummary(),hasBookFilter()?ACCENT:MUTED,this::showBookFilters);
             if(hasBookFilter()){
                 long recorded=0,remaining=0;
                 for(BookDays.Day day:days){recorded+=day.recorded;remaining+=day.remaining;}
-                view.addView(label("По фильтру: "+money(recorded)+" · осталось "+money(remaining),12,MUTED,false),margin(-1,-2,6));
+                view.addView(label(bookPayments?"Получено по фильтру: "+money(recorded):"По фильтру: "+money(recorded)+" · осталось "+money(remaining),12,MUTED,false),margin(-1,-2,6));
             }
         }
         if(bookAutoExpand&&!days.isEmpty())expandedBookDays.add(days.get(0).date.toString());
         bookAutoExpand=false;
         LinearLayout dayList=stack(0);view.addView(dayList);
-        if(allDays.isEmpty())view.addView(label("Пока нет долгов. Нажмите «Записать долг», чтобы начать.",14,MUTED,false));
+        if(allDays.isEmpty())view.addView(label(bookPayments?"Пока нет оплат. Нажмите «Принять оплату».":"Пока нет долгов. Нажмите «Записать долг», чтобы начать.",14,MUTED,false));
         else if(days.isEmpty()){
             view.addView(label("Нет записей по выбранным условиям.",14,MUTED,false));
             addButton(view,"Сбросить фильтры книги",false,()->{clearBookFilters();render();},1);
@@ -334,6 +341,16 @@ public final class MainActivity extends Activity {
         return scroll(view);
     }
 
+    private void bookModeButton(LinearLayout parent,String title,boolean payments){
+        boolean selected=bookPayments==payments;
+        TextView button=label(title,13,selected?ACCENT:MUTED,true);
+        button.setGravity(Gravity.CENTER);button.setPadding(dp(4),0,dp(4),0);
+        button.setMinHeight(dp(48));button.setSelected(selected);button.setFocusable(true);
+        button.setContentDescription(title);button.setBackground(ripple(shape(selected?LedgerTheme.SELECTED:BG,6,selected?LedgerTheme.SELECTED:BORDER)));
+        button.setOnClickListener(v->{if(bookPayments!=payments){bookPayments=payments;clearBookFilters();expandedBookDays.clear();bookAutoExpand=true;render();}});
+        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-1,1);
+        if(parent.getChildCount()>0)lp.leftMargin=dp(6);parent.addView(button,lp);
+    }
     private boolean hasBookFilter(){return bookFrom!=null||!bookQuery.trim().isEmpty()||bookOnlyUnpaid;}
     private void clearBookFilters(){bookFrom=null;bookTo=null;bookQuery="";bookOnlyUnpaid=false;bookDayLimit=30;bookAutoExpand=false;}
     private String bookFilterSummary(){
@@ -364,12 +381,13 @@ public final class MainActivity extends Activity {
         }),1);
         form.addView(presets);
         Switch unpaid=new Switch(this);unpaid.setText("Только непогашенные записи");unpaid.setTextColor(TEXT);
-        unpaid.setChecked(bookOnlyUnpaid);unpaid.setMinHeight(dp(48));form.addView(unpaid);
+        unpaid.setChecked(!bookPayments&&bookOnlyUnpaid);unpaid.setMinHeight(dp(48));
+        if(!bookPayments)form.addView(unpaid);
         addButton(form,"Сбросить все условия",false,()->{
             query.setText("");period[0]=null;period[1]=null;unpaid.setChecked(false);update.run();
         },1);
         showDialog("Фильтры книги",form,()->{
-            bookQuery=query.getText().toString().trim();bookFrom=period[0];bookTo=period[1];bookOnlyUnpaid=unpaid.isChecked();
+            bookQuery=query.getText().toString().trim();bookFrom=period[0];bookTo=period[1];bookOnlyUnpaid=!bookPayments&&unpaid.isChecked();
             bookDayLimit=30;bookAutoExpand=hasBookFilter();expandedBookDays.clear();return true;
         });
     }
@@ -389,7 +407,7 @@ public final class MainActivity extends Activity {
             LinearLayout totals=stack(1);totals.setGravity(Gravity.END);
             TextView amount=label(money(day.recorded),15,TEXT,true);amount.setGravity(Gravity.END);
             totals.addView(amount);
-            TextView remaining=label("Осталось "+money(day.remaining),12,day.remaining>0?MUTED:ACCENT,false);
+            TextView remaining=label(bookPayments?"Получено":"Осталось "+money(day.remaining),12,bookPayments?ACCENT:day.remaining>0?MUTED:ACCENT,false);
             remaining.setGravity(Gravity.END);totals.addView(remaining);
             header.addView(totals,new LinearLayout.LayoutParams(-2,-2));
             TextView arrow=label("⌄",20,MUTED,true);
@@ -398,7 +416,7 @@ public final class MainActivity extends Activity {
             Runnable sync=()->{
                 boolean open=expandedBookDays.contains(key);
                 arrow.setText(open?"⌃":"⌄");header.setSelected(open);
-                header.setContentDescription(bookDateFormat.format(day.date)+", записей "+day.entries.size()+", записано "+money(day.recorded)+", осталось "+money(day.remaining)+(open?", свернуть":", раскрыть"));
+                header.setContentDescription(bookDateFormat.format(day.date)+", записей "+day.entries.size()+(bookPayments?", получено "+money(day.recorded):", записано "+money(day.recorded)+", осталось "+money(day.remaining))+(open?", свернуть":", раскрыть"));
                 body.setVisibility(open?View.VISIBLE:View.GONE);
                 if(open&&body.getChildCount()==0)fillBookDayRows(body,day,people,60);
             };
@@ -426,15 +444,15 @@ public final class MainActivity extends Activity {
             description.addView(label(person.name,15,TEXT,true));
             if(canceled)description.addView(label("Отменено",12,MUTED,false));
             else{
-                description.addView(label(unpaid==0?"Погашено":unpaid<e.amount?"Осталось "+money(unpaid):"Не погашено",12,unpaid==0?ACCENT:MUTED,false));
+                description.addView(label(bookPayments?"Оплата":unpaid==0?"Погашено":unpaid<e.amount?"Осталось "+money(unpaid):"Не погашено",12,bookPayments||unpaid==0?ACCENT:MUTED,false));
                 if(!e.note.isEmpty())description.addView(label(e.note,12,MUTED,false));
             }
             item.addView(description,new LinearLayout.LayoutParams(0,-2,1));
-            TextView sum=label(money(e.amount),15,canceled?MUTED:TEXT,true);
+            TextView sum=label(money(e.amount),15,canceled?MUTED:bookPayments?ACCENT:TEXT,true);
             if(canceled)sum.setPaintFlags(sum.getPaintFlags()|android.graphics.Paint.STRIKE_THRU_TEXT_FLAG);
             item.addView(sum);
             item.setFocusable(true);item.setOnClickListener(v->{selectedClient=e.clientId;tab="Клиенты";render();});
-            if(!canceled&&unpaid>0){
+            if(!bookPayments&&!canceled&&unpaid>0){
                 TextView pay=label("Оплата",12,ACCENT,true);pay.setGravity(Gravity.CENTER);
                 pay.setMinHeight(dp(48));pay.setPadding(dp(8),0,dp(2),0);pay.setFocusable(true);
                 pay.setContentDescription("Оплата · "+person.name);
@@ -444,7 +462,7 @@ public final class MainActivity extends Activity {
             body.addView(item);addListDivider(body);
         }
         if(day.entries.size()>limit)addButton(body,"Показать ещё записи",false,()->fillBookDayRows(body,day,people,limit+60),1);
-        addButton(body,"+ Долг за этот день",false,()->showQuickDebt(false,day.date),1);
+        if(!bookPayments)addButton(body,"+ Долг за этот день",false,()->showQuickDebt(false,day.date),1);
     }
     private View tabletClientsView() {
         LinearLayout columns=row();
@@ -1243,7 +1261,7 @@ public final class MainActivity extends Activity {
             for(BookDays.Day existing:BookDays.group(ledger.entries(),ZoneId.systemDefault()))
                 if(existing.date.isAfter(day[0]))rank++;
             ledger.recordDatedDebt(selected[0],n,ph,LedgerStore.parseAmount(amount.getText().toString()),day[0],"","");
-            clearBookFilters();
+            bookPayments=false;clearBookFilters();
             expandedBookDays.add(day[0].toString());
             bookDayLimit=Math.max(bookDayLimit,rank);
             if(fromClients){
@@ -1298,7 +1316,9 @@ public final class MainActivity extends Activity {
                     LedgerStore.Client customer=status.client;
                     TextView button=label(customer.name+"     "+money(status.balance),16,TEXT,false);
                     button.setPadding(dp(14),dp(16),dp(14),dp(16));
-                    button.setBackground(ripple(shape(ELEVATED,14,BORDER)));
+                    button.setBackground(ripple(shape(ELEVATED,6,BORDER)));
+                    button.setContentDescription("Выбрать · "+customer.name);
+                    button.setFocusable(true);
                     results.addView(button);
                     button.setOnClickListener(v->{if(chooser!=null)chooser.dismiss();showEntryForm(customer.id,type);});
                 }
@@ -1486,6 +1506,7 @@ public final class MainActivity extends Activity {
         for(LedgerStore.Client person:ledger.clients())if(person.id.equals(clientId))c=person;
         if(c==null){message("Клиент не найден.");return;}
         final long available=LedgerStore.balance(ledger.entries(),clientId);
+        final boolean fromBook=tab.equals("Главная");
         if(directory.archived(clientId,available)){message("Сначала верните клиента из архива.");return;}
         if(type.equals("payment")&&available<=0){message("Нет долга для оплаты.");return;}
         LinearLayout content=stack(7);
@@ -1500,6 +1521,12 @@ public final class MainActivity extends Activity {
             content.addView(label("Незавершённый черновик восстановлен.",12,ACCENT,false));
         EditText amount=field("0,00",preset);amount.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);
         content.addView(formGroup("Сумма, ₽",amount));
+        if(type.equals("payment")){
+            LinearLayout amounts=row();
+            addButton(amounts,"Половина",false,()->amount.setText(amountInput(Math.max(1L,available/2))),1);
+            addButton(amounts,"Весь остаток",false,()->amount.setText(amountInput(available)),1);
+            content.addView(amounts,margin(-1,dp(controlHeight()),0));
+        }
         TextView projected=label("Остаток после записи: —",16,ACCENT,true);
         projected.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
         content.addView(projected);
@@ -1553,14 +1580,18 @@ public final class MainActivity extends Activity {
                 for(BookDays.Day existing:BookDays.group(ledger.entries(),ZoneId.systemDefault()))
                     if(existing.date.isAfter(entryDay[0]))rank++;
                 ledger.recordDatedDebt(clientId,"","",cents,entryDay[0],due.getText().toString(),note.getText().toString().trim());
-                clearBookFilters();bookDayLimit=Math.max(bookDayLimit,rank);
+                bookPayments=false;clearBookFilters();bookDayLimit=Math.max(bookDayLimit,rank);
                 expandedBookDays.add(entryDay[0].toString());
             }else ledger.addEntry(clientId,type,cents,"",note.getText().toString().trim());
             drafts.clear(clientId,type);
-            selectedClient=clientId;tab="Клиенты";
+            if(type.equals("payment")&&fromBook){
+                bookPayments=true;clearBookFilters();expandedBookDays.clear();
+                expandedBookDays.add(LocalDate.now().toString());selectedClient=null;tab="Главная";
+            }else{selectedClient=clientId;tab="Клиенты";}
             return true;
         });
     }
+    private static String amountInput(long cents){return String.format(Locale.ROOT,"%d,%02d",cents/100,cents%100);}
     private void exportCustomerPdf(String clientId) {
         Intent save=new Intent(Intent.ACTION_CREATE_DOCUMENT);
         save.addCategory(Intent.CATEGORY_OPENABLE);
