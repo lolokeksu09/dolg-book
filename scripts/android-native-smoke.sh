@@ -191,6 +191,25 @@ PY
   adb shell input text "$value"
   adb shell input keyevent 4
 }
+replace_form_input() {
+  local index="$1" value="$2" coords
+  dump_ui
+  coords=$(python3 - "$index" <<'PY'
+import re, sys, xml.etree.ElementTree as ET
+index=int(sys.argv[1])
+fields=[node for node in ET.parse("android/build/native-ui.xml").iter("node")
+        if node.attrib.get("class")=="android.widget.EditText"]
+if len(fields)<=index: sys.exit("Input missing at index "+str(index))
+nums=[int(s) for s in re.findall(r"\d+",fields[index].attrib.get("bounds",""))]
+if len(nums)!=4: sys.exit("No input coordinates")
+print(f"{(nums[0]+nums[2])//2} {(nums[1]+nums[3])//2}")
+PY
+  )
+  adb shell input tap $coords
+  adb shell input keycombination 113 29
+  adb shell input text "$value"
+  adb shell input keyevent 4
+}
 
 tap_text 'Добавить первого клиента'
 sleep 0.4
@@ -220,6 +239,34 @@ dump_ui
 grep -Fq '800,00' android/build/native-ui.xml
 grep -Fq 'История клиента' android/build/native-ui.xml
 adb exec-out screencap -p > android/build/native-client-compact.png
+# Open each debt/payment record and verify its actual remaining/current balance.
+tap_text 'Запись · 1 200,00 ₽'
+sleep 0.3
+dump_ui
+grep -Fq 'Осталось по записи: 800,00 ₽' android/build/native-ui.xml
+grep -Fq 'Текущий долг клиента: 800,00 ₽' android/build/native-ui.xml
+tap_text 'Закрыть'
+sleep 0.3
+# The latest payment can be corrected; its preview must match the transaction guard.
+tap_text 'Запись · 400,00 ₽'
+sleep 0.3
+tap_text 'Исправить эту запись'
+sleep 0.3
+replace_form_input 0 300
+sleep 0.3
+dump_ui
+grep -Fq 'Остаток после исправления: 900,00 ₽' android/build/native-ui.xml
+tap_text 'Закрыть'
+sleep 0.3
+# Reopen the unchanged payment and inspect the reversal projection without saving it.
+tap_text 'Запись · 400,00 ₽'
+sleep 0.3
+tap_text 'Отменить эту запись'
+sleep 0.3
+dump_ui
+grep -Fq 'Остаток после отмены: 1 200,00 ₽' android/build/native-ui.xml
+tap_text 'Закрыть'
+sleep 0.3
 tap_text 'Ещё действия'
 sleep 0.3
 tap_text 'Погасить весь остаток'
