@@ -12,7 +12,7 @@ import static org.junit.Assert.*;
 @RunWith(AndroidJUnit4.class)
 public class NativeCorrectionInstrumentedTest {
     @Test public void packagedRustLibraryMatchesCorrectionContract() throws Exception {
-        System.loadLibrary("raschet_jni");
+        NativeCorrection.loadAndroidLibrary();
         int count = 0;
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(
                 InstrumentationRegistry.getInstrumentation().getContext().getAssets().open("correction.tsv"),
