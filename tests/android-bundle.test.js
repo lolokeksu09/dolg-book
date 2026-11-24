@@ -10,7 +10,7 @@ test('Android UI is native and does not contain web UI runtime',()=>{
   const gradle=read('android/app/build.gradle.kts');
   const activity=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
   const manifest=read('android/app/src/main/AndroidManifest.xml');
-  assert.ok(gradle.includes('versionName = "0.16.0-beta.1"'));
+  assert.ok(gradle.includes('versionName = "0.29.0-beta.1"'));
   assert.ok(gradle.includes('applicationIdSuffix = ".nativev031"'));
   assert.ok(!gradle.includes('webkit')&&!gradle.includes('syncOfflineBook'));
   assert.ok(!gradle.includes('index.html')&&!gradle.includes('app.js'));
@@ -130,7 +130,7 @@ test('dense lists, selected filters and content-sized dialogs are wired',()=>{
 
 test('counter-first UI keeps both financial actions, compact search and viewport-aware dialogs',()=>{
   const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
-  assert.ok(ui.includes('addButton(quick,"Принять оплату",true'));
+  assert.ok(ui.includes('addButton(quick,"Принять оплату",false'));
   assert.ok(ui.includes('add.setContentDescription("+ Добавить клиента")'));
   assert.ok(ui.includes('context.addView(moreActions'));
   assert.ok(ui.includes('root.getWindowVisibleDisplayFrame(visible)'));
@@ -147,7 +147,7 @@ test('AMOLED ledger uses shared semantic palette and real metric rows',()=>{
   for(const screen of ['MainActivity','IntroActivity','SplashActivity']) assert.ok(read('android/app/src/main/java/dev/ventry/raschet/'+screen+'.java').includes('LedgerTheme.BG'));
   assert.ok(ui.includes('balancePanel("Общая задолженность",debt)'));
   assert.ok(ui.includes('metricRow(due,"Просрочено",money(overdue)'));
-  assert.ok(ui.includes('metricRow(due,"Должников",debtors'));
+  assert.ok(ui.includes('metricRow(view,"Возврат долгов"'));
   assert.ok(ui.includes('android.R.attr.state_focused'));
   assert.ok(ui.includes('STRIKE_THRU_TEXT_FLAG'));
 });
@@ -161,5 +161,170 @@ test('book starts directly with a dated debt form and expandable daily journal',
   assert.ok(ui.includes('expandedBookDays.add(key)'));
   assert.ok(ui.includes('formGroup("Дата записи",date)'));
   assert.ok(ui.includes('hasExactCustomer('));
-  assert.ok(store.includes('insertEntry(db,id,"debt",amount,due,note,null,timestamp)'));
+  assert.ok(store.includes('insertEntry(db,id,"debt",amount,due,note,null,timestamp,entryId)'));
+});
+
+
+test('client creation routes to the shared optional debt form and existing clients can select a recording date',()=>{
+  const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
+  assert.ok(ui.includes('if(client==null){showQuickDebt(true);return;}'));
+  assert.ok(ui.includes('fromClients&&amount.getText().toString().trim().isEmpty()'));
+  assert.ok(ui.includes('ledger.recordDatedDebt(selected[0]'));
+  assert.ok(ui.includes('formGroup(type.equals("debt")?"Дата записи":"Дата оплаты",entryDate)'));
+  assert.ok(ui.includes('ledger.recordDatedDebt(clientId,"","",cents,entryDay[0]'));
+});
+
+
+test('journal filters preserve the full-book allocation and support date-scoped entry',()=>{
+  const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
+  const days=read('android/app/src/main/java/dev/ventry/raschet/BookDays.java');
+  assert.ok(ui.includes('BookDays.select(allDays,people,bookFrom,bookTo,bookQuery,bookOnlyUnpaid)'));
+  assert.ok(ui.includes('showQuickDebt(false,day.date)'));
+  assert.ok(ui.includes('day.unpaid.getOrDefault(e.id,0L)'));
+  assert.ok(days.includes('Math.min(available,e.amount)'));
+  assert.ok(days.includes('if(onlyUnpaid&&rest==0)continue;'));
+});
+
+
+test('launcher has adaptive and themed icon resources without changing the Ventry brand',()=>{
+  const res='android/app/src/main/res/';
+  const manifest=read('android/app/src/main/AndroidManifest.xml');
+  assert.ok(manifest.includes('android:icon="@mipmap/ic_launcher"'));
+  assert.ok(manifest.includes('android:roundIcon="@mipmap/ic_launcher"'));
+  assert.ok(read(res+'mipmap-anydpi-v26/ic_launcher.xml').includes('@drawable/ic_book_foreground'));
+  assert.ok(read(res+'mipmap-anydpi-v33/ic_launcher.xml').includes('<monochrome android:drawable="@drawable/ic_book_monochrome"'));
+  const foreground=read(res+'drawable/ic_book_foreground.xml');
+  const mono=read(res+'drawable/ic_book_monochrome.xml');
+  assert.ok(foreground.includes('android:viewportWidth="108"'));
+  assert.ok(foreground.includes('android:fillType="evenOdd"'));
+  assert.equal(foreground.replace('#48CF99','#FFFFFF'),mono);
+  assert.ok(read(res+'drawable/ic_ventry.xml').includes('Faithful Android vector'));
+});
+
+
+test('payment journal is separate from unpaid debt and shortcuts only prefill the amount',()=>{
+  const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
+  const days=read('android/app/src/main/java/dev/ventry/raschet/BookDays.java');
+  assert.ok(ui.includes('BookDays.groupPayments(entries,ZoneId.systemDefault())'));
+  assert.ok(ui.includes('bookModeButton(modes,"Оплаты по датам",true)'));
+  assert.ok(ui.includes('amount.setText(amountInput(available))'));
+  assert.ok(ui.includes('if(type.equals("payment")&&fromBook)'));
+  assert.ok(days.includes('if(!"payment".equals(e.type))continue;'));
+});
+
+
+test('repeat debt shortcuts prefill without posting and quick debt has optional detail fields',()=>{
+  const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
+  const recent=read('android/app/src/main/java/dev/ventry/raschet/RecentDebts.java');
+  assert.ok(ui.includes('repeat.setOnClickListener(v->showEntryForm(person.id,"debt"))'));
+  assert.ok(ui.includes('()->amount.setText(amountInput(cents))'));
+  assert.ok(ui.includes('addButton(matches,"Недавние клиенты"'));
+  assert.ok(ui.includes('day[0],due.getText().toString(),note.getText().toString().trim()'));
+  assert.ok(recent.includes('!canceled.contains(e.id)'));
+});
+
+
+test('operation inspector uses exact selected IDs and history search',()=>{
+  const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
+  assert.ok(ui.includes('HistoryRows.select(all,people,historyClientId,historyQuery'));
+  assert.ok(ui.includes('showOperation(e.id)'));
+  assert.ok(ui.includes('ledger.correctSelected(clientId,original.id'));
+  assert.ok(ui.includes('ledger.reverseSelected(clientId,last.id'));
+});
+
+
+test('all new debt forms check the local client credit limit before storing debt',()=>{
+  const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
+  assert.ok(ui.includes('notice.verify(selected[0],cents)'));
+  assert.ok(ui.includes('notice.verify(clientId,cents)'));
+  assert.ok(ui.includes('notice.verify(clientId,purchase.total)'));
+  assert.ok(ui.includes('DebtLimits.requireConsent('));
+  assert.ok(ui.includes('consent.setChecked(false)'));
+});
+
+
+test('quick form drafts resume explicitly and use stable operation IDs',()=>{
+  const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
+  const store=read('android/app/src/main/java/dev/ventry/raschet/LedgerStore.java');
+  assert.ok(ui.includes('Продолжить черновик'));
+  assert.ok(ui.includes('QuickDebtDrafts.Draft pending'));
+  assert.ok(ui.includes('notice.verify(selected[0],cents)'));
+  assert.ok(store.includes('if(hasEntryId(entryId))'));
+});
+
+
+test('collection workspace is separate from chronological book and uses a read-only worklist',()=>{
+  const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
+  const queue=read('android/app/src/main/java/dev/ventry/raschet/CollectionWorklist.java');
+  assert.ok(ui.includes('tab.equals("Возврат")?collectionView()'));
+  assert.ok(ui.includes('directory.setFollowUp(person.id,day[0]'));
+  assert.ok(ui.includes('else if(fromCollections){selectedClient=null;tab="Возврат";}'));
+  assert.ok(queue.includes('if(s.balance>0)'));
+});
+
+
+test('payment promises calculate progress from active receipts after the promise and only prefill payment',()=>{
+ const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
+ const model=read('android/app/src/main/java/dev/ventry/raschet/PaymentPromises.java');
+ assert.ok(ui.includes('nameRow.setMinimumHeight(dp(48))'));
+ assert.ok(ui.includes('Обещанная сумма, ₽ (необязательно)'));
+ assert.ok(ui.includes('()->amount.setText(amountInput(outstanding))'));
+ assert.ok(model.includes('canceled.contains(e.id)'));
+ assert.ok(model.includes('e.id.equals(plan.anchor)'));
+});
+
+
+test('client drafts keep operation identity and original date across reopening',()=>{
+ const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
+ const draft=read('android/app/src/main/java/dev/ventry/raschet/LedgerDrafts.java');
+ assert.ok(ui.includes('previous.day:initialDay'));
+ assert.ok(ui.includes('ledger.addDraftPayment(clientId,cents'));
+ assert.ok(ui.includes('new LedgerDrafts(this).clearAll()'));
+ assert.ok(draft.includes('json.put("day",day.toString())'));
+});
+
+
+test('client statement allocates before filtering and reuses the existing operation inspector',()=>{
+ const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
+ const model=read('android/app/src/main/java/dev/ventry/raschet/ClientStatement.java');
+ assert.ok(ui.includes('ClientStatement.build(all,id,ZoneId.systemDefault())'));
+ assert.ok(ui.includes('statement.remaining.get(e.id)'));
+ assert.ok(ui.includes('this::showDetailFilters'));
+ assert.ok(ui.includes('drafts.get(id,type)'));
+ assert.ok(model.includes('BookDays.group(own,zone)'));
+ assert.ok(model.includes('remaining.getOrDefault(e.id,0L)<=0'));
+});
+
+
+test('backdated receipts validate historical balances and reopen the actual receipt day',()=>{
+ const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
+ const store=read('android/app/src/main/java/dev/ventry/raschet/LedgerStore.java');
+ const model=read('android/app/src/main/java/dev/ventry/raschet/DatedPayments.java');
+ assert.ok(ui.includes('"+ Оплата за этот день"'));
+ assert.ok(ui.includes('operationId[0],entryDay[0]'));
+ assert.ok(store.includes('amount>DatedPayments.maximum('));
+ assert.ok(model.includes('minimum=Math.min(minimum,running)'));
+});
+
+
+test('client directory supports cleared balances and recent insertion order without changing financial data',()=>{
+ const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
+ const model=read('android/app/src/main/java/dev/ventry/raschet/CollectionsInsights.java');
+ const search=read('android/app/src/main/java/dev/ventry/raschet/ClientSearch.java');
+ assert.ok(ui.includes('Сортировка: последние операции'));
+ assert.ok(ui.includes('Клиентов: "+visible.size()'));
+ assert.ok(model.includes('CLEAR.equals(filter) && status.balance != 0'));
+ assert.ok(model.includes('item.lastOperationIndex'));
+ assert.ok(search.includes('wanted.substring(1).equals(actual.substring(1))'));
+});
+
+
+test('correction and reversal previews use the same balance guard and exact selected operation',()=>{
+ const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
+ const store=read('android/app/src/main/java/dev/ventry/raschet/LedgerStore.java');
+ assert.ok(ui.includes('showCorrection(entry.clientId,entry.id)'));
+ assert.ok(ui.includes('showReversal(entry.clientId,entry.id)'));
+ assert.ok(ui.includes('LedgerStore.correctedBalance(currentBalance,original,'));
+ assert.ok(ui.includes('Остаток после отмены: '));
+ assert.ok(store.includes('correctedBalance(balance(all,clientId),last,amount)'));
 });

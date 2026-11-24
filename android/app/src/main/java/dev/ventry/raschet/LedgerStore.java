@@ -118,9 +118,14 @@ public final class LedgerStore extends SQLiteOpenHelper {
         insertClient(getWritableDatabase(),name,phone);
     }
     private String insertClient(SQLiteDatabase db,String name,String phone){
+        return insertClient(db,name,phone,UUID.randomUUID().toString());
+    }
+    synchronized void addDraftClient(String id,String name,String phone){
+        insertClient(getWritableDatabase(),name,phone,id);
+    }
+    private String insertClient(SQLiteDatabase db,String name,String phone,String id){
         checkClient(name,phone);
         if(clients().size()>=MAX_CLIENTS)throw new IllegalArgumentException("Достигнут лимит клиентов.");
-        String id=UUID.randomUUID().toString();
         ContentValues row=new ContentValues();
         row.put("id",id);row.put("name",name.trim());row.put("phone",phone.trim());
         db.insertOrThrow("clients",null,row);
@@ -128,14 +133,24 @@ public final class LedgerStore extends SQLiteOpenHelper {
     }
     /** New customer and first debt commit atomically; selecting an existing ID never edits contact details. */
     public synchronized String recordDatedDebt(String existingId,String name,String phone,long amount,LocalDate day,String due,String note){
+        return recordDatedDebt(existingId,name,phone,amount,day,due,note,UUID.randomUUID().toString());
+    }
+    synchronized boolean hasEntryId(String id){
+        try(Cursor c=getReadableDatabase().rawQuery("SELECT 1 FROM entries WHERE id=?",new String[]{id})){return c.moveToFirst();}
+    }
+    synchronized boolean hasClientId(String id){
+        try(Cursor c=getReadableDatabase().rawQuery("SELECT 1 FROM clients WHERE id=?",new String[]{id})){return c.moveToFirst();}
+    }
+    public synchronized String recordDatedDebt(String existingId,String name,String phone,long amount,LocalDate day,String due,String note,String entryId){
         if(day==null||day.isAfter(LocalDate.now()))throw new IllegalArgumentException("Дата записи не может быть в будущем.");
         String timestamp=day.equals(LocalDate.now())?Instant.now().toString():
                 day.atStartOfDay(ZoneId.systemDefault()).toInstant().toString();
         SQLiteDatabase db=getWritableDatabase();
         db.beginTransaction();
         try{
+            if(hasEntryId(entryId))throw new IllegalArgumentException("Этот черновик уже сохранён. Откройте книгу.");
             String id=existingId==null?insertClient(db,name,phone):existingId;
-            insertEntry(db,id,"debt",amount,due,note,null,timestamp);
+            insertEntry(db,id,"debt",amount,due,note,null,timestamp,entryId);
             db.setTransactionSuccessful();
             return id;
         }finally{db.endTransaction();}
@@ -169,6 +184,25 @@ public final class LedgerStore extends SQLiteOpenHelper {
         if(purchase==null)throw new IllegalArgumentException("Добавьте товары.");
         addEntry(clientId,"debt",purchase.total,due,note,purchase);
     }
+    /** Existing-client draft submission uses an immutable operation ID, just like quick debt. */
+    synchronized void addDraftPayment(String clientId,long amount,String note,String entryId){
+        addDraftPayment(clientId,amount,note,entryId,LocalDate.now());
+    }
+    synchronized void addDraftPayment(String clientId,long amount,String note,String entryId,LocalDate day){
+        LocalDate today=LocalDate.now();
+        if(day==null||day.isAfter(today))throw new IllegalArgumentException("Дата оплаты не может быть в будущем.");
+        ZoneId zone=ZoneId.systemDefault();
+        String timestamp=day.equals(today)?Instant.now().toString():day.atStartOfDay(zone).toInstant().toString();
+        SQLiteDatabase db=getWritableDatabase();
+        db.beginTransaction();
+        try{
+            if(hasEntryId(entryId))throw new IllegalArgumentException("Этот черновик уже сохранён. Откройте историю.");
+            if(day.isBefore(today)&&amount>DatedPayments.maximum(entries(),clientId,day,today,zone))
+                throw new IllegalArgumentException("Оплата на эту дату создаст переплату в истории. Уменьшите сумму или выберите более позднюю дату.");
+            insertEntry(db,clientId,"payment",amount,"",note,null,timestamp,entryId);
+            db.setTransactionSuccessful();
+        }finally{db.endTransaction();}
+    }
     private synchronized void addEntry(String clientId,String type,long amount,String due,String note,Purchase purchase) {
         SQLiteDatabase db=getWritableDatabase();
         db.beginTransaction();
@@ -178,6 +212,9 @@ public final class LedgerStore extends SQLiteOpenHelper {
         }finally{db.endTransaction();}
     }
     private void insertEntry(SQLiteDatabase db,String clientId,String type,long amount,String due,String note,Purchase purchase,String timestamp){
+        insertEntry(db,clientId,type,amount,due,note,purchase,timestamp,UUID.randomUUID().toString());
+    }
+    private void insertEntry(SQLiteDatabase db,String clientId,String type,long amount,String due,String note,Purchase purchase,String timestamp,String entryId){
         if(!"debt".equals(type)&&!"payment".equals(type))throw new IllegalArgumentException("Неверная операция.");
         if(amount<=0||amount>MAX_AMOUNT)throw new IllegalArgumentException("Неверная сумма.");
         if(note==null||note.length()>200)throw new IllegalArgumentException("Комментарий слишком длинный.");
@@ -194,7 +231,7 @@ public final class LedgerStore extends SQLiteOpenHelper {
                 throw new IllegalArgumentException("Оплата превышает остаток долга.");
             if("debt".equals(type)&&amount>MAX_AMOUNT-available)
                 throw new IllegalArgumentException("Превышен максимальный остаток.");
-            Entry entry=new Entry(UUID.randomUUID().toString(),clientId,type,amount,timestamp,
+            Entry entry=new Entry(entryId,clientId,type,amount,timestamp,
                     due==null?"":due,note,"",purchase);
             db.insertOrThrow("entries",null,values(entry));
     }
@@ -209,6 +246,10 @@ public final class LedgerStore extends SQLiteOpenHelper {
         return null;
     }
     public synchronized void reverseLast(String clientId,String reason) {
+        reverseSelected(clientId,null,reason);
+    }
+    /** A dialog may be stale: never reverse a different operation than the one displayed. */
+    public synchronized void reverseSelected(String clientId,String expectedId,String reason) {
         if(reason==null||reason.trim().isEmpty()||reason.trim().length()>200)
             throw new IllegalArgumentException("Укажите причину отмены.");
         SQLiteDatabase db=getWritableDatabase();
@@ -216,7 +257,9 @@ public final class LedgerStore extends SQLiteOpenHelper {
         try {
             Entry last=lastActive(clientId);
             if(last==null)throw new IllegalArgumentException("Нет действующей операции для отмены.");
+            if(expectedId!=null&&!expectedId.equals(last.id))throw new IllegalArgumentException("Запись уже не последняя. Откройте актуальную историю.");
             List<Entry> all=entries();
+            if(all.size()>=MAX_ENTRIES)throw new IllegalArgumentException("Достигнут лимит операций.");
             long b=balance(all,clientId);
             if("debt".equals(last.type)&&b<last.amount)
                 throw new IllegalArgumentException("Этот долг уже частично погашен. Сначала отмените последнюю оплату.");
@@ -232,6 +275,9 @@ public final class LedgerStore extends SQLiteOpenHelper {
      */
     public synchronized void correctLast(String clientId,long amount,String due,
             String note,String reason) {
+        correctSelected(clientId,null,amount,due,note,reason);
+    }
+    public synchronized void correctSelected(String clientId,String expectedId,long amount,String due,String note,String reason) {
         if(reason==null||reason.trim().isEmpty()||reason.trim().length()>200)
             throw new IllegalArgumentException("Укажите причину исправления.");
         if(note==null||note.length()>200)
@@ -243,6 +289,7 @@ public final class LedgerStore extends SQLiteOpenHelper {
         try {
             Entry last=lastActive(clientId);
             if(last==null)throw new IllegalArgumentException("Нет операции для исправления.");
+            if(expectedId!=null&&!expectedId.equals(last.id))throw new IllegalArgumentException("Запись уже не последняя. Откройте актуальную историю.");
             if("debt".equals(last.type)){
                 if(due==null)due="";
                 if(!due.isEmpty())try{LocalDate.parse(due);}
@@ -251,16 +298,7 @@ public final class LedgerStore extends SQLiteOpenHelper {
             List<Entry> all=entries();
             if(all.size()+2>MAX_ENTRIES)
                 throw new IllegalArgumentException("Недостаточно места в истории операций.");
-            long available=balance(all,clientId);
-            long withoutOld="debt".equals(last.type)
-                    ?available-last.amount:available+last.amount;
-            if(withoutOld<0)
-                throw new IllegalArgumentException(
-                        "Этот долг уже погашался. Сначала исправьте последнюю оплату.");
-            long updated="debt".equals(last.type)
-                    ?withoutOld+amount:withoutOld-amount;
-            if(updated<0||updated>MAX_AMOUNT)
-                throw new IllegalArgumentException("Исправление создаёт переплату или превышение.");
+            correctedBalance(balance(all,clientId),last,amount);
             if(last.purchase!=null&&amount!=last.amount)
                 throw new IllegalArgumentException("Для изменения суммы покупки отмените её и создайте новую с правильными товарами.");
             if(last.amount==amount&&last.due.equals(due)&&last.note.equals(note))
@@ -274,6 +312,17 @@ public final class LedgerStore extends SQLiteOpenHelper {
             db.insertOrThrow("entries",null,values(corrected));
             db.setTransactionSuccessful();
         }finally{db.endTransaction();}
+    }
+
+    /** Same balance guard for correction preview and actual transaction. Zero is reversal only. */
+    static long correctedBalance(long available,Entry last,long amount){
+        if(last==null||amount<0||amount>MAX_AMOUNT||(!"debt".equals(last.type)&&!"payment".equals(last.type)))
+            throw new IllegalArgumentException("Неверная операция.");
+        long withoutOld="debt".equals(last.type)?available-last.amount:available+last.amount;
+        if(withoutOld<0)throw new IllegalArgumentException("Этот долг уже погашался. Сначала исправьте последнюю оплату.");
+        long updated="debt".equals(last.type)?withoutOld+amount:withoutOld-amount;
+        if(updated<0||updated>MAX_AMOUNT)throw new IllegalArgumentException("Исправление создаёт переплату или превышение.");
+        return updated;
     }
 
     private static ContentValues values(Entry entry) {

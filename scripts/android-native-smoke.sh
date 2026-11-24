@@ -16,8 +16,9 @@ else
   adb install -r "$APK"
 fi
 adb logcat -c
+# Preserve the failing UI and runtime evidence even when an early assertion fails.
+trap 'rc=$?; if [[ "$rc" -ne 0 ]]; then echo "Smoke failed at line ${LINENO} (exit $rc)" >&2; adb exec-out screencap -p > android/build/native-failure.png || true; adb logcat -d -s AndroidRuntime:E ActivityManager:W > android/build/android-runtime-errors.txt || true; fi' EXIT
 adb shell am start -W -n "$PACKAGE/dev.ventry.raschet.SplashActivity"
-sleep 4
 
 dump_ui() {
   adb shell uiautomator dump /sdcard/raschet-ui.xml >/dev/null
@@ -49,7 +50,20 @@ PY
   echo "Cannot find tap target after scrolling: $target" >&2
   return 1
 }
-dump_ui
+# Wait for the actual onboarding screen; only recover the known unrelated launcher ANR.
+ready=false
+for attempt in 1 2 3 4 5 6; do
+  sleep 1
+  dump_ui
+  if grep -Fq 'Знакомьтесь, Ventry' android/build/native-ui.xml; then ready=true; break; fi
+  if grep -Fq "Pixel Launcher isn't responding" android/build/native-ui.xml; then
+    echo "System Pixel Launcher ANR before onboarding; closing only that system dialog" >&2
+    cp android/build/native-ui.xml android/build/native-launcher-anr.xml
+    tap_text 'Close app'
+    adb shell am start -W -n "$PACKAGE/dev.ventry.raschet.SplashActivity"
+  fi
+done
+if [[ "$ready" != true ]]; then echo 'Expected fresh onboarding did not appear' >&2; exit 1; fi
 grep -Fq 'Знакомьтесь, Ventry' android/build/native-ui.xml
 grep -Fq 'ПЕРВЫЙ ПРОДУКТ VENTRY' android/build/native-ui.xml
 grep -Fq 'Долговая книга для небольшого магазина' android/build/native-ui.xml
@@ -177,6 +191,25 @@ PY
   adb shell input text "$value"
   adb shell input keyevent 4
 }
+replace_form_input() {
+  local index="$1" value="$2" coords
+  dump_ui
+  coords=$(python3 - "$index" <<'PY'
+import re, sys, xml.etree.ElementTree as ET
+index=int(sys.argv[1])
+fields=[node for node in ET.parse("android/build/native-ui.xml").iter("node")
+        if node.attrib.get("class")=="android.widget.EditText"]
+if len(fields)<=index: sys.exit("Input missing at index "+str(index))
+nums=[int(s) for s in re.findall(r"\d+",fields[index].attrib.get("bounds",""))]
+if len(nums)!=4: sys.exit("No input coordinates")
+print(f"{(nums[0]+nums[2])//2} {(nums[1]+nums[3])//2}")
+PY
+  )
+  adb shell input tap $coords
+  adb shell input keycombination 113 29
+  adb shell input text "$value"
+  adb shell input keyevent 4
+}
 
 tap_text 'Добавить первого клиента'
 sleep 0.4
@@ -206,6 +239,34 @@ dump_ui
 grep -Fq '800,00' android/build/native-ui.xml
 grep -Fq 'История клиента' android/build/native-ui.xml
 adb exec-out screencap -p > android/build/native-client-compact.png
+# Open each debt/payment record and verify its actual remaining/current balance.
+tap_text 'Запись · 1 200,00 ₽'
+sleep 0.3
+dump_ui
+grep -Fq 'Осталось по записи: 800,00 ₽' android/build/native-ui.xml
+grep -Fq 'Текущий долг клиента: 800,00 ₽' android/build/native-ui.xml
+tap_text 'Закрыть'
+sleep 0.3
+# The latest payment can be corrected; its preview must match the transaction guard.
+tap_text 'Запись · 400,00 ₽'
+sleep 0.3
+tap_text 'Исправить эту запись'
+sleep 0.3
+replace_form_input 0 300
+sleep 0.3
+dump_ui
+grep -Fq 'Остаток после исправления: 900,00 ₽' android/build/native-ui.xml
+tap_text 'Закрыть'
+sleep 0.3
+# Reopen the unchanged payment and inspect the reversal projection without saving it.
+tap_text 'Запись · 400,00 ₽'
+sleep 0.3
+tap_text 'Отменить эту запись'
+sleep 0.3
+dump_ui
+grep -Fq 'Остаток после отмены: 1 200,00 ₽' android/build/native-ui.xml
+tap_text 'Закрыть'
+sleep 0.3
 tap_text 'Ещё действия'
 sleep 0.3
 tap_text 'Погасить весь остаток'
@@ -406,6 +467,283 @@ sleep 0.4
 dump_ui
 grep -Fq 'Остаток долга' android/build/native-ui.xml
 grep -Fq '321,00' android/build/native-ui.xml
+tap_text 'Книга'
+
+# Client directory plus can create a customer and the first debt in the same form.
+tap_text 'Клиенты'
+sleep 0.4
+tap_text '+ Добавить клиента'
+sleep 0.4
+dump_ui
+grep -Fq 'Дата записи' android/build/native-ui.xml
+fill_form_input 0 DirectoryBuyer
+fill_form_input 2 222
+tap_text 'Сохранить'
+sleep 0.5
+dump_ui
+grep -Fq 'DirectoryBuyer' android/build/native-ui.xml
+grep -Fq '222,00' android/build/native-ui.xml
+tap_text 'DirectoryBuyer'
+sleep 0.4
+tap_text '+ Долг'
+sleep 0.4
+dump_ui
+grep -Fq 'Дата записи' android/build/native-ui.xml
+fill_form_input 0 100
+tap_text 'Сохранить'
+sleep 0.5
+dump_ui
+grep -Fq '322,00' android/build/native-ui.xml
+tap_text 'Книга'
+sleep 0.4
+dump_ui
+grep -Fq 'DirectoryBuyer' android/build/native-ui.xml
+
+# Filter by debtor; matching rows retain their full-book outstanding amount.
+tap_text 'Фильтры книги'
+sleep 0.4
+fill_form_input 0 DirectoryBuyer
+tap_text 'Сохранить'
+sleep 0.5
+dump_ui
+grep -Fq 'DirectoryBuyer' android/build/native-ui.xml
+grep -Fq '322,00' android/build/native-ui.xml
+if grep -Fq 'QuickBuyer' android/build/native-ui.xml; then
+  echo 'Book search leaked another client'; exit 1
+fi
+tap_text 'Фильтры книги'
+sleep 0.4
+tap_text 'Сбросить все условия'
+tap_text 'Сохранить'
+sleep 0.4
+tap_text "$day"
+sleep 0.4
+tap_text '+ Долг за этот день'
+sleep 0.4
+dump_ui
+grep -Fq "$day" android/build/native-ui.xml
+tap_text 'Закрыть'
+sleep 0.3
+
+# Payments journal: full-balance shortcut prefills only, explicit save posts once.
+tap_text 'Книга'
+sleep 0.4
+tap_text 'Оплаты по датам'
+sleep 0.4
+dump_ui
+grep -Fq 'Полученные оплаты' android/build/native-ui.xml
+grep -Fq '400,00' android/build/native-ui.xml
+tap_text 'Принять оплату'
+sleep 0.4
+tap_text 'Выбрать · DirectoryBuyer'
+sleep 0.4
+tap_text 'Весь остаток'
+sleep 0.4
+dump_ui
+grep -Fq 'Остаток после записи: 0,00' android/build/native-ui.xml
+tap_text 'Сохранить'
+sleep 0.5
+dump_ui
+grep -Fq 'Полученные оплаты' android/build/native-ui.xml
+grep -Fq 'DirectoryBuyer' android/build/native-ui.xml
+grep -Fq '322,00' android/build/native-ui.xml
+tap_text 'Долги по датам'
+sleep 0.4
+
+# Repeat the last amount for a fully paid client without creating a duplicate customer.
+tap_text 'Новый долг · DirectoryBuyer'
+sleep 0.4
+tap_text 'Повторить сумму: 100,00 ₽'
+sleep 0.3
+dump_ui
+grep -Fq 'Остаток после записи: 100,00' android/build/native-ui.xml
+tap_text 'Закрыть'
+sleep 0.4
+tap_text 'Новый долг · DirectoryBuyer'
+sleep 0.4
+tap_text 'Повторить сумму: 100,00 ₽'
+tap_text 'Сохранить'
+sleep 0.5
+dump_ui
+grep -Fq 'Долговая книга' android/build/native-ui.xml
+grep -Fq 'DirectoryBuyer' android/build/native-ui.xml
+tap_text 'DirectoryBuyer'
+sleep 0.4
+dump_ui
+grep -Fq 'Остаток долга' android/build/native-ui.xml
+grep -Fq '100,00' android/build/native-ui.xml
+tap_text 'Книга'
+
+# History search and inspection of the exact operation.
+tap_text 'История'
+sleep 0.4
+tap_text 'Имя, телефон или комментарий'
+adb shell input text DirectoryBuyer
+adb shell input keyevent 4
+sleep 0.4
+dump_ui
+grep -Fq 'DirectoryBuyer' android/build/native-ui.xml
+if grep -Fq 'QuickBuyer' android/build/native-ui.xml; then
+  echo 'History search leaked another client'; exit 1
+fi
+tap_text 'Запись · 100,00 ₽'
+sleep 0.4
+dump_ui
+grep -Fq 'Сведения об операции' android/build/native-ui.xml
+grep -Fq 'Исправить эту запись' android/build/native-ui.xml
+tap_text 'Все операции клиента'
+sleep 0.4
+dump_ui
+grep -Fq 'Клиент: DirectoryBuyer' android/build/native-ui.xml
+tap_text 'Книга'
+
+# Client-specific debt limit: denial first, explicit confirmation posts once.
+tap_text 'Клиенты'
+sleep 0.4
+tap_text 'DirectoryBuyer'
+sleep 0.4
+tap_text 'Ещё действия'
+sleep 0.4
+tap_text 'Лимит задолженности'
+sleep 0.4
+fill_form_input 0 150
+tap_text 'Сохранить'
+sleep 0.5
+dump_ui
+grep -Fq 'Доступно 50,00' android/build/native-ui.xml
+tap_text '+ Долг'
+sleep 0.4
+tap_text 'Повторить сумму: 100,00 ₽'
+sleep 0.4
+dump_ui
+grep -Fq 'После записи превышение 50,00' android/build/native-ui.xml
+tap_text 'Сохранить'
+sleep 0.4
+dump_ui
+grep -Fq 'Превышен лимит задолженности' android/build/native-ui.xml
+tap_text 'Подтверждаю превышение лимита'
+tap_text 'Сохранить'
+sleep 0.5
+dump_ui
+grep -Fq 'Превышение 50,00' android/build/native-ui.xml
+tap_text 'Книга'
+
+# Quick debt draft must survive closing without creating a client or operation.
+tap_text '+ Записать долг'
+sleep 0.4
+fill_form_input 0 DraftBuyer
+fill_form_input 2 123
+tap_text 'Закрыть'
+sleep 0.4
+tap_text '+ Записать долг'
+sleep 0.4
+tap_text 'Продолжить черновик'
+sleep 0.4
+dump_ui
+grep -Fq 'DraftBuyer' android/build/native-ui.xml
+grep -Fq '123' android/build/native-ui.xml
+tap_text 'Сохранить'
+sleep 0.5
+dump_ui
+grep -Fq 'DraftBuyer' android/build/native-ui.xml
+tap_text '+ Записать долг'
+sleep 0.4
+dump_ui
+if grep -Fq 'Продолжить черновик' android/build/native-ui.xml; then
+  echo 'Committed draft still offered'; exit 1
+fi
+tap_text 'Закрыть'
+sleep 0.3
+
+# Collections workspace: plan a real contact without changing the debt.
+tap_text 'Возврат долгов'
+sleep 0.4
+dump_ui
+grep -Fq 'План работы с непогашенными долгами' android/build/native-ui.xml
+adb exec-out screencap -p > android/build/native-collections.png
+tap_text 'Имя или телефон'
+adb shell input text DraftBuyer
+adb shell input keyevent 4
+sleep 0.4
+dump_ui
+grep -Fq 'DraftBuyer' android/build/native-ui.xml
+tap_text 'Запланировать'
+sleep 0.4
+tap_text 'Сегодня'
+tap_text 'Сохранить'
+sleep 0.5
+dump_ui
+grep -Fq 'Связаться сегодня или раньше' android/build/native-ui.xml
+grep -Fq '123,00' android/build/native-ui.xml
+tap_text 'Требуют внимания'
+sleep 0.4
+dump_ui
+grep -Fq 'DraftBuyer' android/build/native-ui.xml
+tap_text 'Изменить план'
+sleep 0.4
+tap_text 'Удалить план'
+sleep 0.4
+dump_ui
+grep -Fq 'Нет должников по выбранным условиям.' android/build/native-ui.xml
+tap_text 'Книга'
+
+# Promise for DraftBuyer: partial receipt, then complete promised amount.
+tap_text 'Возврат долгов'
+sleep 0.4
+tap_text 'Имя или телефон'
+adb shell input text DraftBuyer
+adb shell input keyevent 4
+sleep 0.4
+tap_text 'Запланировать'
+sleep 0.4
+fill_form_input 0 100
+tap_text 'Сохранить'
+sleep 0.5
+dump_ui
+grep -Fq 'Обещано 100,00' android/build/native-ui.xml
+grep -Fq 'Осталось по обещанию: 100,00' android/build/native-ui.xml
+tap_text 'Принять оплату'
+sleep 0.4
+fill_form_input 0 40
+tap_text 'Сохранить'
+sleep 0.5
+dump_ui
+grep -Fq 'Осталось по обещанию: 60,00' android/build/native-ui.xml
+tap_text 'Принять оплату'
+sleep 0.4
+tap_text 'По обещанию: 60,00 ₽'
+tap_text 'Сохранить'
+sleep 0.5
+dump_ui
+grep -Fq 'Выполнено · получено 100,00' android/build/native-ui.xml
+tap_text 'Книга'
+
+# A payment draft must not post on close, and reopening keeps the entered amount.
+tap_text 'Клиенты'
+sleep 0.4
+tap_text 'Поиск по имени или телефону'
+adb shell input text DraftBuyer
+adb shell input keyevent 4
+sleep 0.4
+# Select the actual customer row, not the search EditText with identical text.
+tap_text 'DraftBuyer, остаток 23,00 ₽'
+sleep 0.4
+dump_ui
+grep -Fq 'История клиента' android/build/native-ui.xml
+tap_text 'Оплата'
+sleep 0.4
+fill_form_input 0 10
+tap_text 'Закрыть'
+sleep 0.4
+tap_text 'Оплата'
+sleep 0.4
+dump_ui
+grep -Fq 'Незавершённый черновик восстановлен' android/build/native-ui.xml
+grep -Fq 'Остаток после записи: 13,00' android/build/native-ui.xml
+tap_text 'Сохранить'
+sleep 0.5
+dump_ui
+grep -Fq '13,00' android/build/native-ui.xml
 tap_text 'Книга'
 
 adb logcat -d -s AndroidRuntime:E > android/build/android-runtime-errors.txt

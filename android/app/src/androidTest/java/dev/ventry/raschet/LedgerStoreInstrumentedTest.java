@@ -174,4 +174,330 @@ public class LedgerStoreInstrumentedTest {
         assertEquals(1,day.entries.size());assertEquals(0L,day.recorded);
         assertTrue(day.canceled.contains(day.entries.get(0).id));
     }
+
+    @Test public void bookFiltersNeverReallocatePaymentsAndPreserveOriginalDebtDates() {
+        LocalDate today=LocalDate.now(),older=today.minusDays(2);
+        String a=book.recordDatedDebt(null,"Фёдор","+7 123 456 78 90",120000L,older,"","");
+        book.recordDatedDebt(a,"","",50000L,today,"","");
+        String b=book.recordDatedDebt(null,"Анна","",30000L,today,"","");
+        book.addEntry(a,"payment",140000L,"","");
+        List<BookDays.Day> days=BookDays.group(book.entries(),java.time.ZoneId.systemDefault());
+        assertEquals(2,days.size());assertEquals(80000L,days.get(0).recorded);
+        assertEquals(60000L,days.get(0).remaining);assertEquals(0L,days.get(1).remaining);
+        java.util.Map<String,LedgerStore.Client> people=new java.util.HashMap<>();
+        for(LedgerStore.Client c:book.clients())people.put(c.id,c);
+        List<BookDays.Day> filtered=BookDays.select(days,people,today,today,"федор",true);
+        assertEquals(1,filtered.size());assertEquals(1,filtered.get(0).entries.size());
+        assertEquals(50000L,filtered.get(0).recorded);assertEquals(30000L,filtered.get(0).remaining);
+        assertEquals(30000L,LedgerStore.balance(book.entries(),a));
+        assertEquals(30000L,LedgerStore.balance(book.entries(),b));
+        assertEquals(2,BookDays.select(days,people,null,null,"1234567890",false).size());
+        assertTrue(BookDays.select(days,people,older,older,"",true).isEmpty());
+        book.reverseLast(a,"Отмена оплаты");
+        days=BookDays.group(book.entries(),java.time.ZoneId.systemDefault());
+        assertEquals(120000L,days.get(1).remaining);assertEquals(80000L,days.get(0).remaining);
+    }
+
+    @Test public void paymentJournalKeepsReversedReceiptsAndFiltersByClient(){
+        String a=book.recordDatedDebt(null,"Али","",100000L,LocalDate.now().minusDays(2),"","");
+        String b=book.recordDatedDebt(null,"Лейла","",20000L,LocalDate.now(),"","");
+        book.addEntry(a,"payment",40000L,"","");
+        book.addEntry(a,"payment",10000L,"","");
+        book.reverseLast(a,"Ошибочная оплата");
+        book.addEntry(b,"payment",20000L,"","");
+        List<BookDays.Day> days=BookDays.groupPayments(book.entries(),java.time.ZoneId.systemDefault());
+        assertEquals(1,days.size());assertEquals(3,days.get(0).entries.size());
+        assertEquals(60000L,days.get(0).recorded);assertEquals(1,days.get(0).canceled.size());
+        java.util.Map<String,LedgerStore.Client> people=new java.util.HashMap<>();
+        for(LedgerStore.Client c:book.clients())people.put(c.id,c);
+        List<BookDays.Day> filtered=BookDays.select(days,people,LocalDate.now(),LocalDate.now(),"али",false);
+        assertEquals(1,filtered.size());assertEquals(40000L,filtered.get(0).recorded);
+        assertEquals(2,filtered.get(0).entries.size());assertEquals(60000L,LedgerStore.balance(book.entries(),a));
+        assertEquals(0L,LedgerStore.balance(book.entries(),b));
+    }
+
+    @Test public void recentDebtSuggestionsIgnorePaymentsAndCanceledDebt(){
+        String a=book.recordDatedDebt(null,"Али","",15000L,LocalDate.now(),"","");
+        String b=book.recordDatedDebt(null,"Лейла","",20000L,LocalDate.now(),"","");
+        book.recordDatedDebt(a,"","",9000L,LocalDate.now(),"","");
+        book.reverseLast(a,"Ошибочная запись");
+        book.addEntry(a,"payment",5000L,"","");
+        java.util.Map<String,Long> recent=RecentDebts.lastAmounts(book.entries());
+        assertEquals(java.util.Arrays.asList(b,a),new java.util.ArrayList<>(recent.keySet()));
+        assertEquals(Long.valueOf(15000L),recent.get(a));
+        assertEquals(Long.valueOf(20000L),recent.get(b));
+        assertEquals(10000L,LedgerStore.balance(book.entries(),a));
+        assertEquals(5,book.entries().size());
+    }
+
+    @Test public void historySearchSortsActualDatesAndRejectsStaleCorrection() throws Exception {
+        LocalDate now=LocalDate.now();
+        String a=book.recordDatedDebt(null,"Фёдор","+7 123 456 78 90",10000L,now,"","Молоко");
+        String first=book.lastActive(a).id;
+        book.recordDatedDebt(a,"","",20000L,now.minusDays(2),"","Хлеб");
+        String second=book.lastActive(a).id;
+        book.recordDatedDebt(null,"Анна","",30000L,now.minusDays(1),"","");
+        java.util.Map<String,LedgerStore.Client> people=new java.util.HashMap<>();
+        for(LedgerStore.Client c:book.clients())people.put(c.id,c);
+        List<LedgerStore.Entry> all=book.entries();
+        List<LedgerStore.Entry> visible=HistoryRows.select(all,people,null,"федор",null,null,"Все",java.time.ZoneId.systemDefault());
+        assertEquals(2,visible.size());assertEquals(first,visible.get(0).id);assertEquals(second,visible.get(1).id);
+        assertEquals(1,HistoryRows.select(all,people,a,"хлеб",null,null,"Долги",java.time.ZoneId.systemDefault()).size());
+        assertEquals(2,HistoryRows.select(all,people,null,"1234567890",null,null,"Все",java.time.ZoneId.systemDefault()).size());
+        String before=book.exportJson();
+        try{book.correctSelected(a,first,5000L,"","","Ошибка");fail("Stale correction accepted");}catch(IllegalArgumentException expected){}
+        try{book.reverseSelected(a,first,"Ошибка");fail("Stale cancellation accepted");}catch(IllegalArgumentException expected){}
+        assertEquals(before,book.exportJson());
+        book.correctSelected(a,second,15000L,"","","Исправление");
+        assertEquals(25000L,LedgerStore.balance(book.entries(),a));
+        String corrected=book.exportJson();book.importJson(corrected);assertEquals(corrected,book.exportJson());
+    }
+
+    @Test public void debtLimitSettingsPersistAndGuardOnlyNewDebt() throws Exception {
+        String id=addCustomer();
+        String storage="raschet-qa-limits-"+java.util.UUID.randomUUID();
+        ClientDirectory directory=new ClientDirectory(testContext,storage);
+        try{
+            assertEquals(0L,directory.debtLimit(id));
+            directory.setDebtLimit(id,15000L);
+            assertEquals(15000L,new ClientDirectory(testContext,storage).debtLimit(id));
+            book.addEntry(id,"debt",10000L,"","");
+            long balance=LedgerStore.balance(book.entries(),id);
+            assertEquals(5000L,DebtLimits.remaining(directory.debtLimit(id),balance));
+            DebtLimits.requireConsent(15000L,balance,5000L,false);
+            String before=book.exportJson();
+            try{DebtLimits.requireConsent(15000L,balance,5001L,false);fail("Missing override accepted");}
+            catch(IllegalArgumentException expected){}
+            assertEquals(before,book.exportJson());
+            DebtLimits.requireConsent(15000L,balance,10000L,true);
+            book.addEntry(id,"debt",10000L,"","");
+            assertTrue(DebtLimits.requiresConfirmation(15000L,20000L,1L));
+            assertFalse(DebtLimits.requiresConfirmation(15000L,20000L,0L));
+            book.addEntry(id,"payment",10000L,"","");
+            assertEquals(5000L,DebtLimits.remaining(15000L,LedgerStore.balance(book.entries(),id)));
+            directory.setDebtLimit(id,0L);
+            assertFalse(DebtLimits.requiresConfirmation(directory.debtLimit(id),10000L,100000L));
+            directory.setDebtLimit(id,15000L);directory.clearAfterRestore();
+            assertEquals(0L,directory.debtLimit(id));
+        }finally{directory.clearAfterRestore();}
+    }
+
+    @Test public void quickDraftSurvivesReopenAndCannotPostTwice() throws Exception {
+        String storage="raschet-qa-draft-"+java.util.UUID.randomUUID();
+        QuickDebtDrafts drafts=new QuickDebtDrafts(testContext,storage);
+        String id=java.util.UUID.randomUUID().toString();
+        LocalDate day=LocalDate.now().minusDays(1);
+        try{
+            drafts.save(new QuickDebtDrafts.Draft(id,false,"Али","123","250",day,"","Хлеб"));
+            QuickDebtDrafts.Draft saved=new QuickDebtDrafts(testContext,storage).get();
+            assertEquals(id,saved.id);assertEquals(day,saved.day);assertEquals("250",saved.amount);
+            assertTrue(book.entries().isEmpty());assertTrue(book.clients().isEmpty());
+            try{book.recordDatedDebt(null,saved.name,saved.phone,0L,day,"","",id);fail("Zero amount accepted");}
+            catch(IllegalArgumentException expected){}
+            assertFalse(book.hasEntryId(id));assertTrue(book.clients().isEmpty());
+            String client=book.recordDatedDebt(null,saved.name,saved.phone,25000L,day,"",saved.note,id);
+            assertTrue(book.hasEntryId(id));
+            try{book.recordDatedDebt(null,saved.name,saved.phone,25000L,day,"",saved.note,id);fail("Duplicate draft accepted");}
+            catch(IllegalArgumentException expected){}
+            assertEquals(1,book.entries().size());assertEquals(1,book.clients().size());
+            assertEquals(25000L,LedgerStore.balance(book.entries(),client));
+            String json=book.exportJson();book.importJson(json);assertEquals(json,book.exportJson());
+            drafts.clear();assertNull(drafts.get());
+            String contactId=java.util.UUID.randomUUID().toString();
+            book.addDraftClient(contactId,"Контакт","");
+            assertTrue(book.hasClientId(contactId));
+        }finally{drafts.clear();}
+    }
+
+    @Test public void collectionWorklistPrioritizesUniqueDebtorsAndDoesNotModifyBook() throws Exception {
+        LocalDate today=LocalDate.now();
+        String storage="raschet-qa-collections-"+java.util.UUID.randomUUID();
+        ClientDirectory directory=new ClientDirectory(testContext,storage);
+        try{
+            String late=book.recordDatedDebt(null,"Просрочка","",10000L,today.minusDays(2),today.minusDays(1).toString(),"");
+            String contact=book.recordDatedDebt(null,"Контакт","",20000L,today,"","");
+            String soon=book.recordDatedDebt(null,"Срок","",30000L,today,today.plusDays(3).toString(),"");
+            String limit=book.recordDatedDebt(null,"Лимит","",40000L,today,"","");
+            String planned=book.recordDatedDebt(null,"План","",50000L,today,"","");
+            String paid=book.recordDatedDebt(null,"Оплачено","",60000L,today,"","");
+            book.addEntry(paid,"payment",60000L,"","");
+            String original=book.exportJson();
+            directory.setFollowUp(contact,today,"Позвонить");
+            directory.setFollowUp(late,today,"Уточнить срок");
+            directory.setFollowUp(planned,today.plusDays(14),"Позже");
+            directory.setFollowUp(paid,today,"Не показывать");
+            directory.setDebtLimit(limit,10000L);
+            List<CollectionWorklist.Item> rows=CollectionWorklist.build(CollectionsInsights.analyze(book.clients(),book.entries(),today),directory,today);
+            assertEquals(5,rows.size());
+            assertEquals(late,rows.get(0).status.client.id);assertEquals(contact,rows.get(1).status.client.id);
+            assertEquals(soon,rows.get(2).status.client.id);assertEquals(limit,rows.get(3).status.client.id);
+            assertEquals(planned,rows.get(4).status.client.id);
+            assertEquals(4,CollectionWorklist.select(rows,"",true).size());
+            assertEquals(1,CollectionWorklist.select(rows,"контакт",false).size());
+            assertEquals("Позвонить",new ClientDirectory(testContext,storage).followUp(contact).note);
+            assertEquals(original,book.exportJson());
+            directory.setFollowUp(contact,null,"");assertNull(directory.followUp(contact));
+        }finally{directory.clearAfterRestore();}
+    }
+
+    @Test public void promisedPaymentsExcludeEarlierAndCanceledReceipts() throws Exception {
+        LocalDate today=LocalDate.now();
+        String id=book.recordDatedDebt(null,"Обещание","",100000L,today,"","");
+        book.addEntry(id,"payment",10000L,"","");
+        String anchor=PaymentPromises.lastEntryId(book.entries(),id);
+        String storage="raschet-qa-promises-"+java.util.UUID.randomUUID();
+        ClientDirectory directory=new ClientDirectory(testContext,storage);
+        try{
+            directory.setFollowUp(id,today,"Вернёт часть",40000L,anchor);
+            ClientDirectory.FollowUp plan=new ClientDirectory(testContext,storage).followUp(id);
+            assertEquals(40000L,plan.amount);assertEquals(anchor,plan.anchor);
+            java.time.ZoneId zone=java.time.ZoneId.systemDefault();
+            PaymentPromises.Progress progress=PaymentPromises.calculate(book.entries(),id,plan,today,zone);
+            assertEquals(0L,progress.paid);assertFalse(progress.fulfilled());
+            book.addEntry(id,"payment",15000L,"","");
+            book.addEntry(id,"payment",25000L,"","");
+            progress=PaymentPromises.calculate(book.entries(),id,plan,today,zone);
+            assertTrue(progress.fulfilled());assertEquals(40000L,progress.onTime);
+            book.reverseLast(id,"Ошибка");
+            progress=PaymentPromises.calculate(book.entries(),id,plan,today.plusDays(1),zone);
+            assertFalse(progress.fulfilled());assertTrue(progress.missed);assertEquals(15000L,progress.paid);
+            book.addEntry(id,"payment",25000L,"","");
+            assertTrue(PaymentPromises.calculate(book.entries(),id,plan,today,zone).fulfilled());
+            assertFalse(PaymentPromises.calculate(book.entries(),id,new ClientDirectory.FollowUp(today,"",100L,"missing"),today,zone).valid);
+            directory.setFollowUp(id,null,"");assertNull(directory.followUp(id));
+        }finally{directory.clearAfterRestore();}
+    }
+
+    @Test public void clientStatementShowsUnpaidAmountsAndCanceledRowsWithoutOtherClients() throws Exception {
+        LocalDate today=LocalDate.now();
+        java.time.ZoneId zone=java.time.ZoneId.systemDefault();
+        String id=book.recordDatedDebt(null,"Выписка","",10000L,today.minusDays(3),"","");
+        String first=book.entries().get(0).id;
+        book.recordDatedDebt(id,"","",20000L,today.minusDays(1),"","");
+        String second=book.entries().get(1).id;
+        book.recordDatedDebt(null,"Другой","",99900L,today,"","");
+        book.addEntry(id,"payment",15000L,"","");
+        String before=book.exportJson();
+        ClientStatement statement=ClientStatement.build(book.entries(),id,zone);
+        assertEquals(3,statement.entries.size());
+        assertEquals(Long.valueOf(0L),statement.remaining.get(first));
+        assertEquals(Long.valueOf(15000L),statement.remaining.get(second));
+        assertEquals(1,statement.select(ClientStatement.UNPAID).size());
+        assertEquals(second,statement.select(ClientStatement.UNPAID).get(0).id);
+        assertEquals(1,statement.select(ClientStatement.PAYMENTS).size());
+        assertEquals(before,book.exportJson());
+        book.reverseLast(id,"Ошибка");
+        statement=ClientStatement.build(book.entries(),id,zone);
+        assertEquals(2,statement.select(ClientStatement.UNPAID).size());
+        assertEquals(2,statement.select(ClientStatement.REVERSED).size());
+        assertEquals(Long.valueOf(10000L),statement.remaining.get(first));
+        assertEquals(Long.valueOf(20000L),statement.remaining.get(second));
+    }
+
+    @Test public void correctionDatePickerUsesSavedDueDateAndSafeFallback() {
+        LocalDate today=LocalDate.of(2026,11,24);
+        assertEquals(LocalDate.of(2026,12,3),MainActivity.correctionDueDate("2026-12-03",today));
+        assertEquals(today,MainActivity.correctionDueDate("",today));
+        assertEquals(today,MainActivity.correctionDueDate("invalid",today));
+        assertEquals(today,MainActivity.correctionDueDate(null,today));
+    }
+
+    @Test public void correctionPreviewMatchesTransactionAndRejectsImpossibleAmounts() throws Exception {
+        String id=addCustomer();
+        book.addEntry(id,"debt",10000L,"","");
+        book.addEntry(id,"payment",4000L,"","");
+        LedgerStore.Entry payment=book.lastActive(id);
+        assertEquals(10000L,LedgerStore.correctedBalance(6000L,payment,0L));
+        assertEquals(7000L,LedgerStore.correctedBalance(6000L,payment,3000L));
+        String before=book.exportJson();
+        try{LedgerStore.correctedBalance(6000L,payment,10001L);fail("Invalid preview accepted");}
+        catch(IllegalArgumentException expected){}
+        try{book.correctSelected(id,payment.id,10001L,"","","Ошибка");fail("Invalid correction accepted");}
+        catch(IllegalArgumentException expected){}
+        assertEquals(before,book.exportJson());
+        book.correctSelected(id,payment.id,3000L,"","","Исправление");
+        assertEquals(7000L,LedgerStore.balance(book.entries(),id));
+        try{book.reverseSelected(id,payment.id,"Устаревшая запись");fail("Stale operation accepted");}
+        catch(IllegalArgumentException expected){}
+        book.reverseLast(id,"Отмена");
+        assertEquals(10000L,LedgerStore.balance(book.entries(),id));
+    }
+
+    @Test public void directoryFiltersRecentOperationsAndMatchesRussianPhonePrefixes() throws Exception {
+        LocalDate today=LocalDate.now();
+        String alice=book.recordDatedDebt(null,"Али","8 (999) 123-45-67",10000L,today,"","");
+        String zara=book.recordDatedDebt(null,"Зара","+7 900 222-33-44",20000L,today.minusDays(2),"","");
+        book.addClient("Без операций","");
+        book.addEntry(alice,"payment",10000L,"","");
+        List<CollectionsInsights.CustomerStatus> statuses=CollectionsInsights.analyze(book.clients(),book.entries(),today);
+        List<CollectionsInsights.CustomerStatus> recent=CollectionsInsights.visible(statuses,CollectionsInsights.ALL,false,true,"");
+        assertEquals(alice,recent.get(0).client.id);assertEquals(zara,recent.get(1).client.id);
+        assertEquals("Без операций",recent.get(2).client.name);
+        assertEquals(2,CollectionsInsights.visible(statuses,CollectionsInsights.CLEAR,false,"").size());
+        assertEquals(zara,CollectionsInsights.visible(statuses,CollectionsInsights.OWING,false,"").get(0).client.id);
+        assertEquals(alice,CollectionsInsights.visible(statuses,CollectionsInsights.ALL,false,"+7 999 1234567").get(0).client.id);
+        assertTrue(ClientSearch.phoneMatches("+7 900 222-33-44","8 900 2223344"));
+        assertFalse(ClientSearch.phoneMatches("+1 900 222-33-44","8 900 2223344"));
+        assertFalse(ClientSearch.phoneMatches("","999"));
+        assertTrue(ClientSearch.sameNumber("8 (999) 123-45-67","+7 999 1234567"));
+        assertFalse(ClientSearch.sameNumber("123","123"));
+        assertFalse(ClientSearch.sameNumber("8 999 123-45-67","9991234567"));
+        assertFalse(ClientSearch.phoneMatches("8 999 1234567","Али999"));
+        java.util.Map<String,LedgerStore.Client> people=new java.util.HashMap<>();
+        for(LedgerStore.Client c:book.clients())people.put(c.id,c);
+        java.time.ZoneId zone=java.time.ZoneId.systemDefault();
+        List<BookDays.Day> days=BookDays.select(BookDays.group(book.entries(),zone),people,null,null,"+79991234567",false);
+        assertEquals(1,days.size());assertEquals(alice,days.get(0).entries.get(0).clientId);
+        assertEquals(2,HistoryRows.select(book.entries(),people,null,"+79991234567",null,null,"Все",zone).size());
+    }
+
+    @Test public void datedReceiptRejectsHistoricalOverpaymentAndUsesActualDay() throws Exception {
+        LocalDate today=LocalDate.now(), day=today.minusDays(3);
+        java.time.ZoneId zone=java.time.ZoneId.systemDefault();
+        String id=book.recordDatedDebt(null,"Дата оплаты","",10000L,day.minusDays(1),"","");
+        book.recordDatedDebt(id,"","",20000L,today.minusDays(1),"","");
+        String before=book.exportJson();
+        assertEquals(10000L,DatedPayments.maximum(book.entries(),id,day,today,zone));
+        String receipt=java.util.UUID.randomUUID().toString();
+        try{book.addDraftPayment(id,10001L,"",receipt,day);fail("Historical overpayment accepted");}
+        catch(IllegalArgumentException expected){}
+        try{book.addDraftPayment(id,1L,"",receipt,today.plusDays(1));fail("Future payment accepted");}
+        catch(IllegalArgumentException expected){}
+        assertEquals(before,book.exportJson());
+        book.addDraftPayment(id,8000L,"",receipt,day);
+        assertEquals(22000L,LedgerStore.balance(book.entries(),id));
+        assertEquals(day,BookDays.groupPayments(book.entries(),zone).get(0).date);
+        assertEquals(8000L,PeriodReport.build(book.entries(),day,day,zone).totals.payments);
+        assertEquals(2000L,DatedPayments.maximum(book.entries(),id,day,today,zone));
+        try{book.addDraftPayment(id,100L,"",receipt,day);fail("Duplicate receipt accepted");}
+        catch(IllegalArgumentException expected){}
+        String json=book.exportJson();book.importJson(json);
+        assertEquals(json,book.exportJson());
+        book.reverseLast(id,"Ошибка");
+        assertEquals(30000L,LedgerStore.balance(book.entries(),id));
+        assertEquals(2000L,DatedPayments.maximum(book.entries(),id,day,today,zone));
+    }
+
+    @Test public void existingClientDraftKeepsDateAndCannotRepeatPayment() throws Exception {
+        String client=addCustomer();
+        LocalDate day=LocalDate.now().minusDays(3);
+        String storage="raschet-qa-entry-draft-"+java.util.UUID.randomUUID();
+        LedgerDrafts drafts=new LedgerDrafts(testContext,storage);
+        String debtId=java.util.UUID.randomUUID().toString(),paymentId=java.util.UUID.randomUUID().toString();
+        try{
+            drafts.save(client,"debt",debtId,day,"100","", "Хлеб");
+            LedgerDrafts.Draft restored=new LedgerDrafts(testContext,storage).get(client,"debt");
+            assertEquals(day,restored.day);assertEquals(debtId,restored.id);
+            book.recordDatedDebt(client,"","",10000L,restored.day,"",restored.note,restored.id);
+            assertEquals(day,PeriodReport.dateOf(book.entries().get(0),java.time.ZoneId.systemDefault()));
+            try{book.recordDatedDebt(client,"","",10000L,day,"","",debtId);fail("Duplicate debt accepted");}
+            catch(IllegalArgumentException expected){}
+            drafts.save(client,"payment",paymentId,LocalDate.now(),"40","","");
+            book.addDraftPayment(client,4000L,"",paymentId);
+            try{book.addDraftPayment(client,4000L,"",paymentId);fail("Duplicate payment accepted");}
+            catch(IllegalArgumentException expected){}
+            assertEquals(2,book.entries().size());assertEquals(6000L,LedgerStore.balance(book.entries(),client));
+            drafts.clearAll();assertNull(drafts.get(client,"payment"));assertNull(drafts.get(client,"debt"));
+        }finally{drafts.clearAll();}
+    }
 }
