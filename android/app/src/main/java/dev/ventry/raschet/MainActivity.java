@@ -58,7 +58,7 @@ public final class MainActivity extends Activity {
     private static final int BG=0xff090e0c, PANEL=0xff141c18, ELEVATED=0xff1b2820;
     private static final int BORDER=0xff2b3b32, TEXT=0xfff4f7f3, MUTED=0xff9eb4a6;
     private static final int ACCENT=0xffb9efd0, INK=0xff12271b, ALERT=0xffffca97, RED=0xffffacac;
-    private static final int REQUEST_IMPORT=101, REQUEST_EXPORT=102, REQUEST_PDF=103, MAX_IMPORT=5*1024*1024;
+    private static final int REQUEST_IMPORT=101, REQUEST_EXPORT=102, REQUEST_PDF=103, REQUEST_REPORT=105, MAX_IMPORT=5*1024*1024;
     private static final String RECOVERY_PREFS="raschet_local_recovery";
     private static final int NOTIFICATION_PERMISSION_REQUEST=104;
     private static final ExecutorService RECOVERY_WORK=Executors.newSingleThreadExecutor();
@@ -77,6 +77,9 @@ public final class MainActivity extends Activity {
     private String shopName="Мой магазин";
     private boolean pendingExport, pendingExportCsv;
     private String pendingPdfClientId;
+    private LocalDate reportFrom=LocalDate.now().withDayOfMonth(1),reportTo=LocalDate.now();
+    private LocalDate historyFrom,historyTo,pendingReportFrom,pendingReportTo;
+    private int reportDaysLimit=14;
     private boolean tablet=false, largeText=false, saving=false;
     private int historyVisibleLimit=100, detailVisibleLimit=80;
     private final int pad=18;
@@ -100,6 +103,11 @@ public final class MainActivity extends Activity {
             pendingExport=state.getBoolean("pending_export");
             pendingExportCsv=state.getBoolean("pending_export_csv");
             pendingPdfClientId=state.getString("pending_pdf_client");
+            reportFrom=LocalDate.parse(state.getString("report_from",reportFrom.toString()));
+            reportTo=LocalDate.parse(state.getString("report_to",reportTo.toString()));
+            historyFrom=readDate(state,"history_from");historyTo=readDate(state,"history_to");
+            pendingReportFrom=readDate(state,"pending_report_from");pendingReportTo=readDate(state,"pending_report_to");
+            reportDaysLimit=state.getInt("report_days_limit",14);
         }
         else if(getIntent().getBooleanExtra(EXTRA_FIRST_START,false)&&ledger.clients().isEmpty())tab="Клиенты";
         tablet=getResources().getConfiguration().screenWidthDp>=720;
@@ -116,6 +124,10 @@ public final class MainActivity extends Activity {
         out.putBoolean("pending_export",pendingExport);
         out.putBoolean("pending_export_csv",pendingExportCsv);
         out.putString("pending_pdf_client",pendingPdfClientId);
+        out.putString("report_from",reportFrom.toString());out.putString("report_to",reportTo.toString());
+        saveDate(out,"history_from",historyFrom);saveDate(out,"history_to",historyTo);
+        saveDate(out,"pending_report_from",pendingReportFrom);saveDate(out,"pending_report_to",pendingReportTo);
+        out.putInt("report_days_limit",reportDaysLimit);
         super.onSaveInstanceState(out);
     }
     private View createShell() {
@@ -207,7 +219,8 @@ public final class MainActivity extends Activity {
                     selectedClient!=null?detailView(selectedClient):
                     tab.equals("Главная")?homeView():
                     tab.equals("Клиенты")?clientsView():
-                    tab.equals("История")?historyView():settingsView();
+                    tab.equals("История")?historyView():
+                    tab.equals("Отчёт")?reportView():settingsView();
             page.addView(contents,new FrameLayout.LayoutParams(-1,-1));
         }catch(Exception e){
             LinearLayout error=screen("Ошибка чтения книги","Данные не были изменены.");
@@ -257,6 +270,7 @@ public final class MainActivity extends Activity {
         LinearLayout.LayoutParams second=new LinearLayout.LayoutParams(0,-2,1);second.leftMargin=dp(10);
         metrics.addView(metric("С ДОЛГОМ",String.valueOf(debtors),"Не закрыли долг"),second);
         view.addView(metrics,margin(-1,-2,10));
+        actionRow(view,"↗","Финансовый отчёт","Движение долгов и оплат за период",()->{tab="Отчёт";selectedClient=null;render();});
         LinearLayout late=card();
         late.addView(eyebrow("ПРОСРОЧЕННЫЕ ДОЛГИ"));
         late.addView(label(money(overdue),25,overdue>0?ALERT:TEXT,true),margin(-1,-2,5));
@@ -499,6 +513,111 @@ public final class MainActivity extends Activity {
         },1);
         return scroll(view);
     }
+    private static LocalDate readDate(Bundle b,String key){
+        String value=b.getString(key);return value==null?null:LocalDate.parse(value);
+    }
+    private static void saveDate(Bundle b,String key,LocalDate date){
+        if(date!=null)b.putString(key,date.toString());
+    }
+    private void setPeriod(boolean report,LocalDate from,LocalDate to){
+        if(from.isAfter(to)||to.isAfter(from.plusDays(365))){
+            message("Выберите период от 1 до 366 дней.");return;
+        }
+        if(report){reportFrom=from;reportTo=to;reportDaysLimit=14;}
+        else{historyFrom=from;historyTo=to;historyVisibleLimit=100;}
+        render();
+    }
+    private void choosePeriod(boolean report){
+        LocalDate today=LocalDate.now();
+        LinearLayout form=stack(8);
+        String[] titles={"Сегодня","Последние 7 дней","Этот месяц","Произвольный период"};
+        Dialog dialog=new Dialog(this);
+        LinearLayout body=card();
+        body.addView(label("Выберите период",20,TEXT,true));
+        for(int i=0;i<titles.length;i++){
+            final int which=i;
+            addButton(form,titles[i],false,()->{
+                dialog.dismiss();
+                if(which==0)setPeriod(report,today,today);
+                else if(which==1)setPeriod(report,today.minusDays(6),today);
+                else if(which==2)setPeriod(report,today.withDayOfMonth(1),today);
+                else{
+                    LocalDate start=report?reportFrom:historyFrom==null?today:historyFrom;
+                    pickReportDate("Начало периода",start,from->{
+                        LocalDate end=report?reportTo:historyTo==null?today:historyTo;
+                        if(end.isBefore(from))end=from;
+                        pickReportDate("Конец периода",end,to->setPeriod(report,from,to));
+                    });
+                }
+            },1);
+        }
+        addButton(form,"Отмена",false,dialog::dismiss,1);
+        body.addView(form);dialog.setContentView(scroll(body));
+        if(dialog.getWindow()!=null){
+            dialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
+            dialog.getWindow().setLayout(Math.min(getResources().getDisplayMetrics().widthPixels-dp(32),dp(460)),-2);
+        }
+        dialog.show();
+    }
+    private void pickReportDate(String title,LocalDate date,java.util.function.Consumer<LocalDate> callback){
+        DatePickerDialog picker=new DatePickerDialog(this,(v,y,m,d)->callback.accept(LocalDate.of(y,m+1,d)),
+                date.getYear(),date.getMonthValue()-1,date.getDayOfMonth());
+        picker.setTitle(title);picker.show();
+    }
+    private void reportLine(LinearLayout parent,String name,long amount,int color){
+        parent.addView(label(name,13,MUTED,false));
+        parent.addView(label(money(amount),23,color,true),margin(-1,-2,7));
+    }
+    private View reportView(){
+        PeriodReport report=PeriodReport.build(ledger.entries(),reportFrom,reportTo,ZoneId.systemDefault());
+        LinearLayout view=screen("Финансовый отчёт","Движение задолженности, не выручка и не прибыль");
+        actionRow(view,"▤","Период отчёта",dayFormat.format(reportFrom)+" — "+dayFormat.format(reportTo),
+                ()->choosePeriod(true));
+        LinearLayout summary=card();
+        reportLine(summary,"ОСТАТОК НА НАЧАЛО",report.opening,TEXT);
+        reportLine(summary,"ОСТАТОК НА КОНЕЦ",report.closing,ACCENT);
+        reportLine(summary,"ИЗМЕНЕНИЕ ЗАДОЛЖЕННОСТИ",report.totals.net(),TEXT);
+        summary.addView(label("Операций: "+report.totals.count+" · клиентов: "+report.activeCustomers,13,MUTED,false));
+        view.addView(summary,margin(-1,-2,10));
+        LinearLayout actions=stack(8);
+        addButton(actions,"Операции периода",true,()->{
+            historyFrom=reportFrom;historyTo=reportTo;historyFilter="Все";historyVisibleLimit=100;
+            tab="История";render();
+        },1);
+        addButton(actions,"Экспорт отчёта CSV",false,this::exportReport,1);
+        view.addView(actions,margin(-1,-2,12));
+        LinearLayout flow=card();
+        flow.addView(label("Движение за период",18,TEXT,true));
+        reportLine(flow,"Записано долгов",report.totals.debts,TEXT);
+        reportLine(flow,"Получено оплат",report.totals.payments,ACCENT);
+        reportLine(flow,"Отменено долгов",report.totals.debtReversals,ALERT);
+        reportLine(flow,"Отменено оплат",report.totals.paymentReversals,ALERT);
+        flow.addView(label("Отмены учитываются по дате отмены. Суммы долгов и оплат показаны до вычета отмен.",13,MUTED,false));
+        view.addView(flow,margin(-1,-2,10));
+        section(view,"По дням","Дни, в которые были операции");
+        if(report.daily.isEmpty())view.addView(label("За выбранный период операций нет.",15,MUTED,false));
+        int shown=0;
+        for(Map.Entry<LocalDate,PeriodReport.Totals> day:report.daily.entrySet()){
+            if(shown++>=reportDaysLimit)break;
+            PeriodReport.Totals t=day.getValue();
+            LinearLayout item=card();
+            item.addView(label(dayFormat.format(day.getKey()),15,TEXT,true));
+            item.addView(label("Долги "+money(t.debts)+" · оплаты "+money(t.payments),13,MUTED,false));
+            item.addView(label("Отмены долгов "+money(t.debtReversals)+" · отмены оплат "+money(t.paymentReversals),13,MUTED,false));
+            item.addView(label("Изменение: "+money(t.net()),16,ACCENT,true));
+            view.addView(item,margin(-1,-2,7));
+        }
+        if(report.daily.size()>reportDaysLimit)addButton(view,"Показать ещё дни",false,()->{reportDaysLimit+=14;render();},1);
+        return scroll(view);
+    }
+    private void exportReport(){
+        Intent save=new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        save.addCategory(Intent.CATEGORY_OPENABLE);save.setType("text/csv");
+        save.putExtra(Intent.EXTRA_TITLE,"raschet-report-"+reportFrom+"-"+reportTo+".csv");
+        pendingReportFrom=reportFrom;pendingReportTo=reportTo;
+        try{startActivityForResult(save,REQUEST_REPORT);}
+        catch(ActivityNotFoundException ex){pendingReportFrom=null;pendingReportTo=null;message("Выбор файла недоступен.");}
+    }
     private View historyView() {
         LinearLayout view=screen("История","Все операции магазина");
         LinearLayout filters=row();filters.setGravity(Gravity.CENTER_VERTICAL);
@@ -516,6 +635,9 @@ public final class MainActivity extends Activity {
             chip.setOnClickListener(v->{historyFilter=choice;historyVisibleLimit=100;render();});
         }
         view.addView(filters,margin(-1,-2,10));
+        actionRow(view,"▤","Период истории",historyFrom==null?"Все даты":dayFormat.format(historyFrom)+" — "+dayFormat.format(historyTo),
+                ()->choosePeriod(false));
+        if(historyFrom!=null)addButton(view,"Сбросить даты",false,()->{historyFrom=null;historyTo=null;historyVisibleLimit=100;render();},1);
         Map<String,String> names=new HashMap<>();
         for(LedgerStore.Client c:ledger.clients())names.put(c.id,c.name);
         List<LedgerStore.Entry> all=ledger.entries();
@@ -524,6 +646,10 @@ public final class MainActivity extends Activity {
         boolean moreHistory=false;
         for(int i=all.size()-1;i>=0;i--){
             LedgerStore.Entry e=all.get(i);
+            if(historyFrom!=null){
+                LocalDate date=PeriodReport.dateOf(e,ZoneId.systemDefault());
+                if(date.isBefore(historyFrom)||date.isAfter(historyTo))continue;
+            }
             if(!historyFilter.equals("Все") && !(historyFilter.equals("Долги")&&e.type.equals("debt"))
                     &&!(historyFilter.equals("Оплаты")&&e.type.equals("payment"))
                     &&!(historyFilter.equals("Отмены")&&e.type.equals("reversal")))continue;
@@ -541,7 +667,7 @@ public final class MainActivity extends Activity {
                     ()->{if(ledger.clients().isEmpty())showClientForm(null);else chooseClient("debt");}));
             else view.addView(emptyState(R.drawable.ic_nav_history,
                     "Нет операций в фильтре", "Выберите другой тип операции или посмотрите всю историю.",
-                    "Показать все", ()->{historyFilter="Все";render();}));
+                    "Показать все", ()->{historyFilter="Все";historyFrom=null;historyTo=null;historyVisibleLimit=100;render();}));
         }
         return scroll(view);
     }
@@ -1051,6 +1177,15 @@ public final class MainActivity extends Activity {
                 message("Резервная копия сохранена.");
                 if(tab.equals("Настройки")||tab.equals("Главная"))render();
             }catch(Exception ex){message("Ошибка сохранения: "+ex.getMessage());}
+        }else if(request==REQUEST_REPORT){
+            LocalDate from=pendingReportFrom,to=pendingReportTo;
+            pendingReportFrom=null;pendingReportTo=null;
+            if(from==null||to==null||result!=RESULT_OK||data==null||data.getData()==null)return;
+            try(OutputStream out=getContentResolver().openOutputStream(data.getData(),"wt")){
+                if(out==null)throw new IOException("Нет доступа к файлу.");
+                out.write(PeriodReport.build(ledger.entries(),from,to,ZoneId.systemDefault()).csv().getBytes(StandardCharsets.UTF_8));
+                out.flush();message("Отчёт CSV сохранён.");
+            }catch(Exception ex){message("Ошибка отчёта: "+ex.getMessage());}
         }else if(request==REQUEST_PDF){
             String id=pendingPdfClientId;
             pendingPdfClientId=null;
