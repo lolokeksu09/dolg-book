@@ -12,6 +12,7 @@ import static org.junit.Assert.*;
 @RunWith(AndroidJUnit4.class)
 public class NativeCorrectionInstrumentedTest {
     @Test public void packagedRustLibraryMatchesCorrectionContract() throws Exception {
+        assertTrue(dev.ventry.raschet.BuildConfig.RUST_PREVIEW);
         NativeCorrection.loadAndroidLibrary();
         int count = 0;
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(
@@ -35,7 +36,12 @@ public class NativeCorrectionInstrumentedTest {
                 long replacement = Long.parseLong(f[3]);
                 assertEquals(line, expected, NativeCorrection.correctedBalance(kind, available, oldAmount, replacement));
                 if (expected >= 0) {
-                    assertEquals(line, expected, dev.ventry.raschet.domain.LedgerArithmetic.correctedBalance(available, f[1], oldAmount, replacement));
+                    assertEquals(line, expected, CorrectionEngine.correctedBalance(available, f[1], oldAmount, replacement));
+                } else {
+                    try {
+                        CorrectionEngine.correctedBalance(available, f[1], oldAmount, replacement);
+                        fail("Invalid correction accepted: " + line);
+                    } catch (IllegalArgumentException expectedFailure) { }
                 }
                 count++;
             }
