@@ -10,7 +10,7 @@ test('Android UI is native and does not contain web UI runtime',()=>{
   const gradle=read('android/app/build.gradle.kts');
   const activity=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
   const manifest=read('android/app/src/main/AndroidManifest.xml');
-  assert.ok(gradle.includes('versionName = "0.10.0-beta.1"'));
+  assert.ok(gradle.includes('versionName = "0.11.0-beta.1"'));
   assert.ok(gradle.includes('applicationIdSuffix = ".nativev031"'));
   assert.ok(!gradle.includes('webkit')&&!gradle.includes('syncOfflineBook'));
   assert.ok(!gradle.includes('index.html')&&!gradle.includes('app.js'));
@@ -87,4 +87,14 @@ test('legacy catalog data stays portable but the standalone catalog and picker a
   assert.ok(!ui.includes('Выбрать из каталога'));
   assert.ok(ui.includes('ledger.addPurchase(clientId,purchase'));
   assert.ok(ui.includes('showPurchaseDetails('));
+});
+
+test('client history follows two primary actions and secondary actions live in one menu',()=>{
+  const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
+  const detail=ui.slice(ui.indexOf('private View detailView('),ui.indexOf('private void changeClientArchive('));
+  assert.ok(detail.includes('"+ Долг"')&&detail.includes('"Оплата"')&&detail.includes('"Ещё действия"'));
+  assert.ok(!detail.includes('"Сохранить выписку PDF"')&&!detail.includes('"Долг по товарам"'));
+  assert.ok(detail.includes('История клиента'));
+  assert.ok(ui.includes('showClientActions('));
+  assert.ok(ui.includes('Остаток после записи: '));
 });

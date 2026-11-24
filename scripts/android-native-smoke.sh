@@ -183,10 +183,14 @@ grep -Fq '200,00' android/build/native-ui.xml
 tap_text 'Оплата'
 sleep 0.4
 fill_form_input 0 400
+dump_ui
+grep -Fq 'Остаток после записи: 800,00' android/build/native-ui.xml
 tap_text 'Сохранить'
 sleep 0.5
 dump_ui
 grep -Fq '800,00' android/build/native-ui.xml
+tap_text 'Ещё действия'
+sleep 0.3
 tap_text 'Погасить весь остаток'
 sleep 0.4
 dump_ui
@@ -271,8 +275,12 @@ tap_text 'Сохранить'
 sleep 0.5
 tap_text 'ArchiveBuyer'
 sleep 0.4
+tap_text 'Ещё действия'
+sleep 0.3
 tap_text 'В избранное'
 sleep 0.4
+tap_text 'Ещё действия'
+sleep 0.3
 tap_text 'В архив'
 sleep 0.5
 dump_ui
@@ -302,6 +310,8 @@ tap_text 'Клиенты'
 sleep 0.4
 tap_text 'TestBuyer'
 sleep 0.4
+tap_text 'Ещё действия'
+sleep 0.3
 tap_text 'Долг по товарам'
 sleep 0.4
 dump_ui
