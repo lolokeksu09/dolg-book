@@ -29,7 +29,7 @@ test('customer filters, full repayment form and explicit Android sharing are wir
   assert.ok(activity.includes('out.putString("client_filter"'));
 });
 
-test('no SQLite schema migration or silent server access introduced',()=>{
+test('book exports stay local and preserve entries',()=>{
   const store=read('android/app/src/main/java/dev/ventry/raschet/LedgerStore.java');
   const manifest=read('android/app/src/main/AndroidManifest.xml');
   assert.ok(store.includes('raschet-ledger.db'));

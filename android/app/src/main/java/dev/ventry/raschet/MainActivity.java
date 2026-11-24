@@ -328,6 +328,7 @@ public final class MainActivity extends Activity {
         }
 
         section(view,"Быстрые действия","Операции в несколько касаний");
+        actionRow(view,"＋","Долг по товарам","Состав покупки, количество и скидка",()->chooseClient("purchase"));
         actionRow(view,"＋","Новый клиент","Добавить человека в книгу",()->showClientForm(null));
         actionRow(view,"▤","Все клиенты","Остаток и история по каждому",()->{tab="Клиенты";render();});
         if(!entries.isEmpty()){
@@ -537,6 +538,7 @@ public final class MainActivity extends Activity {
         addButton(tools,"Отменить запись",false,()->showReversal(id),1);
         if(!archived)view.addView(tools,margin(-1,dp(48),10));
         LinearLayout extraActions=stack(7);
+        if(!archived)addButton(extraActions,"Долг по товарам",true,()->showPurchaseForm(id),1);
         if(amount>0)
             addButton(extraActions,"Погасить весь остаток",false,
                     ()->showEntryForm(id,"payment",amount),1);
@@ -793,6 +795,12 @@ public final class MainActivity extends Activity {
         if(clientName!=null)left.addView(label(clientName,13,TEXT,false));
         left.addView(label(formatDate(e.date)+(e.note.isEmpty()?"":" · "+e.note),12,MUTED,false));
         if(!e.due.isEmpty())left.addView(label("Вернуть до "+e.due,11,ALERT,false));
+        if(e.purchase!=null){
+            TextView details=label("Состав покупки · "+e.purchase.items.size()+" поз.",13,ACCENT,true);
+            details.setMinHeight(dp(48));details.setGravity(Gravity.CENTER_VERTICAL);
+            details.setFocusable(true);details.setClickable(true);
+            details.setOnClickListener(v->showPurchaseDetails(e));left.addView(details);
+        }
         card.addView(left,new LinearLayout.LayoutParams(0,-2,1));
         TextView sum=label((e.type.equals("payment")?"−":e.type.equals("debt")?"+":"↶ ")+money(e.amount),15,canceled?MUTED:color,true);
         card.addView(sum);
@@ -1023,7 +1031,7 @@ public final class MainActivity extends Activity {
                     button.setPadding(dp(14),dp(16),dp(14),dp(16));
                     button.setBackground(ripple(shape(ELEVATED,14,BORDER)));
                     results.addView(button);
-                    button.setOnClickListener(v->{if(chooser!=null)chooser.dismiss();showEntryForm(customer.id,type);});
+                    button.setOnClickListener(v->{if(chooser!=null)chooser.dismiss();if(type.equals("purchase"))showPurchaseForm(customer.id);else showEntryForm(customer.id,type);});
                 }
                 if(found.isEmpty())results.addView(label("Нет подходящих клиентов.",14,MUTED,false));
                 if(found.size()>limit[0])addButton(results,"Показать ещё клиентов",false,()->{limit[0]+=60;run();},1);
@@ -1085,6 +1093,118 @@ public final class MainActivity extends Activity {
             if(shopCaption!=null)shopCaption.setText(s);
             return true;
         });
+    }
+    private final class PurchaseRow {
+        final EditText name,quantity,price;
+        final TextView subtotal;
+        final LinearLayout block;
+        PurchaseRow(){
+            block=card();
+            name=field("Название товара",null);
+            quantity=field("1","1");
+            price=field("0,00",null);
+            name.setSingleLine(true);
+            quantity.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);
+            price.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);
+            block.addView(formGroup("Товар",name));
+            LinearLayout numbers=row();
+            numbers.addView(formGroup("Количество",quantity),new LinearLayout.LayoutParams(0,-2,1));
+            numbers.addView(formGroup("Цена, ₽",price),new LinearLayout.LayoutParams(0,-2,1));
+            block.addView(numbers);
+            subtotal=label("Сумма позиции: —",14,ACCENT,true);
+            block.addView(subtotal);
+        }
+        Purchase.Item item(){
+            return new Purchase.Item(name.getText().toString(),Purchase.quantity(quantity.getText().toString()),
+                    LedgerStore.parseAmount(price.getText().toString()));
+        }
+    }
+    private void showPurchaseForm(String clientId){
+        LedgerStore.Client client=null;
+        for(LedgerStore.Client c:ledger.clients())if(c.id.equals(clientId)){client=c;break;}
+        if(client==null){message("Клиент не найден.");return;}
+        if(directory.archived(clientId,LedgerStore.balance(ledger.entries(),clientId))){
+            message("Сначала верните клиента из архива.");return;
+        }
+        LinearLayout form=stack(12);
+        form.addView(label(client.name+" · товары в долг",16,TEXT,true));
+        form.addView(label("До 8 позиций. Количество можно указать дробным, например 0,750 кг.",13,MUTED,false));
+        LinearLayout rows=stack(10);
+        List<PurchaseRow> items=new ArrayList<>();
+        EditText discount=field("0,00",null);
+        discount.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        LinearLayout summary=card();
+        TextView total=label("Итого к записи: —",24,ACCENT,true);
+        TextView details=label("Заполните товары и цены.",13,MUTED,false);
+        summary.addView(total);summary.addView(details);
+        // Keep the current total visible at the top of the scrollable form.
+        form.addView(summary);form.addView(rows);
+        Runnable update=()->{
+            List<Purchase.Item> valid=new ArrayList<>();
+            boolean complete=!items.isEmpty();
+            for(PurchaseRow r:items){
+                try{Purchase.Item item=r.item();valid.add(item);r.subtotal.setText("Сумма позиции: "+money(item.total));}
+                catch(Exception ex){complete=false;r.subtotal.setText("Сумма позиции: —");}
+            }
+            try{
+                if(!complete)throw new IllegalArgumentException("Заполните все позиции.");
+                Purchase purchase=new Purchase(valid,Purchase.discount(discount.getText().toString()));
+                total.setText("Итого к записи: "+money(purchase.total));
+                details.setText("Товары "+money(purchase.subtotal)+" · скидка "+money(purchase.discount));
+            }catch(Exception ex){total.setText("Итого к записи: —");details.setText(ex.getMessage());}
+        };
+        Runnable add=()->{
+            if(items.size()>=Purchase.MAX_ITEMS){message("Максимум 8 позиций в одной покупке.");return;}
+            PurchaseRow r=new PurchaseRow();items.add(r);rows.addView(r.block,margin(-1,-2,8));
+            addButton(r.block,"Удалить позицию",false,()->{
+                if(items.size()==1){message("Оставьте хотя бы одну позицию.");return;}
+                items.remove(r);rows.removeView(r.block);update.run();
+            },1);
+            r.name.addTextChangedListener(watcher(v->update.run()));
+            r.quantity.addTextChangedListener(watcher(v->update.run()));
+            r.price.addTextChangedListener(watcher(v->update.run()));
+            update.run();
+        };
+        addButton(form,"+ Добавить товар",false,add,1);
+        form.addView(formGroup("Скидка на покупку, ₽",discount));
+        discount.addTextChangedListener(watcher(v->update.run()));
+        EditText due=field("Без срока",null);
+        due.setFocusable(false);due.setOnClickListener(v->{
+            LocalDate today=LocalDate.now();
+            new DatePickerDialog(this,(picker,y,m,d)->due.setText(LocalDate.of(y,m+1,d).toString()),
+                    today.getYear(),today.getMonthValue()-1,today.getDayOfMonth()).show();
+        });
+        form.addView(formGroup("Вернуть до (необязательно)",due));
+        addButton(form,"Без срока",false,()->due.setText(""),1);
+        EditText note=field("Комментарий",null);
+        form.addView(formGroup("Комментарий (необязательно)",note));
+        form.addView(label("При закрытии незаписанный состав покупки не сохраняется.",12,MUTED,false));
+        add.run();
+        showDialog("Покупка в долг",form,()->{
+            List<Purchase.Item> valid=new ArrayList<>();
+            for(PurchaseRow r:items)valid.add(r.item());
+            Purchase purchase=new Purchase(valid,Purchase.discount(discount.getText().toString()));
+            if(directory.archived(clientId,LedgerStore.balance(ledger.entries(),clientId)))
+                throw new IllegalArgumentException("Сначала верните клиента из архива.");
+            ledger.addPurchase(clientId,purchase,due.getText().toString(),note.getText().toString().trim());
+            selectedClient=clientId;tab="Клиенты";return true;
+        });
+    }
+    private void showPurchaseDetails(LedgerStore.Entry entry){
+        Purchase p=entry.purchase;
+        if(p==null)return;
+        LinearLayout form=stack(10);
+        for(Purchase.Item item:p.items){
+            LinearLayout row=card();
+            row.addView(label(item.name,16,TEXT,true));
+            row.addView(label(item.quantity()+" × "+money(item.unitPrice),14,MUTED,false));
+            row.addView(label(money(item.total),18,ACCENT,true));
+            form.addView(row);
+        }
+        form.addView(label("Товары: "+money(p.subtotal),15,TEXT,false));
+        form.addView(label("Скидка: "+money(p.discount),15,MUTED,false));
+        form.addView(label("Итого: "+money(p.total),24,ACCENT,true));
+        showDialog("Состав покупки",form,null);
     }
     private void showEntryForm(String clientId,String type) {
         showEntryForm(clientId,type,0L);
@@ -1173,6 +1293,10 @@ public final class MainActivity extends Activity {
                 original.amount/100,original.amount%100);
         EditText amount=field("Сумма",formatted);
         amount.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        if(original.purchase!=null){
+            amount.setEnabled(false);
+            content.addView(label("Сумма связана с товарами. Для изменения состава отмените последнюю покупку и запишите новую.",13,ALERT,false));
+        }
         content.addView(formGroup("Исправленная сумма, ₽",amount));
         EditText due=field("Без срока",original.due);
         due.setFocusable(false);due.setClickable(true);
@@ -1268,13 +1392,13 @@ public final class MainActivity extends Activity {
         }
     }
     private String makeCsv() {
-        StringBuilder out=new StringBuilder("\uFEFFКлиент;Телефон;Дата;Тип;Сумма (руб);Срок;Комментарий;ID;Отменяет ID\r\n");
+        StringBuilder out=new StringBuilder("\uFEFFКлиент;Телефон;Дата;Тип;Сумма (руб);Срок;Комментарий;ID;Отменяет ID;Состав покупки\r\n");
         Map<String,LedgerStore.Client> people=new HashMap<>();
         for(LedgerStore.Client c:ledger.clients())people.put(c.id,c);
         for(LedgerStore.Entry e:ledger.entries()){
             LedgerStore.Client c=people.get(e.clientId);
             for(String cell:new String[]{c==null?"":c.name,c==null?"":c.phone,e.date,e.type,
-                    String.format(Locale.ROOT,"%.2f",e.amount/100d).replace('.',','),e.due,e.note,e.id,e.reverses})
+                    String.format(Locale.ROOT,"%.2f",e.amount/100d).replace('.',','),e.due,e.note,e.id,e.reverses,e.purchase==null?"":e.purchase.summary()})
                 out.append(csvCell(cell)).append(';');
             out.setLength(out.length()-1);out.append("\r\n");
         }

@@ -62,6 +62,12 @@ public final class CustomerStatementPdf {
                     LedgerStore.Entry entry=entries.get(offset);
                     paint.setTextSize(10);
                     List<String> noteLines=wrap(entry.note,paint,485);
+                    if(entry.purchase!=null){
+                        for(Purchase.Item item:entry.purchase.items)
+                            noteLines.addAll(wrap(item.description(),paint,485));
+                        if(entry.purchase.discount>0)
+                            noteLines.addAll(wrap("Скидка: "+PeriodReport.rubles(entry.purchase.discount)+" ₽",paint,485));
+                    }
                     int needed=18+noteLines.size()*15;
                     // Never split a financial operation or silently crop its note.
                     if(y+needed>780)break;
