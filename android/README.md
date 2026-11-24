@@ -286,3 +286,8 @@ Shared LedgerTheme across work screens, introduction and launch. Black workspace
 ## 0.28.0-beta.1 — контроль исправлений
 
 Сведения о долге показывают фактический непогашенный остаток и текущий долг клиента. Исправление и отмена показывают исходную сумму, дату и прогноз остатка; расчёт исправления использует тот же guard, что и транзакция. Выбор конкретной операции проверяется и перед открытием формы, и при сохранении. Срок можно очистить при исправлении. Сохранён контракт отмены/замены сегодняшней датой, без изменения старой записи, JSON и SQLite. Отмена дополнительно защищена от превышения лимита записей. Smoke ждёт реальный onboarding и отдельно обрабатывает подтверждённый системный ANR Pixel Launcher (не ANR приложения), сохраняет диагностику ошибок.
+
+
+## 0.29.0-beta.1 — проверка срока при исправлении
+
+При открытии календаря для исправления долга выбранный ранее срок возврата теперь используется как начальная дата; пустое или некорректное значение безопасно возвращается к сегодняшней дате. Emulator smoke additionally opens debt/payment operation details, checks remaining and current balances, and verifies correction and reversal projections without committing test changes. No schema, JSON, or financial transaction semantics changed.
