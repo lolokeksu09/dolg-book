@@ -9,12 +9,20 @@ class LedgerSnapshot(clients: List<LedgerStore.Client>, entries: List<LedgerStor
     val entries: List<LedgerStore.Entry> = Collections.unmodifiableList(ArrayList(entries))
 }
 
-/** Blocking data boundary. The future state holder must call it on a worker dispatcher. */
+/** Blocking data boundary. State holders call it on a worker dispatcher. */
 interface LedgerRepository {
     fun snapshot(): LedgerSnapshot
+    fun saveClient(command: ClientCommand)
 }
 
 /** Borrows the existing activity-owned store; does not open or close another connection. */
 class SqliteLedgerRepository(private val store: LedgerStore) : LedgerRepository {
     override fun snapshot(): LedgerSnapshot = store.readSnapshot()
+
+    override fun saveClient(command: ClientCommand) {
+        when (command) {
+            is ClientCommand.Create -> store.addCheckedDraftClient(command.id, command.name, command.phone, command.allowDuplicate)
+            is ClientCommand.Edit -> store.editClient(command.id, command.name, command.phone)
+        }
+    }
 }
