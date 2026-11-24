@@ -43,7 +43,7 @@ test('PDF export uses user-selected file and drafts clear after saving',()=>{
 
 test('tablet adaptation and bounded history belong to 0.5 beta',()=>{
   const activity=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
-  assert.ok(activity.includes('tabletClientsView()'));
+  assert.ok(activity.includes('tabletClientsView(data)'));
   assert.ok(activity.includes('screenWidthDp>=1100'));
   assert.ok(activity.includes('shown>=historyVisibleLimit'));
   assert.ok(activity.includes('shown>=detailVisibleLimit'));
