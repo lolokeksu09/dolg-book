@@ -599,6 +599,7 @@ tap_text 'Возврат долгов'
 sleep 0.4
 dump_ui
 grep -Fq 'План работы с непогашенными долгами' android/build/native-ui.xml
+adb exec-out screencap -p > android/build/native-collections.png
 tap_text 'Имя или телефон'
 adb shell input text DraftBuyer
 adb shell input keyevent 4

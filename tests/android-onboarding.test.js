@@ -51,7 +51,8 @@ test('native navigation and empty states are accessible, with actionable call-to
   assert.ok(activity.includes('private int navHeight(){return largeText?68:56;}'), 'navigation has compact and large-text heights');
   assert.ok(activity.includes('setSingleLine(true)'));
   assert.ok(activity.includes('setContentDescription(caption)'));
-  assert.ok(activity.includes('setSelected(destination.equals(tab))'));
+  assert.ok(activity.includes('item.setSelected(active)'));
+  assert.ok(activity.includes('tab.equals("Возврат")||tab.equals("Отчёт")'));
   assert.ok(activity.includes('emptyState('));
   assert.ok(activity.includes('Добавить первого клиента'));
   assert.ok(activity.includes('История пока пустая'));

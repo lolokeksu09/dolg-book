@@ -379,7 +379,6 @@ public final class MainActivity extends Activity {
         Runnable refresh=()->fillCollections(results,work);
         searchBox.addTextChangedListener(watcher(v->{collectionQuery=v;collectionLimit=60;refresh.run();}));
         refresh.run();
-        sectionLink(view,"","Финансовый отчёт",()->{tab="Отчёт";render();});
         return scroll(view);
     }
     private void fillCollections(LinearLayout into,List<CollectionWorklist.Item> work){
