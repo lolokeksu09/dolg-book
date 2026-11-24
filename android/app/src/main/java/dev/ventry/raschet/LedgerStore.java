@@ -25,7 +25,7 @@ import java.util.UUID;
 
 /** Device-only ledger. Never conflates the offline database with the server shop API. */
 public final class LedgerStore extends SQLiteOpenHelper {
-    public static final long MAX_AMOUNT = 100_000_000_000L;
+    public static final long MAX_AMOUNT = dev.ventry.raschet.domain.LedgerArithmetic.MAX_AMOUNT;
     private static final int MAX_CLIENTS = 10_000, MAX_ENTRIES = 100_000;
     public static final class Client {
         public final String id, name, phone;
@@ -316,13 +316,8 @@ public final class LedgerStore extends SQLiteOpenHelper {
 
     /** Same balance guard for correction preview and actual transaction. Zero is reversal only. */
     static long correctedBalance(long available,Entry last,long amount){
-        if(last==null||amount<0||amount>MAX_AMOUNT||(!"debt".equals(last.type)&&!"payment".equals(last.type)))
-            throw new IllegalArgumentException("Неверная операция.");
-        long withoutOld="debt".equals(last.type)?available-last.amount:available+last.amount;
-        if(withoutOld<0)throw new IllegalArgumentException("Этот долг уже погашался. Сначала исправьте последнюю оплату.");
-        long updated="debt".equals(last.type)?withoutOld+amount:withoutOld-amount;
-        if(updated<0||updated>MAX_AMOUNT)throw new IllegalArgumentException("Исправление создаёт переплату или превышение.");
-        return updated;
+        if(last==null)throw new IllegalArgumentException("Неверная операция.");
+        return dev.ventry.raschet.domain.LedgerArithmetic.correctedBalance(available,last.type,last.amount,amount);
     }
 
     private static ContentValues values(Entry entry) {
