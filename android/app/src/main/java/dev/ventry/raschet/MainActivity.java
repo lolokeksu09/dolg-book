@@ -69,6 +69,7 @@ public final class MainActivity extends Activity {
     private static final int[] ICONS={R.drawable.ic_nav_home,R.drawable.ic_nav_people,R.drawable.ic_nav_history,R.drawable.ic_nav_settings};
     private final DateTimeFormatter dayFormat=DateTimeFormatter.ofPattern("d MMM yyyy",new Locale("ru","RU"));
     private LedgerStore ledger;
+    private dev.ventry.raschet.data.LedgerRepository repository;
     private RecoveryVault vault;
     private ClientDirectory directory;
     private BookPrivacy privacy;
@@ -113,6 +114,7 @@ public final class MainActivity extends Activity {
         getWindow().setNavigationBarColor(BG);
         getWindow().getDecorView().setSystemUiVisibility(0);
         ledger=new LedgerStore(this);
+        repository=new dev.ventry.raschet.data.SqliteLedgerRepository(ledger);
         vault=new RecoveryVault(this);
         directory=new ClientDirectory(this);
         privacy=new BookPrivacy(this);
@@ -297,8 +299,9 @@ public final class MainActivity extends Activity {
     }
     private View homeView() {
         LinearLayout view=screen("Долговая книга","Сегодня · "+dayFormat.format(LocalDate.now()));
-        List<LedgerStore.Client> customers=ledger.clients();
-        List<LedgerStore.Entry> entries=ledger.entries();
+        dev.ventry.raschet.data.LedgerSnapshot snapshot=repository.snapshot();
+        List<LedgerStore.Client> customers=snapshot.getClients();
+        List<LedgerStore.Entry> entries=snapshot.getEntries();
         List<CollectionsInsights.CustomerStatus> statuses=
                 CollectionsInsights.analyze(customers,entries,LocalDate.now());
         long debt=0;
@@ -364,9 +367,10 @@ public final class MainActivity extends Activity {
     }
     private View collectionView(){
         LinearLayout view=screen("Возврат долгов","План работы с непогашенными долгами");
-        List<LedgerStore.Entry> entries=ledger.entries();
+        dev.ventry.raschet.data.LedgerSnapshot snapshot=repository.snapshot();
+        List<LedgerStore.Entry> entries=snapshot.getEntries();
         LocalDate today=LocalDate.now();
-        List<CollectionsInsights.CustomerStatus> statuses=CollectionsInsights.analyze(ledger.clients(),entries,today);
+        List<CollectionsInsights.CustomerStatus> statuses=CollectionsInsights.analyze(snapshot.getClients(),entries,today);
         Map<String,PaymentPromises.Progress> promises=PaymentPromises.project(statuses,directory,entries,today,ZoneId.systemDefault());
         List<CollectionWorklist.Item> work=CollectionWorklist.build(statuses,directory,today,promises);
         long overdue=0,upcoming=0,balance=0;
@@ -660,8 +664,9 @@ public final class MainActivity extends Activity {
                 (clientsRecentFirst?" · недавние":clientsAmountFirst?" · по остатку":" · по имени"),MUTED,this::showClientFilters);
         LinearLayout results=stack(0);view.addView(results);
         // Build due/balance projections once per render, not on every typed character.
+        dev.ventry.raschet.data.LedgerSnapshot snapshot=repository.snapshot();
         List<CollectionsInsights.CustomerStatus> cached=
-                CollectionsInsights.analyze(ledger.clients(),ledger.entries(),LocalDate.now());
+                CollectionsInsights.analyze(snapshot.getClients(),snapshot.getEntries(),LocalDate.now());
         Runnable fill=()->fillClients(results,cached);
         searchInput.addTextChangedListener(watcher(value->{search=value;clientVisibleLimit=60;fill.run();}));
         fill.run();
