@@ -1,0 +1,30 @@
+# case|label|from|to|opening|closing|debts|payments|debt reversals|payment reversals|count|customers
+# row|id|client|kind|amount|day|reverses
+# daily|day|debts|payments|debt reversals|payment reversals|count
+case|period|20001|20004|10000|9000|6000|5000|6000|4000|5|2
+row|1|a|debt|10000|20000|
+row|2|a|payment|4000|20001|
+row|3|b|debt|6000|20002|
+row|4|b|reversal|6000|20003|3
+row|5|a|reversal|4000|20004|2
+row|6|a|payment|1000|20004|
+row|7|c|debt|5000|20005|
+daily|20001|0|4000|0|0|1
+daily|20002|6000|0|0|0|1
+daily|20003|0|0|6000|0|1
+daily|20004|0|1000|0|4000|2
+case|empty|20001|20001|0|0|0|0|0|0|0|0
+case|backdated-insertion|20001|20002|2000|5000|4000|1000|0|0|2|1
+row|1|a|debt|4000|20002|
+row|2|a|debt|2000|20000|
+row|3|a|payment|1000|20001|
+daily|20001|0|1000|0|0|1
+daily|20002|4000|0|0|0|1
+case|inclusive-366-days|20000|20365|0|100|100|0|0|0|1|1
+row|1|a|debt|100|20365|
+row|2|b|debt|200|20366|
+daily|20365|100|0|0|0|1
+case|reversal-at-boundary|20001|20001|100|0|0|0|100|0|1|1
+row|1|a|debt|100|20000|
+row|2|a|reversal|100|20001|1
+daily|20001|0|0|100|0|1
