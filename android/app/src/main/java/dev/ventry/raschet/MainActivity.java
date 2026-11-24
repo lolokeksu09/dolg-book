@@ -1484,13 +1484,23 @@ public final class MainActivity extends Activity {
         scroll.setFillViewport(true);
         scroll.setVerticalScrollBarEnabled(false);
         scroll.setClipToPadding(false);
-        LinearLayout center=stack(0);
+        // Constrain to the actual viewport, including tablet panes and dialogs.
+        // The full display width is not the available width of an individual pane.
+        LinearLayout center=new LinearLayout(this){
+            @Override protected void onMeasure(int widthMeasureSpec,int heightMeasureSpec){
+                if(getChildCount()>0){
+                    View child=getChildAt(0);
+                    LinearLayout.LayoutParams params=(LinearLayout.LayoutParams)child.getLayoutParams();
+                    int width=View.MeasureSpec.getSize(widthMeasureSpec);
+                    params.width=View.MeasureSpec.getMode(widthMeasureSpec)==View.MeasureSpec.UNSPECIFIED
+                            ? -1 : Math.min(width,dp(800));
+                }
+                super.onMeasure(widthMeasureSpec,heightMeasureSpec);
+            }
+        };
+        center.setOrientation(LinearLayout.VERTICAL);
         center.setGravity(Gravity.CENTER_HORIZONTAL);
-        LinearLayout.LayoutParams constraint=new LinearLayout.LayoutParams(-1,-2);
-        if(getResources().getConfiguration().screenWidthDp>960){
-            constraint.width=dp(800);
-        }
-        center.addView(content,constraint);
+        center.addView(content,new LinearLayout.LayoutParams(-1,-2));
         scroll.addView(center);
         return scroll;
     }

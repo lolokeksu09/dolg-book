@@ -185,10 +185,13 @@ sleep 0.4
 fill_form_input 0 400
 dump_ui
 grep -Fq 'Остаток после записи: 800,00' android/build/native-ui.xml
+adb exec-out screencap -p > android/build/native-payment-projection.png
 tap_text 'Сохранить'
 sleep 0.5
 dump_ui
 grep -Fq '800,00' android/build/native-ui.xml
+grep -Fq 'История клиента' android/build/native-ui.xml
+adb exec-out screencap -p > android/build/native-client-compact.png
 tap_text 'Ещё действия'
 sleep 0.3
 tap_text 'Погасить весь остаток'

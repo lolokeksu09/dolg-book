@@ -16,7 +16,7 @@ test('collections insight model is derived from active entries with oldest-first
 
 test('customer filters, full repayment form and explicit Android sharing are wired',()=>{
   const activity=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
-  for(const text of ['Контроль долгов','Просроченных долгов нет','Нет ближайших сроков',
+  for(const text of ['Просроченные долги','Просроченных долгов нет','Нет ближайших сроков',
     'Погасить весь остаток','Поделиться сводкой','Сортировка: по остатку ↓']){
     assert.ok(activity.includes(text),'Missing customer workflow: '+text);
   }
@@ -35,4 +35,12 @@ test('book exports stay local and preserve entries',()=>{
   assert.ok(store.includes('raschet-ledger.db'));
   assert.ok(store.includes('return root.put("clients",cs).put("entries",es).toString(2)'));
   assert.ok(!manifest.includes('android.permission.INTERNET'));
+});
+
+test('near-term debt totals are not presented as entirely due on the earliest date',()=>{
+  const activity=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
+  assert.ok(activity.includes('Ближайший срок: '));
+  assert.ok(activity.includes('за 7 дней: '));
+  assert.ok(!activity.includes('К возврату до "+status.nextDue'));
+  assert.ok(activity.includes('openClientFilter(CollectionsInsights.SOON)'));
 });
