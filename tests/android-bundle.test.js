@@ -303,7 +303,9 @@ test('backdated receipts validate historical balances and reopen the actual rece
  assert.ok(ui.includes('"+ Оплата за этот день"'));
  assert.ok(ui.includes('operationId[0],entryDay[0]'));
  assert.ok(store.includes('amount>DatedPayments.maximum('));
- assert.ok(model.includes('minimum=Math.min(minimum,running)'));
+ assert.ok(model.includes('DatedLedger.maximum(entries,id,day,today,zone)'));
+ const kotlin=read('android/app/src/main/kotlin/dev/ventry/raschet/domain/DatedLedger.kt');
+ assert.ok(kotlin.includes('minimum = minOf(minimum, running)'));
 });
 
 
