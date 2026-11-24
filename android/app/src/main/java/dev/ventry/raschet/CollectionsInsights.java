@@ -20,6 +20,7 @@ public final class CollectionsInsights {
 
     public static final String ALL = "Все";
     public static final String OWING = "С долгом";
+    public static final String CLEAR = "Без долга";
     public static final String LATE = "Просрочка";
     public static final String SOON = "Срок скоро";
 
@@ -27,9 +28,15 @@ public final class CollectionsInsights {
         public final LedgerStore.Client client;
         public final long balance, overdue, upcoming;
         public final LocalDate nextDue;
+        final int lastOperationIndex;
 
         CustomerStatus(LedgerStore.Client client, long balance, long overdue,
                 long upcoming, LocalDate nextDue) {
+            this(client,balance,overdue,upcoming,nextDue,-1);
+        }
+        CustomerStatus(LedgerStore.Client client, long balance, long overdue,
+                long upcoming, LocalDate nextDue,int lastOperationIndex) {
+            this.lastOperationIndex=lastOperationIndex;
             this.client = client;
             this.balance = balance;
             this.overdue = overdue;
@@ -42,7 +49,10 @@ public final class CollectionsInsights {
             List<LedgerStore.Entry> entries, LocalDate today) {
         Set<String> reversed = LedgerStore.canceled(entries);
         Map<String, List<LedgerStore.Entry>> active = new HashMap<>();
-        for (LedgerStore.Entry entry : entries) {
+        Map<String,Integer> latest=new HashMap<>();
+        for(int i=0;i<entries.size();i++){
+            LedgerStore.Entry entry=entries.get(i);
+            latest.put(entry.clientId,i);
             if ("reversal".equals(entry.type) || reversed.contains(entry.id)) continue;
             active.computeIfAbsent(entry.clientId, ignored -> new ArrayList<>()).add(entry);
         }
@@ -71,22 +81,25 @@ public final class CollectionsInsights {
                     if (next == null || due.isBefore(next)) next = due;
                 }
             }
-            output.add(new CustomerStatus(client, balance, overdue, upcoming, next));
+            output.add(new CustomerStatus(client, balance, overdue, upcoming, next,latest.getOrDefault(client.id,-1)));
         }
         return output;
     }
 
     public static List<CustomerStatus> visible(List<CustomerStatus> statuses,
             String filter, boolean amountFirst, String search) {
+        return visible(statuses,filter,amountFirst,false,search);
+    }
+    public static List<CustomerStatus> visible(List<CustomerStatus> statuses,
+            String filter,boolean amountFirst,boolean recentFirst,String search) {
         String needle=normalize(search);
-        String digits=needle.replaceAll("[^0-9]","");
-        boolean phoneQuery=!digits.isEmpty()&&needle.matches("[0-9+() .\\-]+");
         List<CustomerStatus> results = new ArrayList<>();
         for (CustomerStatus status : statuses) {
             if (OWING.equals(filter) && status.balance == 0) continue;
+            if (CLEAR.equals(filter) && status.balance != 0) continue;
             if (LATE.equals(filter) && status.overdue == 0) continue;
             if (SOON.equals(filter) && status.upcoming == 0) continue;
-            boolean phoneMatch=phoneQuery&&status.client.phone.replaceAll("[^0-9]","").contains(digits);
+            boolean phoneMatch=ClientSearch.phoneMatches(status.client.phone,needle);
             if (!needle.isEmpty()&&!normalize(status.client.name).contains(needle)
                     &&!normalize(status.client.phone).contains(needle)&&!phoneMatch)continue;
             results.add(status);
@@ -94,7 +107,8 @@ public final class CollectionsInsights {
         Comparator<CustomerStatus> names = Comparator
                 .comparing((CustomerStatus item) -> item.client.name,
                         String.CASE_INSENSITIVE_ORDER).thenComparing(item -> item.client.id);
-        if (amountFirst) results.sort(
+        if(recentFirst)results.sort(Comparator.comparingInt((CustomerStatus item)->item.lastOperationIndex).reversed().thenComparing(names));
+        else if (amountFirst) results.sort(
                 Comparator.comparingLong((CustomerStatus item) -> item.balance)
                         .reversed().thenComparing(names));
         else results.sort(names);

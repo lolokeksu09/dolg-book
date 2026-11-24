@@ -87,7 +87,7 @@ public final class MainActivity extends Activity {
     private boolean returnToCollections;
     private String historyClientId=null;
     private String clientFilter=CollectionsInsights.ALL;
-    private boolean clientsAmountFirst;
+    private boolean clientsAmountFirst,clientsRecentFirst;
     private String shopName="Мой магазин";
     private boolean pendingExport, pendingExportCsv;
     private String pendingPdfClientId;
@@ -128,6 +128,7 @@ public final class MainActivity extends Activity {
             clientVisibleLimit=state.getInt("client_visible_limit",60);
             authInFlight=state.getBoolean("auth_in_flight",false);
             clientsAmountFirst=state.getBoolean("clients_amount_first",false);
+            clientsRecentFirst=state.getBoolean("clients_recent_first",false);
             historyVisibleLimit=state.getInt("history_visible_limit",100);
             collectionQuery=state.getString("collection_query","");collectionUrgent=state.getBoolean("collection_urgent",false);
             collectionLimit=state.getInt("collection_limit",60);returnToCollections=state.getBoolean("return_to_collections",false);
@@ -165,6 +166,7 @@ public final class MainActivity extends Activity {
         out.putInt("client_visible_limit",clientVisibleLimit);
         out.putBoolean("auth_in_flight",authInFlight);
         out.putBoolean("clients_amount_first",clientsAmountFirst);
+        out.putBoolean("clients_recent_first",clientsRecentFirst);
         out.putInt("history_visible_limit",historyVisibleLimit);
         out.putString("collection_query",collectionQuery);out.putBoolean("collection_urgent",collectionUrgent);
         out.putInt("collection_limit",collectionLimit);out.putBoolean("return_to_collections",returnToCollections);
@@ -655,7 +657,7 @@ public final class MainActivity extends Activity {
             view.addView(searchInput,margin(-1,dp(controlHeight()),6));
         }
         metricRow(view,"Фильтры клиентов",clientScope+" · "+clientFilter+
-                (clientsAmountFirst?" · по остатку":" · по имени"),MUTED,this::showClientFilters);
+                (clientsRecentFirst?" · недавние":clientsAmountFirst?" · по остатку":" · по имени"),MUTED,this::showClientFilters);
         LinearLayout results=stack(0);view.addView(results);
         // Build due/balance projections once per render, not on every typed character.
         List<CollectionsInsights.CustomerStatus> cached=
@@ -673,17 +675,28 @@ public final class MainActivity extends Activity {
                 clientScope=scope;clientFilter=CollectionsInsights.ALL;clientVisibleLimit=60;render();
             });
         section(menu,"Долги","");
-        for(String choice:new String[]{CollectionsInsights.ALL,CollectionsInsights.OWING,CollectionsInsights.LATE,CollectionsInsights.SOON})
+        for(String choice:new String[]{CollectionsInsights.ALL,CollectionsInsights.OWING,CollectionsInsights.CLEAR,CollectionsInsights.LATE,CollectionsInsights.SOON})
             filterMenuAction(menu,choice,choice.equals(clientFilter),()->{clientFilter=choice;clientVisibleLimit=60;render();});
         section(menu,"Сортировка","");
-        filterMenuAction(menu,"Сортировка: по имени",!clientsAmountFirst,()->{clientsAmountFirst=false;render();});
-        filterMenuAction(menu,"Сортировка: по остатку ↓",clientsAmountFirst,()->{clientsAmountFirst=true;render();});
+        filterMenuAction(menu,"Сортировка: по имени",!clientsAmountFirst&&!clientsRecentFirst,()->{clientsAmountFirst=false;clientsRecentFirst=false;clientVisibleLimit=60;render();});
+        filterMenuAction(menu,"Сортировка: по остатку ↓",clientsAmountFirst&&!clientsRecentFirst,()->{clientsAmountFirst=true;clientsRecentFirst=false;clientVisibleLimit=60;render();});
+        filterMenuAction(menu,"Сортировка: последние операции",clientsRecentFirst,()->{clientsAmountFirst=false;clientsRecentFirst=true;clientVisibleLimit=60;render();});
         showDialog("Фильтры клиентов",menu,null);
     }
     private void fillClients(LinearLayout rows,List<CollectionsInsights.CustomerStatus> cached) {
         rows.removeAllViews();
+        List<CollectionsInsights.CustomerStatus> scoped=directory.select(cached,clientScope);
         List<CollectionsInsights.CustomerStatus> visible=CollectionsInsights.visible(
-                directory.select(cached,clientScope),clientFilter,clientsAmountFirst,search);
+                scoped,clientFilter,clientsAmountFirst,clientsRecentFirst,search);
+        if(!visible.isEmpty()){
+            long total=0L;
+            for(CollectionsInsights.CustomerStatus item:visible)total+=item.balance;
+            LinearLayout summary=row();summary.setGravity(Gravity.CENTER_VERTICAL);
+            summary.setPadding(dp(4),dp(4),dp(4),dp(4));
+            summary.addView(label("Клиентов: "+visible.size(),12,MUTED,false),new LinearLayout.LayoutParams(0,-2,1));
+            TextView sum=label("Долг: "+money(total),13,TEXT,true);sum.setGravity(Gravity.END);
+            summary.addView(sum,new LinearLayout.LayoutParams(-2,-2));rows.addView(summary);addListDivider(rows);
+        }
         int shown=0;
         for(CollectionsInsights.CustomerStatus status:visible){
             if(shown++>=clientVisibleLimit)break;
@@ -725,7 +738,7 @@ public final class MainActivity extends Activity {
             clientVisibleLimit+=60;fillClients(rows,cached);
         },1);
         if(visible.isEmpty()){
-            if(!ClientDirectory.ACTIVE.equals(clientScope)&&search.trim().isEmpty())
+            if(scoped.isEmpty()&&!ClientDirectory.ACTIVE.equals(clientScope)&&search.trim().isEmpty())
                 rows.addView(emptyState(R.drawable.ic_nav_people,
                     ClientDirectory.ARCHIVE.equals(clientScope)?"Архив пуст":"Нет избранных клиентов",
                     "Управляйте списками из карточки клиента.","Рабочие клиенты",
@@ -736,6 +749,9 @@ public final class MainActivity extends Activity {
             else if(!search.trim().isEmpty())rows.addView(emptyState(R.drawable.ic_nav_people,
                     "Никого не нашли","Попробуйте другое имя или номер телефона.",
                     "Очистить поиск",()->{search="";render();}));
+            else if(clientFilter.equals(CollectionsInsights.CLEAR))rows.addView(emptyState(
+                    R.drawable.ic_nav_people,"Нет клиентов без долга",
+                    "Здесь будут клиенты с нулевым остатком.","Показать всех",()->{clientFilter=CollectionsInsights.ALL;clientVisibleLimit=60;render();}));
             else if(clientFilter.equals(CollectionsInsights.LATE))rows.addView(emptyState(
                     R.drawable.ic_nav_history,"Просроченных долгов нет",
                     "Просрочка появится здесь, если срок возврата прошёл и долг не погашен.",

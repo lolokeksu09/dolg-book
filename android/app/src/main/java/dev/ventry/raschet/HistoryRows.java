@@ -14,8 +14,6 @@ final class HistoryRows {
     static List<LedgerStore.Entry> select(List<LedgerStore.Entry> entries,Map<String,LedgerStore.Client> people,
             String clientId,String query,LocalDate from,LocalDate to,String type,ZoneId zone){
         String needle=normalize(query);
-        String digits=needle.replaceAll("[^0-9]","");
-        boolean phoneQuery=!digits.isEmpty()&&needle.matches("[+0-9() .\\-]+");
         List<LedgerStore.Entry> result=new ArrayList<>();
         for(int i=entries.size()-1;i>=0;i--){
             LedgerStore.Entry e=entries.get(i);
@@ -26,7 +24,7 @@ final class HistoryRows {
             if(from!=null&&date.isBefore(from)||to!=null&&date.isAfter(to))continue;
             LedgerStore.Client c=people.get(e.clientId);
             boolean contact=c!=null&&(normalize(c.name).contains(needle)||normalize(c.phone).contains(needle)
-                    ||phoneQuery&&c.phone.replaceAll("[^0-9]","").contains(digits));
+                    ||ClientSearch.phoneMatches(c.phone,needle));
             if(!needle.isEmpty()&&!contact&&!normalize(e.note).contains(needle))continue;
             result.add(e);
         }

@@ -63,8 +63,6 @@ final class BookDays {
     static List<Day> select(List<Day> days,Map<String,LedgerStore.Client> clients,
             LocalDate from,LocalDate to,String query,boolean onlyUnpaid){
         String needle=normalize(query);
-        String digits=needle.replaceAll("[^0-9]","");
-        boolean phoneQuery=!digits.isEmpty()&&needle.matches("[0-9+() .\\-]+");
         List<Day> result=new ArrayList<>();
         for(Day source:days){
             if(from!=null&&source.date.isBefore(from)||to!=null&&source.date.isAfter(to))continue;
@@ -75,7 +73,7 @@ final class BookDays {
                 LedgerStore.Client c=clients.get(e.clientId);
                 if(!needle.isEmpty()&&(c==null||!normalize(c.name).contains(needle)
                         &&!normalize(c.phone).contains(needle)
-                        &&!(phoneQuery&&c.phone.replaceAll("[^0-9]","").contains(digits))))continue;
+                        &&!ClientSearch.phoneMatches(c.phone,needle)))continue;
                 visible.add(e,source.canceled.contains(e.id),rest);
             }
             if(!visible.entries.isEmpty())result.add(visible);

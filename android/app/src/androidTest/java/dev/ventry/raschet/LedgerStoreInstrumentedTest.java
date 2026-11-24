@@ -394,6 +394,31 @@ public class LedgerStoreInstrumentedTest {
         assertEquals(Long.valueOf(20000L),statement.remaining.get(second));
     }
 
+    @Test public void directoryFiltersRecentOperationsAndMatchesRussianPhonePrefixes() throws Exception {
+        LocalDate today=LocalDate.now();
+        String alice=book.recordDatedDebt(null,"Али","8 (999) 123-45-67",10000L,today,"","");
+        String zara=book.recordDatedDebt(null,"Зара","+7 900 222-33-44",20000L,today.minusDays(2),"","");
+        book.addClient("Без операций","");
+        book.addEntry(alice,"payment",10000L,"","");
+        List<CollectionsInsights.CustomerStatus> statuses=CollectionsInsights.analyze(book.clients(),book.entries(),today);
+        List<CollectionsInsights.CustomerStatus> recent=CollectionsInsights.visible(statuses,CollectionsInsights.ALL,false,true,"");
+        assertEquals(alice,recent.get(0).client.id);assertEquals(zara,recent.get(1).client.id);
+        assertEquals("Без операций",recent.get(2).client.name);
+        assertEquals(2,CollectionsInsights.visible(statuses,CollectionsInsights.CLEAR,false,"").size());
+        assertEquals(zara,CollectionsInsights.visible(statuses,CollectionsInsights.OWING,false,"").get(0).client.id);
+        assertEquals(alice,CollectionsInsights.visible(statuses,CollectionsInsights.ALL,false,"+7 999 1234567").get(0).client.id);
+        assertTrue(ClientSearch.phoneMatches("+7 900 222-33-44","8 900 2223344"));
+        assertFalse(ClientSearch.phoneMatches("+1 900 222-33-44","8 900 2223344"));
+        assertFalse(ClientSearch.phoneMatches("","999"));
+        assertFalse(ClientSearch.phoneMatches("8 999 1234567","Али999"));
+        java.util.Map<String,LedgerStore.Client> people=new java.util.HashMap<>();
+        for(LedgerStore.Client c:book.clients())people.put(c.id,c);
+        java.time.ZoneId zone=java.time.ZoneId.systemDefault();
+        List<BookDays.Day> days=BookDays.select(BookDays.group(book.entries(),zone),people,null,null,"+79991234567",false);
+        assertEquals(1,days.size());assertEquals(alice,days.get(0).entries.get(0).clientId);
+        assertEquals(2,HistoryRows.select(book.entries(),people,null,"+79991234567",null,null,"Все",zone).size());
+    }
+
     @Test public void datedReceiptRejectsHistoricalOverpaymentAndUsesActualDay() throws Exception {
         LocalDate today=LocalDate.now(), day=today.minusDays(3);
         java.time.ZoneId zone=java.time.ZoneId.systemDefault();

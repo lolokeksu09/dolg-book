@@ -10,7 +10,7 @@ test('Android UI is native and does not contain web UI runtime',()=>{
   const gradle=read('android/app/build.gradle.kts');
   const activity=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
   const manifest=read('android/app/src/main/AndroidManifest.xml');
-  assert.ok(gradle.includes('versionName = "0.26.0-beta.1"'));
+  assert.ok(gradle.includes('versionName = "0.27.0-beta.1"'));
   assert.ok(gradle.includes('applicationIdSuffix = ".nativev031"'));
   assert.ok(!gradle.includes('webkit')&&!gradle.includes('syncOfflineBook'));
   assert.ok(!gradle.includes('index.html')&&!gradle.includes('app.js'));
@@ -304,4 +304,16 @@ test('backdated receipts validate historical balances and reopen the actual rece
  assert.ok(ui.includes('operationId[0],entryDay[0]'));
  assert.ok(store.includes('amount>DatedPayments.maximum('));
  assert.ok(model.includes('minimum=Math.min(minimum,running)'));
+});
+
+
+test('client directory supports cleared balances and recent insertion order without changing financial data',()=>{
+ const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
+ const model=read('android/app/src/main/java/dev/ventry/raschet/CollectionsInsights.java');
+ const search=read('android/app/src/main/java/dev/ventry/raschet/ClientSearch.java');
+ assert.ok(ui.includes('Сортировка: последние операции'));
+ assert.ok(ui.includes('Клиентов: "+visible.size()'));
+ assert.ok(model.includes('CLEAR.equals(filter) && status.balance != 0'));
+ assert.ok(model.includes('item.lastOperationIndex'));
+ assert.ok(search.includes('wanted.substring(1).equals(actual.substring(1))'));
 });
