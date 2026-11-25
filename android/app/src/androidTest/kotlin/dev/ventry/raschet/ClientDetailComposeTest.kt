@@ -3,6 +3,8 @@ package dev.ventry.raschet
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performClick
 import androidx.test.platform.app.InstrumentationRegistry
 import dev.ventry.raschet.data.LedgerSnapshot
@@ -42,7 +44,7 @@ class ClientDetailComposeTest {
             assertEquals(2, all.historyCount)
             val unpaid = checkNotNull(detailProjection(snapshot, client.id, ClientStatement.UNPAID, directory, drafts, ZoneOffset.UTC))
             assertEquals(listOf("debt"), unpaid.rows.map { it.entry.id })
-            assertEquals(7000L, unpaid.rows.single().remaining)
+            assertEquals(7000L, checkNotNull(unpaid.rows.single().remaining))
             assertNull(detailProjection(snapshot, "missing", ClientStatement.ALL, directory, drafts, ZoneOffset.UTC))
             assertNotNull(all.notices.find { it.text.startsWith("Лимит:") })
             val paymentCalls = AtomicInteger()
@@ -57,6 +59,7 @@ class ClientDetailComposeTest {
             compose.onNodeWithText("Остаток долга").assertExists()
             compose.onNodeWithText("Оплата").performClick()
             assertEquals(1, paymentCalls.get())
+            compose.onNodeWithTag("client-detail-list").performScrollToIndex(4)
             compose.onNodeWithContentDescription("Запись · 100,00 ₽").performClick()
             assertEquals("debt", opened.get())
         } finally {
