@@ -62,7 +62,7 @@ test('native navigation and empty states are accessible, with actionable call-to
   assert.ok(history.includes('История пока пустая'));
   assert.ok(history.includes('Добавить первого клиента'));
   assert.ok(book.includes('Записать долг'));
-  assert.ok(settings.includes('Switch(checked = checked, onCheckedChange = null)'));
+  assert.match(settings, /Switch\(checked\s*=\s*checked,\s*onCheckedChange\s*=\s*null\s*[,)]/);
   assert.ok(settings.includes('role = Role.Switch'));
   assert.ok(activity.includes('return SettingsCompose.create(this,state,actions)'));
   assert.ok(activity.includes('EXTRA_FIRST_START'));
