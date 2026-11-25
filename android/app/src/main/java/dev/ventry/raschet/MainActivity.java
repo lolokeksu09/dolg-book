@@ -931,15 +931,38 @@ public final class MainActivity extends ComponentActivity {
         EditText name=field("Имя покупателя",previous==null?null:previous.name);
         EditText phone=field("Телефон (необязательно)",previous==null?null:previous.phone);phone.setInputType(InputType.TYPE_CLASS_PHONE);
         EditText amount=field("0,00",previous==null?null:previous.amount);amount.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        name.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_NEXT);
+        amount.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_DONE);
+        amount.setTextSize(largeText?28:25);
+        amount.setMinHeight(dp(60));
         form.addView(formGroup("Имя покупателя",name));
-        form.addView(formGroup("Телефон (необязательно)",phone));
         LinearLayout matches=stack(2);form.addView(matches);
         form.addView(formGroup(fromClients?"Сумма долга, ₽ (необязательно)":"Сумма долга, ₽",amount));
+        TextView projected=label("",14,MUTED,false);
+        projected.setVisibility(View.GONE);
+        projected.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
+        form.addView(projected);
         LimitNotice notice=new LimitNotice(form);
         if(fromClients)form.addView(label("Без суммы сохраняется только клиент.",12,MUTED,false));
         LocalDate[] day={initialDay};
         TextView date=debtDateField(day);
         form.addView(formGroup("Дата записи",date));
+        LinearLayout phoneGroup=formGroup("Телефон (необязательно)",phone);
+        phoneGroup.setVisibility(phone.length()>0?View.VISIBLE:View.GONE);
+        LinearLayout phoneAction=stack(0);
+        addButton(phoneAction,phone.length()>0?"Скрыть телефон":"Добавить телефон",false,()->{
+            boolean open=phoneGroup.getVisibility()!=View.VISIBLE;
+            phoneGroup.setVisibility(open?View.VISIBLE:View.GONE);
+            TextView button=(TextView)phoneAction.getChildAt(0);
+            String title=open?"Скрыть телефон":phone.length()>0?"Показать телефон":"Добавить телефон";
+            button.setText(title);button.setContentDescription(title);
+            if(open)phone.requestFocus();
+        },1);
+        form.addView(phoneAction);form.addView(phoneGroup);
+        name.setOnEditorActionListener((v,action,event)->{
+            if(action!=android.view.inputmethod.EditorInfo.IME_ACTION_NEXT)return false;
+            amount.requestFocus();return true;
+        });
         LinearLayout extra=stack(5);
         EditText due=field("Без срока",previous==null?null:previous.due);due.setFocusable(false);due.setClickable(true);
         due.setOnClickListener(v->{
@@ -978,16 +1001,45 @@ public final class MainActivity extends ComponentActivity {
                     day[0],due.getText().toString(),note.getText().toString());
             if(value.isEmpty())drafts.clear();else drafts.save(value);
         };
-        Runnable refreshLimit=()->notice.update(selected[0],selected[0]==null?0L:balances.getOrDefault(selected[0],0L),previewAmount(amount));
+        Runnable refreshLimit=()->{
+            long current=selected[0]==null?0L:balances.getOrDefault(selected[0],0L);
+            long addition=previewAmount(amount);
+            notice.update(selected[0],current,addition);
+            projected.setVisibility(addition>0?View.VISIBLE:View.GONE);
+            if(addition>0){
+                long next=current+addition;
+                projected.setText(next>LedgerStore.MAX_AMOUNT?"Превышен максимальный остаток":
+                        (selected[0]==null?"Сумма новой записи: ":"Остаток после записи: ")+money(next));
+                projected.setTextColor(next>LedgerStore.MAX_AMOUNT?RED:ACCENT);
+            }
+        };
         amount.addTextChangedListener(watcher(v->refreshLimit.run()));
         java.util.function.Consumer<LedgerStore.Client> choose=customer->{
             updating[0]=true;selected[0]=customer.id;
             name.setText(customer.name);phone.setText(customer.phone);updating[0]=false;
+            if(phoneGroup.getVisibility()!=View.VISIBLE){
+                TextView button=(TextView)phoneAction.getChildAt(0);
+                String title=phone.length()>0?"Показать телефон":"Добавить телефон";
+                button.setText(title);button.setContentDescription(title);
+            }
+            amount.requestFocus();amount.selectAll();
             matches.removeAllViews();
             matches.addView(label("Выбран существующий клиент · "+money(balances.getOrDefault(customer.id,0L)),12,ACCENT,true));
             addRecentAmount(matches,amount,lastAmounts.getOrDefault(customer.id,0L));
             refreshLimit.run();persist.run();
         };
+        Map<String,LedgerStore.Client> customersById=new HashMap<>();
+        Map<String,String> searchNames=new HashMap<>();
+        for(LedgerStore.Client customer:customers){
+            customersById.put(customer.id,customer);
+            searchNames.put(customer.id,customer.name.toLowerCase(new Locale("ru","RU")));
+        }
+        List<LedgerStore.Client> recent=new ArrayList<>();
+        for(String id:lastAmounts.keySet()){
+            LedgerStore.Client customer=customersById.get(id);
+            if(customer!=null&&!directory.archived(id,balances.getOrDefault(id,0L)))recent.add(customer);
+            if(recent.size()>=3)break;
+        }
         Runnable refresh=()->{
             refreshLimit.run();matches.removeAllViews();
             if(selected[0]!=null){
@@ -998,15 +1050,7 @@ public final class MainActivity extends ComponentActivity {
             String digits=phone.getText().toString().replaceAll("[^0-9]","");
             if(query.isEmpty()&&digits.length()<3){
                 if(!digits.isEmpty())return;
-                List<LedgerStore.Client> recent=new ArrayList<>();
-                Map<String,LedgerStore.Client> byId=new HashMap<>();
-                for(LedgerStore.Client customer:customers)byId.put(customer.id,customer);
-                for(String id:lastAmounts.keySet()){
-                    LedgerStore.Client customer=byId.get(id);
-                    if(customer!=null&&!directory.archived(id,balances.getOrDefault(id,0L)))recent.add(customer);
-                    if(recent.size()>=3)break;
-                }
-                if(!recent.isEmpty())addButton(matches,"Недавние клиенты",false,()->{
+                 if(!recent.isEmpty())addButton(matches,"Недавние клиенты",false,()->{
                     matches.removeAllViews();
                     for(LedgerStore.Client customer:recent)
                         actionRow(matches,"›",customer.name,money(balances.getOrDefault(customer.id,0L)),()->choose.accept(customer));
@@ -1015,7 +1059,7 @@ public final class MainActivity extends ComponentActivity {
             }
             int count=0;
             for(LedgerStore.Client customer:customers){
-                String n=customer.name.toLowerCase(new Locale("ru","RU"));
+                String n=searchNames.get(customer.id);
                 if(!(!query.isEmpty()&&n.contains(query))&&!(digits.length()>=3&&ClientSearch.phoneMatches(customer.phone,digits)))continue;
                 if(count++>=5)break;
                 boolean archived=directory.archived(customer.id,balances.getOrDefault(customer.id,0L));
