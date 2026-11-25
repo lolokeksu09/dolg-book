@@ -169,18 +169,40 @@ internal fun BookContent(model: BookUiModel, payments: Boolean, hasFilter: Boole
     var calendar by remember { mutableStateOf(initialCalendar) }
     var selectedDay by remember { mutableStateOf(initialCalendarDay ?: if (hasFilter) model.days.firstOrNull()?.date ?: model.today else model.today) }
     var month by remember { mutableStateOf(YearMonth.from(selectedDay)) }
-    val byDate = remember(model.days, calendar) { if (calendar) model.days.associateBy { it.date } else emptyMap() }
+    var monthGrid by remember { mutableStateOf(false) }
+    val byDate = remember(model.days) { model.days.associateBy { it.date } }
+    fun selectDate(date: LocalDate) {
+        selectedDay = date; month = YearMonth.from(date); calendar = true
+        onCalendar(true, date)
+    }
     val visibleDays = if (calendar) listOfNotNull(byDate[selectedDay]) else model.days.take(limit)
     BoxWithConstraints(Modifier.fillMaxSize().background(ledgerBg), contentAlignment = Alignment.TopCenter) {
         val stacked = maxWidth < 365.dp || LocalDensity.current.fontScale > 1.2f || largeText
         LazyColumn(Modifier.widthIn(max = 800.dp).fillMaxSize().testTag("book-list"),
-            contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             item("title") {
-                Text("Долговая книга", color = ledgerText, fontWeight = FontWeight.Medium, fontSize = 24.sp)
-                Text("Сегодня · " + DateTimeFormatter.ofPattern("d MMM yyyy", Locale("ru", "RU")).format(model.today),
-                    color = ledgerMuted, fontSize = 13.sp)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Долговая книга", color = ledgerText, fontWeight = FontWeight.SemiBold, fontSize = if (stacked) 22.sp else 24.sp,
+                        modifier = Modifier.weight(1f))
+                    TextButton(onClick = actions.report, modifier = Modifier.heightIn(min = 48.dp),
+                        contentPadding = PaddingValues(horizontal = 6.dp)) { Text("Отчёт") }
+                }
             }
-            item("total") { LedgerTotal("Общая задолженность", model.total, "Должников: " + model.debtors) }
+            item("total") {
+                Column(Modifier.fillMaxWidth().background(ledgerPanel, RoundedCornerShape(12.dp)).padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    LedgerTotal("Общая задолженность", model.total, "Должников: " + model.debtors)
+                    HorizontalDivider(color = ledgerBorder.copy(alpha = .5f))
+                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(onClick = actions.collections)
+                        .semantics { contentDescription = "Возврат долгов" },
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Text(if (model.urgent > 0) "Требуют внимания: " + model.urgent else "Возврат долгов",
+                            color = if (model.urgent > 0) ledgerAlert else ledgerMuted, fontSize = 13.sp,
+                            modifier = Modifier.weight(1f))
+                        Text("›", color = ledgerAccent, fontSize = 24.sp)
+                    }
+                }
+            }
             item("quick") {
                 if (stacked) Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Button(onClick = actions.debt, shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("+ Записать долг") }
@@ -191,9 +213,6 @@ internal fun BookContent(model: BookUiModel, payments: Boolean, hasFilter: Boole
                 }
             }
             if (model.draft != null) item("draft") { LedgerMetric("Незавершённая запись", model.draft, ledgerAccent, actions.debt) }
-            item("collections") { LedgerMetric("Возврат долгов",
-                if (model.urgent > 0) "Требуют внимания: " + model.urgent else "Список непогашенных долгов",
-                if (model.urgent > 0) ledgerAlert else ledgerMuted, actions.collections) }
             item("modes") {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     for ((title, value) in listOf("Долги по датам" to false, "Оплаты по датам" to true)) {
@@ -221,7 +240,10 @@ internal fun BookContent(model: BookUiModel, payments: Boolean, hasFilter: Boole
                             fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                         if (hasFilter) Text(filterSummary, color = ledgerMuted, fontSize = 12.sp)
                     }
-                    TextButton(onClick = { calendar = !calendar; onCalendar(calendar, selectedDay) },
+                    TextButton(onClick = {
+                        if (calendar) { calendar = false; monthGrid = false; onCalendar(false, selectedDay) }
+                        else { selectDate(selectedDay); monthGrid = true }
+                    },
                         modifier = Modifier.heightIn(min = 48.dp), contentPadding = PaddingValues(horizontal = 6.dp)) {
                         Text(if (calendar) "Список дат" else "Календарь")
                     }
@@ -233,19 +255,27 @@ internal fun BookContent(model: BookUiModel, payments: Boolean, hasFilter: Boole
                     else "По фильтру: " + ledgerMoney(model.recorded) + " · осталось " + ledgerMoney(model.remaining),
                     color = ledgerMuted, fontSize = 12.sp)
             }
+            if (!monthGrid) item("week") {
+                BookWeek(selectedDay, if (calendar) selectedDay else null, model.today, byDate, payments,
+                    onWeek = ::selectDate, onDay = ::selectDate,
+                    onMonth = { selectDate(selectedDay); monthGrid = true })
+            }
             if (calendar) {
-                item("calendar") {
+                if (monthGrid) item("calendar") {
                     BookCalendar(month, selectedDay, model.today, byDate, payments,
                         onMonth = { next ->
                             month = next
                             selectedDay = if (next == YearMonth.from(model.today)) model.today else next.atDay(1)
                             onCalendar(true, selectedDay)
                         },
-                        onDay = { selectedDay = it; onCalendar(true, selectedDay) })
+                        onDay = { selectDate(it); monthGrid = false })
                 }
                 item("selected-calendar-date") {
-                    Text("Выбранный день · " + ledgerDayFormat.format(selectedDay), color = ledgerText,
-                        fontWeight = FontWeight.SemiBold)
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text(selectedDay.format(DateTimeFormatter.ofPattern("d MMMM, EEEE", Locale("ru", "RU"))),
+                            color = ledgerText, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                        if (selectedDay != model.today) TextButton(onClick = { selectDate(model.today); monthGrid = false }) { Text("Сегодня") }
+                    }
                 }
                 if (visibleDays.isEmpty()) item("calendar-empty") {
                     Text(if (hasFilter) "Нет записей по выбранным условиям за этот день." else
@@ -315,7 +345,7 @@ internal fun BookContent(model: BookUiModel, payments: Boolean, hasFilter: Boole
             if (!calendar && model.days.size > limit) item("more-dates") {
                 OutlinedButton(onClick = { limit += 30; actions.limit(limit) }, modifier = Modifier.fillMaxWidth()) { Text("Показать более ранние даты") }
             }
-            item("report") { LedgerMetric("Финансовый отчёт", "Долги и оплаты за выбранные даты", action = actions.report) }
+            item("report") { TextButton(onClick = actions.report, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Финансовый отчёт") } }
             if (model.needsBackup) item("backup") { LedgerMetric("Создать JSON-копию", "Сохраните книгу перед сменой устройства", action = actions.backup) }
         }
     }
