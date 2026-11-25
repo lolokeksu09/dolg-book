@@ -7,11 +7,14 @@ import dev.ventry.raschet.domain.AnalyticsProjection
 import dev.ventry.raschet.domain.AnalyticsSeries
 import dev.ventry.raschet.domain.DatedLedger
 import java.time.ZoneId
+import java.time.LocalDate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
+
+enum class AnalyticsSection { SUMMARY, DETAILS, REPORTS }
 
 data class AnalyticsRequest(
     val selection: AnalyticsPeriods.Selection = AnalyticsPeriods.Selection(),
@@ -37,6 +40,36 @@ class AnalyticsViewModel : ViewModel() {
     private var zone: ZoneId = ZoneId.systemDefault()
     private val mutableRequest = MutableStateFlow(AnalyticsRequest())
     val request = mutableRequest.asStateFlow()
+    private val mutableOverviewSection = MutableStateFlow(AnalyticsSection.SUMMARY)
+    val overviewSection = mutableOverviewSection.asStateFlow()
+    private val mutablePersonalSection = MutableStateFlow(AnalyticsSection.SUMMARY)
+    val personalSection = mutablePersonalSection.asStateFlow()
+    private val mutableRanking = MutableStateFlow("BALANCE")
+    val ranking = mutableRanking.asStateFlow()
+
+    fun selectSection(section: AnalyticsSection) {
+        if (mutableRequest.value.customerId == null) mutableOverviewSection.value = section
+        else mutablePersonalSection.value = section
+    }
+
+    fun selectRanking(value: String) { mutableRanking.value = value }
+
+    /** Saved state contains only navigation and filter choices, not a financial snapshot. */
+    fun restoreFilters(preset: String?, from: LocalDate?, to: LocalDate?, overview: String?, personal: String?, rank: String?) {
+        val selection = runCatching {
+            val kind = AnalyticsPeriods.Preset.valueOf(preset ?: "MONTH")
+            val custom = if (kind == AnalyticsPeriods.Preset.CUSTOM) {
+                val range = AnalyticsProjection.Range(requireNotNull(from), requireNotNull(to))
+                require(!range.to.isAfter(LocalDate.now()))
+                range
+            } else null
+            AnalyticsPeriods.Selection(kind, custom)
+        }.getOrDefault(AnalyticsPeriods.Selection())
+        select(selection)
+        mutableOverviewSection.value = runCatching { AnalyticsSection.valueOf(overview ?: "SUMMARY") }.getOrDefault(AnalyticsSection.SUMMARY)
+        mutablePersonalSection.value = runCatching { AnalyticsSection.valueOf(personal ?: "SUMMARY") }.getOrDefault(AnalyticsSection.SUMMARY)
+        mutableRanking.value = rank ?: "BALANCE"
+    }
 
     private val reader = LatestRead(viewModelScope) {
         val source = requireNotNull(book)
@@ -87,6 +120,7 @@ class AnalyticsViewModel : ViewModel() {
     }
 
     fun focus(customerId: String?) {
+        if (customerId != null && customerId != mutableRequest.value.customerId) mutablePersonalSection.value = AnalyticsSection.SUMMARY
         change(mutableRequest.value.copy(customerId = customerId))
     }
 
