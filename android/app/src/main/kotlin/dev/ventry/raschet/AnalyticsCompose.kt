@@ -36,6 +36,7 @@ import dev.ventry.raschet.domain.AnalyticsExport
 import dev.ventry.raschet.domain.AnalyticsPeriods
 import dev.ventry.raschet.domain.AnalyticsProjection
 import dev.ventry.raschet.domain.AnalyticsSeries
+import dev.ventry.raschet.presentation.AnalyticsSection
 import dev.ventry.raschet.presentation.AnalyticsResult
 import dev.ventry.raschet.presentation.AnalyticsViewModel
 import dev.ventry.raschet.presentation.BookScreenData
@@ -68,8 +69,9 @@ object AnalyticsCompose {
                 LedgerMaterialTheme {
                     val request by model.request.collectAsState()
                     val state by model.state.collectAsState()
-                    var overviewSection by remember { mutableStateOf(AnalyticsSection.SUMMARY) }
-                    var personalSection by remember(request.customerId) { mutableStateOf(AnalyticsSection.SUMMARY) }
+                    val overviewSection by model.overviewSection.collectAsState()
+                    val personalSection by model.personalSection.collectAsState()
+                    val rankingName by model.ranking.collectAsState()
                     val section = if (request.customerId == null) overviewSection else personalSection
                     Box(Modifier.fillMaxSize().background(ledgerBg), contentAlignment = Alignment.TopCenter) {
                     Column(Modifier.widthIn(max = 800.dp).fillMaxSize()) {
@@ -85,14 +87,12 @@ object AnalyticsCompose {
                                 pickRange(owner, data.today, initial) { model.select(AnalyticsPeriods.Selection(preset, it)) }
                             } else model.select(AnalyticsPeriods.Selection(preset))
                         }
-                        AnalyticsSectionRow(section, request.customerId != null) { chosen ->
-                            if (request.customerId == null) overviewSection = chosen else personalSection = chosen
-                        }
+                        AnalyticsSectionRow(section, request.customerId != null, model::selectSection)
                         HorizontalDivider(color = ledgerBorder.copy(alpha = .5f))
                         when (val current = state) {
                             is ReadState.Ready -> {
                                 if (current.value.request != request) AnalyticsLoading()
-                                else if (request.customerId == null) key(section) { AnalyticsOverview(current.value, onHistory, onCustomer, onExport, section) }
+                                else if (request.customerId == null) key(section) { AnalyticsOverview(current.value, onHistory, onCustomer, onExport, section, rankingName, model::selectRanking) }
                                 else key(section) { ClientAnalyticsContent(current.value, onHistory, onExport, section) }
                             }
                             is ReadState.Failed -> Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -198,9 +198,10 @@ internal fun AnalyticsHeading(title: String) {
 
 @Composable
 internal fun AnalyticsOverview(result: AnalyticsResult, onHistory: BiConsumer<LocalDate, LocalDate>,
-    onCustomer: Consumer<String>, onExport: Consumer<AnalyticsExport.Spec>, section: AnalyticsSection = AnalyticsSection.SUMMARY) {
+    onCustomer: Consumer<String>, onExport: Consumer<AnalyticsExport.Spec>, section: AnalyticsSection = AnalyticsSection.SUMMARY,
+    rankingName: String = "BALANCE", onRanking: (String) -> Unit = {}) {
     val data = result.period
-    var ranking by remember { mutableStateOf(AnalyticsRanking.BALANCE) }
+    val ranking = remember(rankingName) { runCatching { AnalyticsRanking.valueOf(rankingName) }.getOrDefault(AnalyticsRanking.BALANCE) }
     var rankLimit by remember(data, ranking) { mutableIntStateOf(20) }
     val ranked = remember(data, ranking, section) { if (section != AnalyticsSection.DETAILS) emptyList() else data.customers.filter { it.id in result.names && ranking.includes(it, data.range) }
         .sortedWith(compareByDescending<AnalyticsProjection.Customer> { ranking.value(it) }.thenBy { result.names[it.id] }.thenBy { it.id }) }
@@ -220,6 +221,13 @@ internal fun AnalyticsOverview(result: AnalyticsResult, onHistory: BiConsumer<Lo
                 AnalyticsValue("Должников", data.currentDebtors.toString())
                 AnalyticsValue("Просрочено", analyticsMoney(data.current.overdue), ledgerAlert)
                 AnalyticsValue("Должников с просрочкой", data.overdueDebtors.toString())
+            }
+        }
+        item("period-highlight") {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                AnalyticsHeading("Действительные операции за период")
+                AnalyticsMetricPair("Выдано в долг", analyticsMoney(data.effective.debts), "${data.effective.debtCount} записей",
+                    "Получено оплат", analyticsMoney(data.effective.payments), "${data.effective.paymentCount} записей")
             }
         }
         item("chart") {
@@ -280,7 +288,7 @@ internal fun AnalyticsOverview(result: AnalyticsResult, onHistory: BiConsumer<Lo
                 AnalyticsHeading("Рейтинг клиентов")
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     AnalyticsRanking.entries.forEach { mode ->
-                        FilterChip(selected = ranking == mode, onClick = { ranking = mode }, label = { Text(mode.title) })
+                        FilterChip(selected = ranking == mode, onClick = { onRanking(mode.name) }, label = { Text(mode.title) })
                     }
                 }
                 Text(if (ranking == AnalyticsRanking.BALANCE || ranking == AnalyticsRanking.OVERDUE) "На сегодня" else if (ranking == AnalyticsRanking.SETTLED) "Положительный остаток на начало, нулевой на конец" else if (ranking == AnalyticsRanking.NEW) "Первый действительный долг в выбранном периоде" else "За выбранный период · действительные операции",
@@ -455,8 +463,6 @@ internal fun AnalyticsExportActions(result: AnalyticsResult, onExport: Consumer<
     }
 }
 
-internal enum class AnalyticsSection { SUMMARY, DETAILS, REPORTS }
-
 @Composable
 private fun AnalyticsSectionRow(section: AnalyticsSection, personal: Boolean, choose: (AnalyticsSection) -> Unit) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -476,5 +482,31 @@ private fun AnalyticsSectionRow(section: AnalyticsSection, personal: Boolean, ch
                 Box(Modifier.fillMaxWidth().height(2.dp).background(if (active) ledgerAccent else Color.Transparent))
             }
         }
+    }
+}
+
+@Composable
+internal fun AnalyticsMetricPair(firstLabel: String, firstValue: String, firstDetail: String,
+    secondLabel: String, secondValue: String, secondDetail: String) {
+    BoxWithConstraints(Modifier.fillMaxWidth().background(ledgerPanel, RoundedCornerShape(8.dp)).padding(12.dp)) {
+        val stacked = maxWidth < 300.dp || LocalDensity.current.fontScale > 1.2f
+        if (stacked) Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            AnalyticsMetricBlock(firstLabel, firstValue, firstDetail, ledgerAlert)
+            HorizontalDivider(color = ledgerBorder)
+            AnalyticsMetricBlock(secondLabel, secondValue, secondDetail, ledgerAccent)
+        } else Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(Modifier.weight(1f)) { AnalyticsMetricBlock(firstLabel, firstValue, firstDetail, ledgerAlert) }
+            Column(Modifier.weight(1f)) { AnalyticsMetricBlock(secondLabel, secondValue, secondDetail, ledgerAccent) }
+        }
+    }
+}
+
+@Composable
+private fun AnalyticsMetricBlock(label: String, value: String, detail: String, color: Color) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(label, color = ledgerMuted, fontSize = 12.sp)
+        Text(value, color = color, fontSize = 22.sp, fontWeight = FontWeight.SemiBold,
+            style = TextStyle(fontFeatureSettings = "tnum"))
+        Text(detail, color = ledgerMuted, fontSize = 12.sp)
     }
 }
