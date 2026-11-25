@@ -313,7 +313,7 @@ public final class MainActivity extends ComponentActivity {
     }
     private boolean needsBookSnapshot(){
         return tabletClientScreen()||selectedClient!=null||
-                tab.equals("Главная")||tab.equals("Клиенты")||tab.equals("Возврат");
+                tab.equals("Главная")||tab.equals("Клиенты")||tab.equals("Возврат")||tab.equals("История")||tab.equals("Отчёт");
     }
     private void onBookState(ReadState<?> state){
         if(!unlocked||isFinishing()||isDestroyed()||bookViewModel.hasPendingWrite()||!needsBookSnapshot()
@@ -341,9 +341,9 @@ public final class MainActivity extends ComponentActivity {
                     selectedClient!=null?detailView(selectedClient,data):
                     tab.equals("Главная")?homeView(data):
                     tab.equals("Клиенты")?clientsView(data):
-                    tab.equals("История")?historyView():
+                    tab.equals("История")?historyView(data):
                     tab.equals("Возврат")?collectionView(data):
-                    tab.equals("Отчёт")?reportView():settingsView();
+                    tab.equals("Отчёт")?reportView(data):settingsView();
             page.addView(contents,new FrameLayout.LayoutParams(-1,-1));
         }catch(Exception e){
             LinearLayout error=screen("Ошибка чтения книги","Данные не были изменены.");
@@ -690,54 +690,12 @@ public final class MainActivity extends ComponentActivity {
                 date.getYear(),date.getMonthValue()-1,date.getDayOfMonth());
         picker.setTitle(title);picker.show();
     }
-    private void reportLine(LinearLayout parent,String name,long amount,int color){
-        LinearLayout line=row();
-        line.setGravity(Gravity.CENTER_VERTICAL);
-        line.setPadding(0,dp(9),0,dp(9));
-        line.addView(label(name,14,MUTED,false),new LinearLayout.LayoutParams(0,-2,1));
-        line.addView(label(money(amount),17,color,true));
-        parent.addView(line);
-    }
-    private View reportView(){
-        PeriodReport report=PeriodReport.build(ledger.entries(),reportFrom,reportTo,ZoneId.systemDefault());
-        LinearLayout view=screen("Финансовый отчёт","Движение задолженности, не выручка и не прибыль");
-        actionRow(view,"▤","Период отчёта",dayFormat.format(reportFrom)+" — "+dayFormat.format(reportTo),
-                ()->choosePeriod(true));
-        LinearLayout summary=balancePanel("Остаток на конец",report.closing);
-        reportLine(summary,"Остаток на начало",report.opening,TEXT);
-        reportLine(summary,"Изменение задолженности",report.totals.net(),TEXT);
-        summary.addView(label("Операций: "+report.totals.count+" · клиентов: "+report.activeCustomers,13,MUTED,false));
-        view.addView(summary,margin(-1,-2,10));
-        LinearLayout actions=stack(8);
-        addButton(actions,"Операции периода",true,()->{
-            historyFrom=reportFrom;historyTo=reportTo;historyFilter="Все";historyQuery="";historyClientId=null;historyVisibleLimit=100;
-            tab="История";render();
-        },1);
-        addButton(actions,"Экспорт отчёта CSV",false,this::exportReport,1);
-        view.addView(actions,margin(-1,-2,12));
-        LinearLayout flow=stack(4);
-        flow.addView(label("Движение за период",18,TEXT,true));
-        reportLine(flow,"Записано долгов",report.totals.debts,TEXT);
-        reportLine(flow,"Получено оплат",report.totals.payments,ACCENT);
-        reportLine(flow,"Отменено долгов",report.totals.debtReversals,ALERT);
-        reportLine(flow,"Отменено оплат",report.totals.paymentReversals,ALERT);
-        flow.addView(label("Отмены учитываются по дате отмены. Суммы долгов и оплат показаны до вычета отмен.",13,MUTED,false));
-        view.addView(flow,margin(-1,-2,10));
-        section(view,"По дням","Дни, в которые были операции");
-        if(report.daily.isEmpty())view.addView(label("За выбранный период операций нет.",15,MUTED,false));
-        int shown=0;
-        for(Map.Entry<LocalDate,PeriodReport.Totals> day:report.daily.entrySet()){
-            if(shown++>=reportDaysLimit)break;
-            PeriodReport.Totals t=day.getValue();
-            LinearLayout item=stack(3);
-            item.addView(label(dayFormat.format(day.getKey()),15,TEXT,true));
-            item.addView(label("Долги "+money(t.debts)+" · оплаты "+money(t.payments),13,MUTED,false));
-            item.addView(label("Отмены долгов "+money(t.debtReversals)+" · отмены оплат "+money(t.paymentReversals),13,MUTED,false));
-            item.addView(label("Изменение: "+money(t.net()),16,ACCENT,true));
-            view.addView(item,margin(-1,-2,7));addListDivider(view);
-        }
-        if(report.daily.size()>reportDaysLimit)addButton(view,"Показать ещё дни",false,()->{reportDaysLimit+=14;render();},1);
-        return scroll(view);
+    private View reportView(BookScreenData data){
+        return ReportCompose.create(this,data,reportFrom,reportTo,reportDaysLimit,
+                ()->choosePeriod(true),()->{
+                    historyFrom=reportFrom;historyTo=reportTo;historyFilter="Все";historyQuery="";
+                    historyClientId=null;historyVisibleLimit=100;tab="История";render();
+                },this::exportReport,limit->reportDaysLimit=limit);
     }
     private void exportReport(){
         Intent save=new Intent(Intent.ACTION_CREATE_DOCUMENT);
@@ -747,85 +705,17 @@ public final class MainActivity extends ComponentActivity {
         try{startActivityForResult(save,REQUEST_REPORT);}
         catch(ActivityNotFoundException ex){pendingReportFrom=null;pendingReportTo=null;message("Выбор файла недоступен.");}
     }
-    private View historyView() {
-        LinearLayout view=screen("История","");
-        if(ledger.entries().isEmpty()){
-            view.addView(emptyState(R.drawable.ic_nav_history,"История пока пустая",
-                    "Здесь будут долги и оплаты.",
-                    ledger.clients().isEmpty()?"Добавить первого клиента":"Записать долг",
-                    ()->{if(ledger.clients().isEmpty())showClientForm(null);else chooseClient("debt");}));
-            return scroll(view);
-        }
-        LinearLayout filters=row();filters.setGravity(Gravity.CENTER_VERTICAL);
-        for(String choice:new String[]{"Все","Долги","Оплаты","Отмены"}){
-            TextView chip=label(choice,12,choice.equals(historyFilter)?INK:MUTED,true);
-            chip.setGravity(Gravity.CENTER);
-            chip.setPadding(dp(4),dp(5),dp(4),dp(5));chip.setMinHeight(dp(48));
-            chip.setTextColor(choice.equals(historyFilter)?ACCENT:MUTED);
-            chip.setBackground(ripple(shape(choice.equals(historyFilter)?LedgerTheme.SELECTED:BG,6,choice.equals(historyFilter)?LedgerTheme.SELECTED:BORDER)));
-            LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,-2,1);p.rightMargin=dp(5);
-            filters.addView(chip,p);
-            chip.setClickable(true);
-            chip.setFocusable(true);
-            chip.setSelected(choice.equals(historyFilter));
-            chip.setContentDescription("Фильтр: "+choice);
-            chip.setOnClickListener(v->{historyFilter=choice;historyVisibleLimit=100;render();});
-        }
-        view.addView(filters,margin(-1,-2,5));
-        actionRow(view,"▤","Период истории",historyFrom==null?"Все даты":dayFormat.format(historyFrom)+" — "+dayFormat.format(historyTo),
-                ()->choosePeriod(false));
-        if(historyFrom!=null)addButton(view,"Сбросить даты",false,()->{historyFrom=null;historyTo=null;historyVisibleLimit=100;render();},1);
-        Map<String,LedgerStore.Client> people=new HashMap<>();
-        for(LedgerStore.Client c:ledger.clients())people.put(c.id,c);
-        if(historyClientId!=null){
-            LedgerStore.Client chosen=people.get(historyClientId);
-            addButton(view,"Клиент: "+(chosen==null?"—":chosen.name)+" · сбросить",false,()->{
-                historyClientId=null;historyVisibleLimit=100;render();
-            },1);
-        }
-        EditText lookup=field("Имя, телефон или комментарий",historyQuery);
-        lookup.setSingleLine(true);
-        LinearLayout results=stack(0);
-        view.addView(formGroup("Поиск операций",lookup));
-        List<LedgerStore.Entry> all=ledger.entries();
-        Runnable refresh=()->fillHistoryResults(results,all,people);
-        lookup.addTextChangedListener(watcher(value->{historyQuery=value;historyVisibleLimit=100;refresh.run();}));
-        view.addView(results);refresh.run();
-        return scroll(view);
-    }
-    private void fillHistoryResults(LinearLayout view,List<LedgerStore.Entry> all,Map<String,LedgerStore.Client> people){
-        view.removeAllViews();
-        Set<String> canceled=LedgerStore.canceled(all);
-        List<LedgerStore.Entry> visible=HistoryRows.select(all,people,historyClientId,historyQuery,historyFrom,historyTo,historyFilter,ZoneId.systemDefault());
-        int shown=0;
-        boolean moreHistory=false;
-        LocalDate lastHistoryDay=null;
-        for(LedgerStore.Entry e:visible){
-            if(shown>=historyVisibleLimit){moreHistory=true;break;}
-            LocalDate date=PeriodReport.dateOf(e,ZoneId.systemDefault());
-            if(!date.equals(lastHistoryDay)){
-                TextView dateHeading=label(dayFormat.format(date),12,MUTED,true);
-                dateHeading.setPadding(dp(6),dp(7),dp(6),dp(7));
-                dateHeading.setBackgroundColor(PANEL);
-                view.addView(dateHeading,margin(-1,-2,2));
-                lastHistoryDay=date;
-            }
-            LedgerStore.Client person=people.get(e.clientId);
-            view.addView(entryCard(e,person==null?null:person.name,canceled.contains(e.id),false));
-            addListDivider(view);shown++;
-        }
-        if(moreHistory)addButton(view,"Показать ещё операции",false,()->{
-            historyVisibleLimit=Math.min(historyVisibleLimit+100,100000);render();
-        },1);
-        if(shown==0){
-            if(all.isEmpty()) view.addView(emptyState(R.drawable.ic_nav_history,
-                    "История пока пустая", "Когда вы запишете долг или оплату, они появятся здесь.",
-                    ledger.clients().isEmpty()?"Добавить первого клиента":"Записать долг",
-                    ()->{if(ledger.clients().isEmpty())showClientForm(null);else chooseClient("debt");}));
-            else view.addView(emptyState(R.drawable.ic_nav_history,
-                    "Нет операций в фильтре", "Выберите другой тип операции или посмотрите всю историю.",
-                    "Показать все", ()->{historyFilter="Все";historyFrom=null;historyTo=null;historyQuery="";historyClientId=null;historyVisibleLimit=100;render();}));
-        }
+    private View historyView(BookScreenData data) {
+        return HistoryCompose.create(this,data,historyClientId,historyQuery,historyFrom,historyTo,historyFilter,
+                historyVisibleLimit,largeText,
+                choice->{historyFilter=choice;historyVisibleLimit=100;render();},
+                ()->choosePeriod(false),
+                ()->{historyFrom=null;historyTo=null;historyVisibleLimit=100;render();},
+                ()->{historyClientId=null;historyVisibleLimit=100;render();},
+                query->{historyQuery=query;historyVisibleLimit=100;},limit->historyVisibleLimit=limit,
+                ()->{historyFilter="Все";historyFrom=null;historyTo=null;historyQuery="";historyClientId=null;historyVisibleLimit=100;render();},
+                ()->{if(data.getSnapshot().getClients().isEmpty())showClientForm(null);else chooseClient("debt");},
+                this::showOperation,this::showPurchaseDetails);
     }
     private View settingsView() {
         LinearLayout view=screen("Настройки","");
