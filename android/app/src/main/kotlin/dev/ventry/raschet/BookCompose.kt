@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.height
+import androidx.compose.material3.TextButton
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -174,7 +176,7 @@ internal fun BookContent(model: BookUiModel, payments: Boolean, hasFilter: Boole
         LazyColumn(Modifier.widthIn(max = 800.dp).fillMaxSize().testTag("book-list"),
             contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             item("title") {
-                Text("Долговая книга", color = ledgerText, fontWeight = FontWeight.SemiBold, fontSize = 28.sp)
+                Text("Долговая книга", color = ledgerText, fontWeight = FontWeight.Medium, fontSize = 24.sp)
                 Text("Сегодня · " + DateTimeFormatter.ofPattern("d MMM yyyy", Locale("ru", "RU")).format(model.today),
                     color = ledgerMuted, fontSize = 13.sp)
             }
@@ -190,40 +192,46 @@ internal fun BookContent(model: BookUiModel, payments: Boolean, hasFilter: Boole
             }
             if (model.draft != null) item("draft") { LedgerMetric("Незавершённая запись", model.draft, ledgerAccent, actions.debt) }
             item("collections") { LedgerMetric("Возврат долгов",
-                if (model.urgent > 0) "Требуют внимания: " + model.urgent else "Должников: " + model.debtors,
+                if (model.urgent > 0) "Требуют внимания: " + model.urgent else "Список непогашенных долгов",
                 if (model.urgent > 0) ledgerAlert else ledgerMuted, actions.collections) }
             item("modes") {
-                Row(Modifier.fillMaxWidth().background(ledgerPanel, RoundedCornerShape(10.dp)).padding(4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     for ((title, value) in listOf("Долги по датам" to false, "Оплаты по датам" to true)) {
                         val active = payments == value
-                        Box(Modifier.weight(1f).heightIn(min = 48.dp)
-                            .background(if (active) Color(LedgerTheme.SELECTED) else Color.Transparent, RoundedCornerShape(7.dp))
+                        Column(Modifier.weight(1f)
                             .clickable { if (!active) actions.mode(value) }
-                            .semantics { selected = active; contentDescription = title }.padding(horizontal = 4.dp),
-                            contentAlignment = Alignment.Center) {
-                            Text(title, color = if (active) ledgerAccent else ledgerMuted,
-                                fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
-                                fontSize = 12.sp, textAlign = TextAlign.Center)
+                            .semantics { selected = active; contentDescription = title },
+                            horizontalAlignment = Alignment.CenterHorizontally) {
+                            Box(Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = 4.dp),
+                                contentAlignment = Alignment.Center) {
+                                Text(title, color = if (active) ledgerText else ledgerMuted,
+                                    fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
+                                    fontSize = 13.sp, textAlign = TextAlign.Center)
+                            }
+                            Box(Modifier.fillMaxWidth().height(2.dp).background(if (active) ledgerAccent else ledgerBorder.copy(alpha = .45f)))
                         }
                     }
                 }
             }
             item("section") {
-                Text(if (payments) "Полученные оплаты" else "Записи по датам", color = ledgerText, fontWeight = FontWeight.Bold)
-                Text(if (payments) "Суммы без отменённых оплат" else "Записано и осталось по каждой дате", color = ledgerMuted, fontSize = 12.sp)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(Modifier.weight(1f)) {
+                        Text(if (payments) "Полученные оплаты" else "Записи по датам", color = ledgerText,
+                            fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                        if (hasFilter) Text(filterSummary, color = ledgerMuted, fontSize = 12.sp)
+                    }
+                    TextButton(onClick = { calendar = !calendar; onCalendar(calendar, selectedDay) },
+                        modifier = Modifier.heightIn(min = 48.dp), contentPadding = PaddingValues(horizontal = 6.dp)) {
+                        Text(if (calendar) "Список дат" else "Календарь")
+                    }
+                }
             }
             if (model.hasDays) item("filters") {
                 LedgerMetric("Фильтры книги", filterSummary, if (hasFilter) ledgerAccent else ledgerMuted, actions.filters)
                 if (hasFilter) Text(if (payments) "Получено по фильтру: " + ledgerMoney(model.recorded)
                     else "По фильтру: " + ledgerMoney(model.recorded) + " · осталось " + ledgerMoney(model.remaining),
                     color = ledgerMuted, fontSize = 12.sp)
-            }
-            item("calendar-mode") {
-                LedgerMetric(if (calendar) "Список дат" else "Календарь",
-                    if (calendar) "Вернуться к хронологии" else "Выбрать день месяца") {
-                    calendar = !calendar; onCalendar(calendar, selectedDay)
-                }
             }
             if (calendar) {
                 item("calendar") {
@@ -250,7 +258,7 @@ internal fun BookContent(model: BookUiModel, payments: Boolean, hasFilter: Boole
                 }
             }
             if (!calendar && !model.hasDays) item("empty") {
-                Column(Modifier.fillMaxWidth().background(ledgerPanel, RoundedCornerShape(12.dp)).padding(16.dp),
+                Column(Modifier.fillMaxWidth().padding(vertical = 18.dp, horizontal = 4.dp),
                     verticalArrangement = Arrangement.spacedBy(5.dp)) {
                     Text(if (payments) "Пока нет оплат" else "Пока нет долгов", color = ledgerText, fontWeight = FontWeight.SemiBold)
                     Text(if (payments) "Здесь появятся поступления от покупателей." else "Запишите первый долг — он появится в книге за нужную дату.", color = ledgerMuted, fontSize = 13.sp)
