@@ -117,15 +117,13 @@ internal fun HistoryContent(data: BookScreenData, clientId: String?, initialQuer
     BoxWithConstraints(Modifier.fillMaxSize().background(ledgerBg), contentAlignment = Alignment.TopCenter) {
         val compact = maxWidth < 365.dp || largeText || LocalDensity.current.fontScale > 1.2f
         LazyColumn(Modifier.widthIn(max = 800.dp).fillMaxSize().testTag("history-list"),
-            contentPadding = PaddingValues(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            item("title") { Text("История", color = ledgerText, fontSize = 22.sp, fontWeight = FontWeight.Bold) }
+            contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            item("title") { Text("История", color = ledgerText, fontSize = 28.sp, fontWeight = FontWeight.SemiBold) }
             if (data.snapshot.entries.isEmpty()) {
                 item("empty-book") {
-                    Text("История пока пустая", color = ledgerText, fontWeight = FontWeight.Bold)
-                    Text("Здесь будут долги и оплаты.", color = ledgerMuted)
-                    Button(onClick = actions.add, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                        Text(if (people.isEmpty()) "Добавить первого клиента" else "Записать долг")
-                    }
+                    LedgerEmpty(R.drawable.ic_nav_history, "История пока пустая",
+                        "Здесь будут долги и оплаты.", if (people.isEmpty()) "Добавить первого клиента" else "Записать долг",
+                        actions.add, largeText)
                 }
             } else {
                 item("filters") {
