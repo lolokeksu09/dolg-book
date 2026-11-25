@@ -104,7 +104,11 @@ test('compact book keeps essential controls and hides redundant empty-state filt
   assert.ok(ui.includes('private int controlHeight(){return largeText?54:48;}'));
   assert.ok(ui.includes('private int navHeight(){return largeText?68:56;}'));
   const clients=ui.slice(ui.indexOf('private View clientsView(BookScreenData data)'),ui.indexOf('private void showClientFilters()'));
-  assert.ok(clients.indexOf('if(data.getSnapshot().getClients().isEmpty())')<clients.indexOf('"+ Добавить клиента"'));
+  const compose=read('android/app/src/main/kotlin/dev/ventry/raschet/ClientsCompose.kt');
+  assert.ok(clients.includes('ClientsCompose.create(this,data,clientScope,clientFilter'));
+  assert.ok(compose.indexOf('if (model.allCount == 0)')<compose.indexOf('"+ Добавить клиента"'));
+  assert.ok(compose.includes('LazyColumn('));
+  assert.ok(compose.includes('CollectionsInsights.visible(model.scoped, filter, amountFirst, recentFirst, query)'));
   assert.ok(clients.includes('this::showClientFilters'));
   assert.ok(!clients.includes('filterGrid'));
   assert.ok(ui.includes('if(settingsExpanded.equals("privacy"))'));
@@ -131,12 +135,14 @@ test('dense lists, selected filters and content-sized dialogs are wired',()=>{
 test('counter-first UI keeps both financial actions, compact search and viewport-aware dialogs',()=>{
   const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
   assert.ok(ui.includes('addButton(quick,"Принять оплату",false'));
-  assert.ok(ui.includes('add.setContentDescription("+ Добавить клиента")'));
+  const compose=read('android/app/src/main/kotlin/dev/ventry/raschet/ClientsCompose.kt');
+  assert.ok(compose.includes('contentDescription = "+ Добавить клиента"'));
   assert.ok(ui.includes('context.addView(moreActions'));
   assert.ok(ui.includes('root.getWindowVisibleDisplayFrame(visible)'));
   assert.ok(!ui.includes('int limit=dp(380)'));
   assert.ok(ui.includes('items.size()>1?View.VISIBLE:View.GONE'));
-  assert.ok(ui.includes('card.setSelected(customer.id.equals(selectedClient))'));
+  assert.ok(compose.includes('selected = isSelected'));
+  assert.ok(compose.includes('selectedId == status.client.id'));
 });
 
 
