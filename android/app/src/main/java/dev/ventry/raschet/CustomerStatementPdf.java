@@ -29,6 +29,9 @@ public final class CustomerStatementPdf {
         PdfDocument document=new PdfDocument();
         Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG);
         paint.setTypeface(Typeface.create("sans-serif",Typeface.NORMAL));
+        LocalDate today=LocalDate.now();
+        long balance=LedgerStore.balance(all,client.id);
+        long overdue=LedgerStore.overdue(all,client.id,today);
         int page=0,offset=0;
         try {
             do {
@@ -46,9 +49,7 @@ public final class CustomerStatementPdf {
                 paint.setTextSize(12);
                 canvas.drawText(fit(client.name,paint,500),42,105,paint);
                 paint.setColor(Color.DKGRAY);
-                canvas.drawText("Дата: "+LocalDate.now(),42,126,paint);
-                long balance=LedgerStore.balance(all,client.id);
-                long overdue=LedgerStore.overdue(all,client.id,LocalDate.now());
+                canvas.drawText("Дата: "+today,42,126,paint);
                 canvas.drawText("Остаток: "+rubles(balance)+" ₽   |   Просрочка: "+
                         rubles(overdue)+" ₽",42,148,paint);
                 paint.setColor(Color.rgb(210,217,211));
@@ -70,7 +71,10 @@ public final class CustomerStatementPdf {
                     }
                     int needed=18+noteLines.size()*15;
                     // Never split a financial operation or silently crop its note.
-                    if(y+needed>780)break;
+                    if(y+needed>780){
+                        if(y==207){document.finishPage(sheet);throw new IOException("Операция слишком длинная для одной страницы PDF.");}
+                        break;
+                    }
                     offset++;
                     boolean canceledEntry=canceled.contains(entry.id);
                     String type="debt".equals(entry.type)?"Долг":
