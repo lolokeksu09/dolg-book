@@ -21,6 +21,10 @@ object ClientWriteService {
                     repository.saveClient(command)
                     WriteReceipt(WriteDestination.KEEP, "client", command.id, null, 0, false)
                 }
+                is ClientCommand.Catalog -> {
+                    repository.saveCatalogProduct(command.record)
+                    WriteReceipt(WriteDestination.KEEP, "catalog", null, null, 0, false)
+                }
                 is ClientCommand.Debt -> repository.saveDebt(command, application)
                 is ClientCommand.Payment -> repository.savePayment(command)
                 is ClientCommand.ItemizedDebt -> repository.savePurchase(command, application)
@@ -32,7 +36,7 @@ object ClientWriteService {
         try {
             when (command) {
                 is ClientCommand.Create -> clearQuick(application, command.id)
-                is ClientCommand.Edit, is ClientCommand.ItemizedDebt, is ClientCommand.Correction, is ClientCommand.Reversal -> Unit
+                is ClientCommand.Edit, is ClientCommand.Catalog, is ClientCommand.ItemizedDebt, is ClientCommand.Correction, is ClientCommand.Reversal -> Unit
                 is ClientCommand.Debt -> {
                     if (command.quick) clearQuick(application, command.id)
                     else clearOperation(application, checkNotNull(command.existingId), "debt", command.id)
