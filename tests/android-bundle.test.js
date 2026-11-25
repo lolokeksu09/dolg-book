@@ -219,7 +219,7 @@ test('repeat debt shortcuts prefill without posting and quick debt has optional 
   assert.ok(ui.includes('repeat.setOnClickListener(v->showEntryForm(person.id,"debt"))'));
   assert.ok(ui.includes('()->amount.setText(amountInput(cents))'));
   assert.ok(ui.includes('addButton(matches,"Недавние клиенты"'));
-  assert.ok(ui.includes('day[0],due.getText().toString(),note.getText().toString().trim()'));
+  assert.match(ui,/new ClientCommand\.Debt\(draftId,selected\[0\],n,ph,cents,day\[0\],\s*due\.getText\(\)\.toString\(\),note\.getText\(\)\.toString\(\)\.trim\(\)/);
   assert.ok(recent.includes('!canceled.contains(e.id)'));
 });
 
@@ -228,8 +228,14 @@ test('operation inspector uses exact selected IDs and history search',()=>{
   const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
   assert.ok(ui.includes('HistoryRows.select(all,people,historyClientId,historyQuery'));
   assert.ok(ui.includes('showOperation(e.id)'));
-  assert.ok(ui.includes('ledger.correctSelected(clientId,original.id'));
-  assert.ok(ui.includes('ledger.reverseSelected(clientId,last.id'));
+  const repository=read('android/app/src/main/kotlin/dev/ventry/raschet/data/LedgerRepository.kt');
+  const service=read('android/app/src/main/kotlin/dev/ventry/raschet/ClientWriteService.kt');
+  assert.ok(ui.includes('new ClientCommand.Correction(clientId,original.id'));
+  assert.ok(ui.includes('new ClientCommand.Reversal(clientId,last.id'));
+  assert.ok(repository.includes('store.correctSelected(command.clientId, command.expectedId,'));
+  assert.ok(repository.includes('store.reverseSelected(command.clientId, command.expectedId,'));
+  assert.ok(service.includes('is ClientCommand.Correction -> repository.correct(command)'));
+  assert.ok(service.includes('is ClientCommand.Reversal -> repository.reverse(command)'));
 });
 
 
@@ -258,7 +264,8 @@ test('collection workspace is separate from chronological book and uses a read-o
   const queue=read('android/app/src/main/java/dev/ventry/raschet/CollectionWorklist.java');
   assert.ok(ui.includes('tab.equals("Возврат")?collectionView(data)'));
   assert.ok(ui.includes('directory.setFollowUp(person.id,day[0]'));
-  assert.ok(ui.includes('else if(fromCollections){selectedClient=null;tab="Возврат";}'));
+  assert.ok(ui.includes('fromCollections?WriteDestination.COLLECTIONS:WriteDestination.DETAIL'));
+  assert.ok(ui.includes('case COLLECTIONS: tab="Возврат";selectedClient=null;break;'));
   assert.ok(queue.includes('if(s.balance>0)'));
 });
 
