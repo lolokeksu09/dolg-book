@@ -1,12 +1,13 @@
 plugins {
     id("com.android.application") version "8.10.1"
     id("org.jetbrains.kotlin.android") version "2.2.21"
+    id("org.jetbrains.kotlin.plugin.compose") version "2.2.21"
 }
 
 android {
     namespace = "dev.ventry.raschet"
     compileSdk = 35
-    buildFeatures { buildConfig = true }
+    buildFeatures { buildConfig = true; compose = true }
     defaultConfig {
         buildConfigField("boolean", "RUST_PREVIEW", "false")
         applicationId = "dev.ventry.raschet"
@@ -59,6 +60,14 @@ if (rustPreview) {
 }
 
 dependencies {
+    val composeBom = platform("androidx.compose:compose-bom:2025.04.01")
+    implementation(composeBom)
+    androidTestImplementation(composeBom)
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.foundation:foundation")
+    implementation("androidx.compose.material3:material3")
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
     implementation("androidx.activity:activity:1.10.1")
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.7")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
