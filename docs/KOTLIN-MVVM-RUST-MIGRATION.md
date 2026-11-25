@@ -269,3 +269,13 @@ Baseline 0cc050e: all five workflows successful, emulator 45588556638 ran 66 tes
 - PurchaseDrafts persists incomplete raw item rows (name, quantity, price, unit), discount, due date and note per client with stable UUID. Existing operation draft preference store means restore clears purchase drafts too. Opening a committed draft discards it by operation identity. Form hydration suppresses partial overwrites; catalog prices remain captured in the draft rather than dynamically repriced.
 - ClientWriteService clears only the matching purchase draft after the database operation commits. Failed validation retains the draft. Existing financial validation and purchase limits unchanged. Explicit discard starts a fresh purchase; drafts do not themselves create debt.
 - Added isolated draft storage instrumentation and extended the real emulator UI smoke to close/reopen the purchase before saving, checking restored item and total. New exact-head CI remains required. Purchase date still follows existing purchase submission behavior; portable metadata/drafts backup remains a separate task. No release or main merge.
+
+
+### Product readiness — calendar-first debt journal option
+
+Baseline a9f3a7e: all five workflows passed (APK, release candidate, Kotlin/Rust contract, JNI preview and emulator smoke). The debt journal remains the primary product; catalog selection is optional.
+
+- BookCalendar adds a Monday-first month grid, navigation, record counts and accessible descriptions with original/remaining debt or received payment amounts from existing BookDays projections. It does not calculate financial balances independently.
+- Calendar is an optional view on the main book; existing date list remains the default for compatibility. Selecting a date displays only that day's entries, automatically expanded, with the existing client, operation and dated write actions. Empty days offer the appropriate dated write action; future dates can be inspected but not used for new dated writes in calendar mode.
+- Activity state retains the selected date and view mode across navigation and rotation; successful debt/payment receipts select their committed date. Applying or clearing filters resets the date selection to the relevant projection. No storage schema change.
+- Added Compose instrumentation for Monday-first leap-year and six-week layouts, date selection, month navigation, accessible totals, selected-day client isolation and dated write routing. Exact-head Android CI and rendered layout checks remain required. No release or main merge.
