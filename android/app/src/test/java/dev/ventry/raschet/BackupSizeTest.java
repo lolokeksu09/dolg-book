@@ -13,7 +13,7 @@ public class BackupSizeTest {
         assertFalse(BackupSize.isSupported(BackupSize.MAX_BYTES+1L));
         assertFalse(BackupSize.isSupported(-1));
         try { BackupSize.requireSupported(BackupSize.MAX_BYTES+1L); fail("Oversized recovery must fail"); }
-        catch(IOException expected) { assertTrue(expected.getMessage().contains("10")); }
+        catch(IOException expected) { assertTrue(expected.getMessage().contains(Integer.toString(BackupSize.MAX_MIB))); }
     }
     @Test public void boundedReaderPreservesRussianAndRejectsMalformedUtf8() throws Exception {
         String sample="{\"name\":\"Яблоки\"}";
@@ -25,8 +25,21 @@ public class BackupSizeTest {
     }
 
     @Test public void boundedReaderRejectsOneByteBeyondLimit() throws Exception {
-        byte[] oversized=new byte[BackupSize.MAX_BYTES+1];
-        try { BackupSize.readUtf8(new ByteArrayInputStream(oversized)); fail("Oversized backup accepted"); }
-        catch(IOException expected) { assertTrue(expected.getMessage().contains("10")); }
+        java.io.InputStream oversized=new java.io.InputStream(){
+            private long remaining=BackupSize.MAX_BYTES+1L;
+            @Override public int read(){if(remaining==0)return -1;remaining--;return ' ';}
+            @Override public int read(byte[] data,int off,int len){
+                if(len==0)return 0;
+                if(remaining==0)return -1;
+                int n=(int)Math.min(remaining,len);
+                java.util.Arrays.fill(data,off,off+n,(byte)' ');remaining-=n;return n;
+            }
+        };
+        try(java.io.Reader reader=BackupSize.openUtf8(oversized)){
+            char[] buffer=new char[8192];
+            while(reader.read(buffer)!=-1){}
+            fail("Oversized backup accepted");
+        }
+        catch(IOException expected) { assertTrue(expected.getMessage().contains(Integer.toString(BackupSize.MAX_MIB))); }
     }
 }
