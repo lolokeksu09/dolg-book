@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -186,7 +187,7 @@ internal fun ClientListContent(
     BoxWithConstraints(Modifier.fillMaxSize().background(background), contentAlignment = Alignment.TopCenter) {
         val compact = maxWidth >= 340.dp && LocalDensity.current.fontScale <= 1.2f && !largeText
         LazyColumn(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.widthIn(max = 800.dp).fillMaxSize(),
             contentPadding = PaddingValues(start = 14.dp, top = 8.dp, end = 14.dp, bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
@@ -202,7 +203,7 @@ internal fun ClientListContent(
                 item("tools") {
                     if (compact) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            ClientSearchField(query, ::search, Modifier.weight(1f))
+                            ClientSearchField(query, ::search, Modifier.weight(1f), largeText)
                             Button(onClick = actions.add, shape = RoundedCornerShape(8.dp),
                                 modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = "+ Добавить клиента" },
                                 contentPadding = PaddingValues(horizontal = 14.dp)) {
@@ -214,7 +215,7 @@ internal fun ClientListContent(
                             Button(onClick = actions.add, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                                 Text("+ Добавить клиента")
                             }
-                            ClientSearchField(query, ::search, Modifier.fillMaxWidth())
+                            ClientSearchField(query, ::search, Modifier.fillMaxWidth(), largeText)
                         }
                     }
                 }
@@ -286,10 +287,11 @@ internal fun ClientListContent(
 }
 
 @Composable
-private fun ClientSearchField(value: String, changed: (String) -> Unit, modifier: Modifier) {
+private fun ClientSearchField(value: String, changed: (String) -> Unit, modifier: Modifier, largeText: Boolean) {
     OutlinedTextField(
         value = value, onValueChange = changed, singleLine = true,
-        placeholder = { Text("Поиск по имени или телефону", fontSize = 13.sp) },
+        placeholder = { Text("Поиск по имени или телефону", fontSize = if (largeText) 15.sp else 13.sp) },
+        textStyle = MaterialTheme.typography.bodyMedium.copy(fontSize = if (largeText) 17.sp else 15.sp),
         modifier = modifier.semantics { contentDescription = "Поиск по имени или телефону" },
         shape = RoundedCornerShape(8.dp)
     )
