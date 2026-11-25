@@ -553,71 +553,77 @@ public final class LedgerStore extends SQLiteOpenHelper {
         }finally{db.endTransaction();}
     }
 
-    /** Parse and verify all rows before replacing anything; apply the replacement in one SQLite transaction. */
+    /** Compatibility entry point; one parser owns all import validation. */
     public synchronized int[] importJson(String source) throws JSONException {
-        JSONObject book=new JSONObject(source);
-        int version=book.getInt("version");
-        if(version<1||version>4)throw new IllegalArgumentException("Поддерживаются копии v1–v4.");
-        List<Product> newProducts=new ArrayList<>();
-        if(version==4){
-            JSONArray ps=book.getJSONArray("products");
-            if(ps.length()>Product.MAX_PRODUCTS)throw new IllegalArgumentException("Каталог слишком большой.");
-            Set<String> productIds=new HashSet<>(),productKeys=new HashSet<>();
-            for(int i=0;i<ps.length();i++){
-                Product p=Product.fromJson(ps.getJSONObject(i));
-                if(!productIds.add(p.id)||(!p.archived&&!productKeys.add(p.normalizedKey())))
-                    throw new IllegalArgumentException("Дубли в каталоге.");
-                newProducts.add(p);
-            }
-        }else if(book.has("products"))throw new IllegalArgumentException("Каталог требует JSON v4.");
-        JSONArray cs=book.getJSONArray("clients"),es=book.getJSONArray("entries");
-        if(cs.length()>MAX_CLIENTS||es.length()>MAX_ENTRIES)throw new IllegalArgumentException("Книга слишком большая.");
-        List<Client> newClients=new ArrayList<>();
-        List<Entry> newEntries=new ArrayList<>();
-        Set<String> ids=new HashSet<>();
-        for(int i=0;i<cs.length();i++){
-            JSONObject c=cs.getJSONObject(i);
-            String id=c.getString("id"),name=c.getString("name"),phone=c.getString("phone");
-            checkClient(name,phone);
-            if(id.isEmpty()||id.length()>100||!ids.add(id))throw new IllegalArgumentException("Повтор или неверный ID клиента.");
-            newClients.add(new Client(id,name.trim(),phone));
-        }
-        Set<String> entryIds=new HashSet<>();
-        dev.ventry.raschet.domain.ImportLedgerValidation history=
-                new dev.ventry.raschet.domain.ImportLedgerValidation(version,ids);
-        for(int i=0;i<es.length();i++){
-            JSONObject j=es.getJSONObject(i);
-            String id=j.getString("id"),cid=j.getString("clientId"),type=j.getString("type"),
-                    date=j.getString("date"),due=j.getString("due"),note=j.getString("note"),
-                    reverses=j.optString("reverses","");
-            Object rawAmount=j.get("amount");
-            if(!(rawAmount instanceof Number) || !rawAmount.toString().matches("\\d{1,12}"))
-                throw new IllegalArgumentException("Сумма операции должна быть целым числом копеек.");
-            long amount=Long.parseLong(rawAmount.toString());
-            if(id.isEmpty()||id.length()>100||!entryIds.add(id)||!ids.contains(cid)
-                    ||!type.equals("debt")&&!type.equals("payment")&&!type.equals("reversal")
-                    ||amount<=0||amount>MAX_AMOUNT||note.length()>200||date.length()>40
-                    ||due.length()>10)throw new IllegalArgumentException("Некорректная запись.");
-            try { Instant.parse(date); } catch(Exception ex) {
-                try { java.time.OffsetDateTime.parse(date); } catch(Exception e) {throw new IllegalArgumentException("Неверная дата операции.");}
-            }
-            if(!due.isEmpty()) {
-                try {LocalDate.parse(due);}catch(Exception ex){throw new IllegalArgumentException("Неверный срок возврата.");}
-                if(!type.equals("debt"))throw new IllegalArgumentException("Срок задан не для долга.");
-            }
-            Purchase purchase=null;
-            if(j.has("purchase")){
-                if(version<3||!type.equals("debt"))throw new IllegalArgumentException("Состав покупки разрешён только для долга в v3/v4.");
-                purchase=Purchase.decode(j.getJSONObject("purchase").toString());
-                if(purchase.total!=amount||(version<4&&purchase.hasUnits()))throw new IllegalArgumentException("Неверный состав или сумма покупки.");
-            }
-            Entry e=new Entry(id,cid,type,amount,date,due,note,reverses,purchase);
-            history.accept(cid,id,type,amount,reverses,note);
-            newEntries.add(e);
-        }
+        try{return importJson(new java.io.StringReader(source));}
+        catch(java.io.IOException invalid){throw new IllegalArgumentException("Некорректный JSON.",invalid);}
+    }
+
+    /**
+     * Stage one JSON object at a time on the transaction's SQLite connection.
+     * Root field order is arbitrary. The current ledger remains committed until
+     * the entire input and every financial invariant have been checked.
+     */
+    public synchronized int[] importJson(java.io.Reader source) throws JSONException,java.io.IOException {
         SQLiteDatabase db=getWritableDatabase();
         db.beginTransaction();
-        try {
+        try{
+            db.execSQL("CREATE TEMP TABLE raschet_import_stage (seq INTEGER PRIMARY KEY,kind TEXT NOT NULL,row_json TEXT NOT NULL)");
+            int version=0,clientCount=-1,entryCount=-1,productCount=-1;
+            Set<String> fields=new HashSet<>();
+            android.util.JsonReader reader=new android.util.JsonReader(source);
+            reader.beginObject();
+            try(android.database.sqlite.SQLiteStatement stage=db.compileStatement(
+                    "INSERT INTO raschet_import_stage(kind,row_json) VALUES(?,?)")){
+                while(reader.hasNext()){
+                    String key=reader.nextName();
+                    if(!fields.add(key))throw new IllegalArgumentException("Повтор поля JSON.");
+                    switch(key){
+                        case "version":
+                            Object raw=readImportValue(reader,0);
+                            if(!(raw instanceof Number)||!raw.toString().matches("[1-4]"))
+                                throw new IllegalArgumentException("Поддерживаются копии v1–v4.");
+                            version=((Number)raw).intValue();
+                            break;
+                        case "clients": clientCount=stageRows(reader,stage,key,MAX_CLIENTS);break;
+                        case "entries": entryCount=stageRows(reader,stage,key,MAX_ENTRIES);break;
+                        case "products": productCount=stageRows(reader,stage,key,Product.MAX_PRODUCTS);break;
+                        default: reader.skipValue();
+                    }
+                }
+            }
+            reader.endObject();
+            if(reader.peek()!=android.util.JsonToken.END_DOCUMENT)
+                throw new IllegalArgumentException("Лишние данные после JSON.");
+            if(version<1||version>4||clientCount<0||entryCount<0)
+                throw new IllegalArgumentException("Неполная книга или неподдерживаемая версия.");
+            if((version==4)!=(productCount>=0))
+                throw new IllegalArgumentException("Каталог требует JSON v4.");
+
+            List<Product> newProducts=new ArrayList<>();
+            Set<String> productIds=new HashSet<>(),productKeys=new HashSet<>();
+            try(Cursor rows=stagedRows(db,"products")){
+                while(rows.moveToNext()){
+                    Product p=Product.fromJson(new JSONObject(rows.getString(0)));
+                    if(!productIds.add(p.id)||(!p.archived&&!productKeys.add(p.normalizedKey())))
+                        throw new IllegalArgumentException("Дубли в каталоге.");
+                    newProducts.add(p);
+                }
+            }
+            List<Client> newClients=new ArrayList<>();
+            Set<String> ids=new HashSet<>();
+            try(Cursor rows=stagedRows(db,"clients")){
+                while(rows.moveToNext()){
+                    JSONObject c=new JSONObject(rows.getString(0));
+                    String id=c.getString("id"),name=c.getString("name"),phone=c.getString("phone");
+                    checkClient(name,phone);
+                    if(id.isEmpty()||id.length()>100||!ids.add(id))
+                        throw new IllegalArgumentException("Повтор или неверный ID клиента.");
+                    newClients.add(new Client(id,name.trim(),phone));
+                }
+            }
+
+            // All changes below are uncommitted until validation of the last entry succeeds.
             db.delete("products",null,null);
             for(Product p:newProducts)db.insertOrThrow("products",null,productValues(p));
             db.delete("entries",null,null);
@@ -627,9 +633,95 @@ public final class LedgerStore extends SQLiteOpenHelper {
                 row.put("id",c.id);row.put("name",c.name);row.put("phone",c.phone);
                 db.insertOrThrow("clients",null,row);
             }
-            for(Entry e:newEntries)db.insertOrThrow("entries",null,values(e));
+            Set<String> entryIds=new HashSet<>();
+            dev.ventry.raschet.domain.ImportLedgerValidation history=
+                    new dev.ventry.raschet.domain.ImportLedgerValidation(version,ids);
+            try(Cursor rows=stagedRows(db,"entries")){
+                while(rows.moveToNext()){
+                    JSONObject j=new JSONObject(rows.getString(0));
+                    String id=j.getString("id"),cid=j.getString("clientId"),type=j.getString("type"),
+                            date=j.getString("date"),due=j.getString("due"),note=j.getString("note"),
+                            reverses=j.optString("reverses","");
+                    Object rawAmount=j.get("amount");
+                    if(!(rawAmount instanceof Number)||!rawAmount.toString().matches("\\d{1,12}"))
+                        throw new IllegalArgumentException("Сумма операции должна быть целым числом копеек.");
+                    long amount=Long.parseLong(rawAmount.toString());
+                    if(id.isEmpty()||id.length()>100||!entryIds.add(id)||!ids.contains(cid)
+                            ||!type.equals("debt")&&!type.equals("payment")&&!type.equals("reversal")
+                            ||amount<=0||amount>MAX_AMOUNT||note.length()>200||date.length()>40||due.length()>10)
+                        throw new IllegalArgumentException("Некорректная запись.");
+                    try{Instant.parse(date);}catch(Exception ex){
+                        try{java.time.OffsetDateTime.parse(date);}catch(Exception e){throw new IllegalArgumentException("Неверная дата операции.");}
+                    }
+                    if(!due.isEmpty()){
+                        try{LocalDate.parse(due);}catch(Exception ex){throw new IllegalArgumentException("Неверный срок возврата.");}
+                        if(!type.equals("debt"))throw new IllegalArgumentException("Срок задан не для долга.");
+                    }
+                    Purchase purchase=null;
+                    if(j.has("purchase")){
+                        if(version<3||!type.equals("debt"))
+                            throw new IllegalArgumentException("Состав покупки разрешён только для долга в v3/v4.");
+                        purchase=Purchase.decode(j.getJSONObject("purchase").toString());
+                        if(purchase.total!=amount||(version<4&&purchase.hasUnits()))
+                            throw new IllegalArgumentException("Неверный состав или сумма покупки.");
+                    }
+                    history.accept(cid,id,type,amount,reverses,note);
+                    Entry e=new Entry(id,cid,type,amount,date,due,note,reverses,purchase);
+                    db.insertOrThrow("entries",null,values(e));
+                }
+            }
+            db.execSQL("DROP TABLE raschet_import_stage");
             db.setTransactionSuccessful();
+            return new int[]{clientCount,entryCount};
         }finally{db.endTransaction();}
-        return new int[]{newClients.size(),newEntries.size()};
+    }
+
+    private static Cursor stagedRows(SQLiteDatabase db,String kind){
+        return db.rawQuery("SELECT row_json FROM raschet_import_stage WHERE kind=? ORDER BY seq",new String[]{kind});
+    }
+    private static int stageRows(android.util.JsonReader reader,android.database.sqlite.SQLiteStatement stage,
+            String kind,int max) throws java.io.IOException,JSONException{
+        int count=0;
+        reader.beginArray();
+        while(reader.hasNext()){
+            if(++count>max)throw new IllegalArgumentException("Книга слишком большая.");
+            Object row=readImportValue(reader,0);
+            if(!(row instanceof JSONObject))throw new IllegalArgumentException("Некорректная строка книги.");
+            stage.bindString(1,kind);stage.bindString(2,row.toString());stage.executeInsert();
+        }
+        reader.endArray();
+        return count;
+    }
+    /** Parse one bounded-depth row with original JSON number types; reject duplicate keys. */
+    private static Object readImportValue(android.util.JsonReader reader,int depth) throws java.io.IOException,JSONException{
+        if(depth>16)throw new IllegalArgumentException("Слишком глубокая структура JSON.");
+        switch(reader.peek()){
+            case BEGIN_OBJECT:
+                JSONObject object=new JSONObject();
+                reader.beginObject();
+                while(reader.hasNext()){
+                    String key=reader.nextName();
+                    if(object.has(key))throw new IllegalArgumentException("Повтор поля JSON.");
+                    object.put(key,readImportValue(reader,depth+1));
+                }
+                reader.endObject();return object;
+            case BEGIN_ARRAY:
+                JSONArray array=new JSONArray();
+                reader.beginArray();
+                while(reader.hasNext())array.put(readImportValue(reader,depth+1));
+                reader.endArray();return array;
+            case STRING:return reader.nextString();
+            case NUMBER:
+                // Preserve numeric spelling validation: a decimal or exponent must
+                // never normalize into an accepted integer amount during staging.
+                String number=reader.nextString();
+                if(!number.matches("-?(0|[1-9][0-9]*)"))
+                    throw new IllegalArgumentException("Числа в книге должны быть целыми.");
+                try{return Long.valueOf(number);}
+                catch(NumberFormatException ex){throw new IllegalArgumentException("Число вне диапазона.",ex);}
+            case BOOLEAN:return reader.nextBoolean();
+            case NULL:reader.nextNull();return JSONObject.NULL;
+            default:throw new IllegalArgumentException("Некорректный JSON.");
+        }
     }
 }
