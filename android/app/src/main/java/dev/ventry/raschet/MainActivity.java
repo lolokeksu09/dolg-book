@@ -3,6 +3,7 @@ package dev.ventry.raschet;
 import androidx.activity.ComponentActivity;
 import androidx.lifecycle.ViewModelProvider;
 import dev.ventry.raschet.presentation.BookViewModel;
+import dev.ventry.raschet.presentation.AnalyticsViewModel;
 import dev.ventry.raschet.presentation.BookScreenData;
 import dev.ventry.raschet.presentation.ReadState;
 import dev.ventry.raschet.presentation.WriteState;
@@ -71,6 +72,7 @@ public final class MainActivity extends ComponentActivity {
     private final DateTimeFormatter dayFormat=DateTimeFormatter.ofPattern("d MMM yyyy",new Locale("ru","RU"));
     private LedgerStore ledger;
     private BookViewModel bookViewModel;
+    private AnalyticsViewModel analyticsViewModel;
     private boolean reloadOnStart,firstStartPending;
     private Dialog pendingClientDialog;
     private TextView pendingClientError;
@@ -121,6 +123,7 @@ public final class MainActivity extends ComponentActivity {
         getWindow().getDecorView().setSystemUiVisibility(0);
         ledger=new LedgerStore(this);
         bookViewModel=new ViewModelProvider(this).get(BookViewModel.class);
+        analyticsViewModel=new ViewModelProvider(this).get(AnalyticsViewModel.class);
         vault=new RecoveryVault(this);
         directory=new ClientDirectory(this);
         privacy=new BookPrivacy(this);
@@ -261,6 +264,7 @@ public final class MainActivity extends ComponentActivity {
         return root;
     }
     private void render() {
+        if(analyticsViewModel!=null&&(!unlocked||!tab.equals("Статистика")||bookViewModel.hasPendingWrite()))analyticsViewModel.bindBook(null);
         if(!unlocked){bookViewModel.clear();page.removeAllViews();root.setVisibility(View.INVISIBLE);return;}
         root.setVisibility(View.VISIBLE);
         if(!tablet){navigation.getLayoutParams().height=dp(navHeight());navigation.requestLayout();}
@@ -273,7 +277,7 @@ public final class MainActivity extends ComponentActivity {
         for(int i=0;i<TABS.length;i++){
             final String destination=TABS[i];
             String caption=destination.equals("Главная")?"Книга":destination;
-            boolean active=destination.equals(tab)||(destination.equals("Главная")&&(tab.equals("Возврат")||tab.equals("Отчёт")));
+            boolean active=destination.equals(tab)||(destination.equals("Главная")&&(tab.equals("Возврат")||tab.equals("Отчёт")||tab.equals("Статистика")));
             LinearLayout item=tablet?row():stack(2);
             item.setGravity(Gravity.CENTER);
             item.setPadding(dp(tablet?10:2),dp(tablet?6:2),dp(tablet?6:2),dp(tablet?6:2));
@@ -326,7 +330,7 @@ public final class MainActivity extends ComponentActivity {
     }
     private boolean needsBookSnapshot(){
         return tabletClientScreen()||selectedClient!=null||
-                tab.equals("Главная")||tab.equals("Клиенты")||tab.equals("Возврат")||tab.equals("История")||tab.equals("Отчёт");
+                tab.equals("Главная")||tab.equals("Клиенты")||tab.equals("Возврат")||tab.equals("История")||tab.equals("Отчёт")||tab.equals("Статистика");
     }
     private void onBookState(ReadState<?> state){
         if(!unlocked||isFinishing()||isDestroyed()||bookViewModel.hasPendingWrite()||!needsBookSnapshot()
@@ -360,7 +364,8 @@ public final class MainActivity extends ComponentActivity {
                     tab.equals("Клиенты")?clientsView(data):
                     tab.equals("История")?historyView(data):
                     tab.equals("Возврат")?collectionView(data):
-                    tab.equals("Отчёт")?reportView(data):settingsView();
+                    tab.equals("Отчёт")?reportView(data):
+                    tab.equals("Статистика")?analyticsView(data):settingsView();
             page.addView(contents,new FrameLayout.LayoutParams(-1,-1));
         }catch(Exception e){
             LinearLayout error=screen("Ошибка чтения книги","Данные не были изменены.");
@@ -382,7 +387,8 @@ public final class MainActivity extends ComponentActivity {
                 this::showOperation,id->showEntryForm(id,"payment"),id->showEntryForm(id,"debt"),
                 day->showQuickDebt(false,day),day->chooseClient("payment",day),
                 ()->{tab="Отчёт";selectedClient=null;render();},()->exportBook(false),
-                bookCalendar,bookCalendarDay,(calendar,day)->{bookCalendar=calendar;bookCalendarDay=day;});
+                bookCalendar,bookCalendarDay,(calendar,day)->{bookCalendar=calendar;bookCalendarDay=day;},
+                ()->{analyticsViewModel.focus(null);tab="Статистика";selectedClient=null;render();});
     }
 
     private void openCollections(){
@@ -718,6 +724,13 @@ public final class MainActivity extends ComponentActivity {
                 date.getYear(),date.getMonthValue()-1,date.getDayOfMonth());
         picker.setTitle(title);picker.show();
     }
+    private View analyticsView(BookScreenData data){
+        return AnalyticsCompose.create(this,data,analyticsViewModel,
+                ()->{tab="Главная";render();},()->{tab="Отчёт";render();},(from,to)->{
+                    historyFrom=from;historyTo=to;historyFilter="Все";historyQuery="";
+                    historyClientId=null;historyVisibleLimit=100;tab="История";render();
+                });
+    }
     private View reportView(BookScreenData data){
         return ReportCompose.create(this,data,reportFrom,reportTo,reportDaysLimit,
                 ()->choosePeriod(true),()->{
@@ -900,6 +913,7 @@ public final class MainActivity extends ComponentActivity {
         if(productPickerDialog!=null)productPickerDialog.dismiss();
         if(privacy!=null&&!authInFlight)stoppedAt=android.os.SystemClock.elapsedRealtime();
         reloadOnStart=true;
+        analyticsViewModel.bindBook(null);
         bookViewModel.clear();
         if(page!=null)page.removeAllViews();
         super.onStop();
@@ -2052,7 +2066,7 @@ public final class MainActivity extends ComponentActivity {
         else if(!tab.equals("Главная")){tab="Главная";render();}
         else super.onBackPressed();
     }
-    @Override protected void onDestroy() {if(productPickerDialog!=null)productPickerDialog.dismiss();if(bookViewModel!=null)bookViewModel.clear();if(ledger!=null)ledger.close();super.onDestroy();}
+    @Override protected void onDestroy() {if(productPickerDialog!=null)productPickerDialog.dismiss();if(analyticsViewModel!=null)analyticsViewModel.bindBook(null);if(bookViewModel!=null)bookViewModel.clear();if(ledger!=null)ledger.close();super.onDestroy();}
     private void message(String m) {Toast.makeText(this,m,Toast.LENGTH_LONG).show();}
 
     private LinearLayout screen(String title,String subtitle) {
