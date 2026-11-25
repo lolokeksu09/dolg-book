@@ -3,6 +3,8 @@ package dev.ventry.raschet;
 import org.junit.Test;
 import static org.junit.Assert.*;
 import java.io.IOException;
+import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
 
 public class BackupSizeTest {
     @Test public void sharedLimitAcceptsPreviouslyRejectedRecoverySize() throws Exception {
@@ -11,6 +13,20 @@ public class BackupSizeTest {
         assertFalse(BackupSize.isSupported(BackupSize.MAX_BYTES+1L));
         assertFalse(BackupSize.isSupported(-1));
         try { BackupSize.requireSupported(BackupSize.MAX_BYTES+1L); fail("Oversized recovery must fail"); }
+        catch(IOException expected) { assertTrue(expected.getMessage().contains("10")); }
+    }
+    @Test public void boundedReaderPreservesRussianAndRejectsMalformedUtf8() throws Exception {
+        String sample="{\"name\":\"Яблоки\"}";
+        assertEquals(sample,BackupSize.readUtf8(new ByteArrayInputStream(sample.getBytes(StandardCharsets.UTF_8))));
+        try {
+            BackupSize.readUtf8(new ByteArrayInputStream(new byte[]{(byte)0xc3,0x28}));
+            fail("Malformed UTF-8 must not be replaced silently");
+        } catch(java.nio.charset.CharacterCodingException expected) {}
+    }
+
+    @Test public void boundedReaderRejectsOneByteBeyondLimit() throws Exception {
+        byte[] oversized=new byte[BackupSize.MAX_BYTES+1];
+        try { BackupSize.readUtf8(new ByteArrayInputStream(oversized)); fail("Oversized backup accepted"); }
         catch(IOException expected) { assertTrue(expected.getMessage().contains("10")); }
     }
 }
