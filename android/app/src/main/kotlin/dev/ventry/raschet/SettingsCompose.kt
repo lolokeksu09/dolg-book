@@ -97,10 +97,18 @@ internal fun SettingsContent(state: SettingsSnapshot, actions: SettingsActions) 
                 }
             }
             if (state.expanded == "backup") {
-                Text(state.lastExportText, color = if (state.externalBackupConfirmed) ledgerMuted else ledgerAlert,
-                    fontSize = if (state.largeText) 16.sp else 13.sp)
+                Column(Modifier.fillMaxWidth().background(ledgerPanel, RoundedCornerShape(12.dp)).padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Внешняя копия книги", color = ledgerText, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
+                    Text(state.lastExportText, color = if (state.externalBackupConfirmed) ledgerMuted else ledgerAlert,
+                        fontSize = if (state.largeText) 16.sp else 13.sp)
+                    SettingsHint("JSON сохраняет данные книги для переноса на другое устройство. Файл не зашифрован.", state.largeText)
+                    Button(onClick = actions.json::run, shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Скачать JSON-копию") }
+                }
                 SettingsPanel {
-                    Text("Защищённые точки восстановления", color = ledgerText, fontWeight = FontWeight.Bold)
+                    Text("Защищённые точки восстановления", color = ledgerText, fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(top = 10.dp))
                     SettingsHint(state.recoveryStatus, state.largeText)
                     if (state.recoveryError) Text("Автозащита не смогла создать последнюю копию. Сохраните JSON вручную.",
                         color = ledgerRed, fontSize = 13.sp)
@@ -115,11 +123,15 @@ internal fun SettingsContent(state: SettingsSnapshot, actions: SettingsActions) 
                 SettingsToggle("Автозащита после изменений",
                     "Создаёт локальную зашифрованную точку после сохранения. При серии быстрых записей сохраняется последнее состояние. Хранятся до четырёх точек.",
                     "Автозащита книги", state.autoRecovery, state.largeText, actions.autoRecovery::accept)
-                LedgerMetric("Скачать JSON-копию", "Для переноса на другое устройство", action = actions.json::run)
-                LedgerMetric("Экспортировать CSV", "Таблица операций", action = actions.csv::run)
-                LedgerMetric("Восстановить из JSON", "Полная замена данных после подтверждения", action = actions.restoreJson::run)
+                SettingsSection("Экспорт и восстановление", state.largeText)
                 SettingsPanel {
-                    Text("Важно о резервных копиях", color = ledgerAlert, fontWeight = FontWeight.Bold)
+                    LedgerMetric("Экспортировать CSV", "Таблица операций", action = actions.csv::run)
+                    LedgerMetric("Восстановить из JSON", "Полная замена данных после подтверждения",
+                        ledgerAlert, action = actions.restoreJson::run)
+                }
+                SettingsPanel {
+                    Text("Важно о резервных копиях", color = ledgerAlert, fontWeight = FontWeight.Medium,
+                        modifier = Modifier.padding(top = 10.dp))
                     SettingsHint("При удалении приложения локальная книга будет потеряна. JSON-копия содержит имена, телефоны и суммы без шифрования.",
                         state.largeText)
                 }
@@ -154,7 +166,7 @@ private fun SettingsHint(value: String, large: Boolean) {
 @Composable
 private fun SettingsPanel(content: @Composable () -> Unit) {
     Column(Modifier.fillMaxWidth().background(ledgerPanel, RoundedCornerShape(8.dp)).padding(horizontal = 14.dp, vertical = 2.dp),
-        verticalArrangement = Arrangement.spacedBy(0.dp)) { content() }
+        verticalArrangement = Arrangement.spacedBy(4.dp)) { content() }
 }
 
 /** State is committed by the callback, never optimistically flipped before permission/OS confirmation. */
