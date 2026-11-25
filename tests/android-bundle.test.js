@@ -136,7 +136,9 @@ test('dense lists, selected filters and content-sized dialogs are wired',()=>{
 
 test('counter-first UI keeps both financial actions, compact search and viewport-aware dialogs',()=>{
   const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
-  assert.ok(ui.includes('addButton(quick,"Принять оплату",false'));
+  const book=read('android/app/src/main/kotlin/dev/ventry/raschet/BookCompose.kt');
+  assert.ok(book.includes('OutlinedButton(onClick = actions.payment'));
+  assert.ok(book.includes('Text("Принять оплату")'));
   const compose=read('android/app/src/main/kotlin/dev/ventry/raschet/ClientsCompose.kt');
   assert.ok(compose.includes('contentDescription = "+ Добавить клиента"'));
   const detail=read('android/app/src/main/kotlin/dev/ventry/raschet/ClientDetailCompose.kt');
@@ -154,9 +156,11 @@ test('AMOLED ledger uses shared semantic palette and real metric rows',()=>{
   const theme=read('android/app/src/main/java/dev/ventry/raschet/LedgerTheme.java');
   assert.ok(theme.includes('BG=0xff000000'));
   for(const screen of ['MainActivity','IntroActivity','SplashActivity']) assert.ok(read('android/app/src/main/java/dev/ventry/raschet/'+screen+'.java').includes('LedgerTheme.BG'));
-  assert.ok(ui.includes('balancePanel("Общая задолженность",debt)'));
-  assert.ok(ui.includes('metricRow(due,"Просрочено",money(overdue)'));
-  assert.ok(ui.includes('metricRow(view,"Возврат долгов"'));
+  const book=read('android/app/src/main/kotlin/dev/ventry/raschet/BookCompose.kt');
+  const collections=read('android/app/src/main/kotlin/dev/ventry/raschet/CollectionsCompose.kt');
+  assert.ok(book.includes('LedgerTotal("Общая задолженность", model.total)'));
+  assert.ok(collections.includes('LedgerMetric("Просрочено", ledgerMoney(model.overdue)'));
+  assert.ok(book.includes('LedgerMetric("Возврат долгов"'));
   assert.ok(ui.includes('android.R.attr.state_focused'));
   assert.ok(ui.includes('STRIKE_THRU_TEXT_FLAG'));
 });
@@ -166,7 +170,10 @@ test('book starts directly with a dated debt form and expandable daily journal',
   const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
   const store=read('android/app/src/main/java/dev/ventry/raschet/LedgerStore.java');
   assert.ok(ui.includes('this::showQuickDebt'));
-  assert.ok(ui.includes('BookDays.group(entries,ZoneId.systemDefault())'));
+  const book=read('android/app/src/main/kotlin/dev/ventry/raschet/BookCompose.kt');
+  assert.ok(book.includes('BookDays.group(entries, zone)'));
+  assert.ok(book.includes('expanded = if (open) expanded - key else expanded + key'));
+  assert.ok(ui.includes('return BookCompose.create(this,data,bookPayments'));
   assert.ok(ui.includes('expandedBookDays.add(key)'));
   assert.ok(ui.includes('formGroup("Дата записи",date)'));
   assert.ok(ui.includes('hasExactCustomer('));
@@ -187,9 +194,11 @@ test('client creation routes to the shared optional debt form and existing clien
 test('journal filters preserve the full-book allocation and support date-scoped entry',()=>{
   const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
   const days=read('android/app/src/main/java/dev/ventry/raschet/BookDays.java');
-  assert.ok(ui.includes('BookDays.select(allDays,people,bookFrom,bookTo,bookQuery,bookOnlyUnpaid)'));
-  assert.ok(ui.includes('showQuickDebt(false,day.date)'));
-  assert.ok(ui.includes('day.unpaid.getOrDefault(e.id,0L)'));
+  const book=read('android/app/src/main/kotlin/dev/ventry/raschet/BookCompose.kt');
+  assert.ok(book.includes('BookDays.select(allDays, people, from, to, query, onlyUnpaid && !payments)'));
+  assert.ok(book.includes('actions.debtDate(day.date)'));
+  assert.ok(ui.includes('day->showQuickDebt(false,day)'));
+  assert.ok(book.includes('day.unpaid.getOrDefault(e.id, 0L)'));
   assert.ok(days.includes('Math.min(available,e.amount)'));
   assert.ok(days.includes('if(onlyUnpaid&&rest==0)continue;'));
 });
@@ -214,8 +223,10 @@ test('launcher has adaptive and themed icon resources without changing the Ventr
 test('payment journal is separate from unpaid debt and shortcuts only prefill the amount',()=>{
   const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
   const days=read('android/app/src/main/java/dev/ventry/raschet/BookDays.java');
-  assert.ok(ui.includes('BookDays.groupPayments(entries,ZoneId.systemDefault())'));
-  assert.ok(ui.includes('bookModeButton(modes,"Оплаты по датам",true)'));
+  const book=read('android/app/src/main/kotlin/dev/ventry/raschet/BookCompose.kt');
+  assert.ok(book.includes('BookDays.groupPayments(entries, zone)'));
+  assert.ok(book.includes('"Оплаты по датам" to true'));
+  assert.ok(book.includes('actions.mode(value)'));
   assert.ok(ui.includes('amount.setText(amountInput(available))'));
   assert.ok(ui.includes('"payment".equals(receipt.getKind())&&receipt.getDestination()==WriteDestination.BOOK'));
   assert.ok(days.includes('if(!"payment".equals(e.type))continue;'));
@@ -288,7 +299,9 @@ test('collection workspace is separate from chronological book and uses a read-o
 test('payment promises calculate progress from active receipts after the promise and only prefill payment',()=>{
  const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
  const model=read('android/app/src/main/java/dev/ventry/raschet/PaymentPromises.java');
- assert.ok(ui.includes('nameRow.setMinimumHeight(dp(48))'));
+ const collections=read('android/app/src/main/kotlin/dev/ventry/raschet/CollectionsCompose.kt');
+ assert.ok(collections.includes('heightIn(min = 48.dp).clickable { actions.open(person.id) }'));
+ assert.ok(collections.includes('promiseNotices(plan, item.promise, today)'));
  assert.ok(ui.includes('Обещанная сумма, ₽ (необязательно)'));
  assert.ok(ui.includes('()->amount.setText(amountInput(outstanding))'));
  assert.ok(model.includes('canceled.contains(e.id)'));
