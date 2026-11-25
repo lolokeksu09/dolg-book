@@ -37,7 +37,8 @@ object ClientWriteService {
         try {
             when (command) {
                 is ClientCommand.Create -> clearQuick(application, command.id)
-                is ClientCommand.FileTask, is ClientCommand.Edit, is ClientCommand.Catalog, is ClientCommand.ItemizedDebt, is ClientCommand.Correction, is ClientCommand.Reversal -> Unit
+                is ClientCommand.FileTask, is ClientCommand.Edit, is ClientCommand.Catalog, is ClientCommand.Correction, is ClientCommand.Reversal -> Unit
+                is ClientCommand.ItemizedDebt -> PurchaseDrafts(application).clearCommitted(command.clientId, command.id)
                 is ClientCommand.Debt -> {
                     if (command.quick) clearQuick(application, command.id)
                     else clearOperation(application, checkNotNull(command.existingId), "debt", command.id)
