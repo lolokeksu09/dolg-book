@@ -48,16 +48,17 @@ class BookFileServiceInstrumentedTest {
                 val signature = ByteArray(4)
                 java.io.DataInputStream(pdf.inputStream()).use { it.readFully(signature) }
                 assertEquals("%PDF", String(signature, Charsets.US_ASCII))
+                val vault = RecoveryVault(File(dir, "isolated-points"))
                 val invalid = File(dir, "invalid.json").apply { writeBytes(byteArrayOf(0xc3.toByte(), 0x28)) }
                 try {
-                    BookFileService.execute(app, FileTask.Import(uri(invalid), preferences), book)
+                    BookFileService.execute(app, FileTask.Import(uri(invalid), preferences), book, vault)
                     fail("Invalid UTF-8 must fail before restore")
                 } catch (_: IllegalArgumentException) {}
                 assertEquals(before, book.exportJson())
                 val oversized = File(dir, "oversized.json")
                 java.io.RandomAccessFile(oversized, "rw").use { it.setLength(BackupSize.MAX_BYTES.toLong() + 1) }
                 try {
-                    BookFileService.execute(app, FileTask.Import(uri(oversized), preferences), book)
+                    BookFileService.execute(app, FileTask.Import(uri(oversized), preferences), book, vault)
                     fail("Oversized input must fail before restore")
                 } catch (_: IllegalArgumentException) {}
                 assertEquals(before, book.exportJson())
