@@ -47,7 +47,9 @@ test('tablet adaptation and bounded history belong to 0.5 beta',()=>{
   const activity=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
   assert.ok(activity.includes('tabletClientsView(data)'));
   assert.ok(activity.includes('screenWidthDp>=1100'));
-  assert.ok(activity.includes('shown>=historyVisibleLimit'));
+  const history=read('android/app/src/main/kotlin/dev/ventry/raschet/HistoryCompose.kt');
+  assert.ok(history.includes('val shown = result.take(limit)'));
+  assert.ok(history.includes('limit = minOf(100000, limit + 100)'));
   const detail=read('android/app/src/main/kotlin/dev/ventry/raschet/ClientDetailCompose.kt');
   assert.ok(detail.includes('model.rows.take(visibleLimit)'));
   assert.ok(detail.includes('visibleLimit = minOf(100000, visibleLimit + 80)'));
