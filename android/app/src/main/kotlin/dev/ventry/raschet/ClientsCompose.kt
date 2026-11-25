@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.TextButton
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -202,7 +204,14 @@ internal fun ClientListContent(
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             item("title") {
-                Text("Клиенты", color = text, fontSize = if (largeText) 30.sp else 28.sp, fontWeight = FontWeight.SemiBold)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Клиенты", color = text, fontSize = if (largeText) 28.sp else 24.sp, fontWeight = FontWeight.SemiBold)
+                        Text("Всего: " + model.allCount, color = muted, fontSize = 13.sp)
+                    }
+                    if (model.allCount > 0) TextButton(onClick = actions.add,
+                        modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = "+ Добавить клиента" }) { Text("+ Клиент") }
+                }
             }
             if (model.allCount == 0) {
                 item("empty-book") {
@@ -211,23 +220,7 @@ internal fun ClientListContent(
                 }
             } else {
                 item("tools") {
-                    if (compact) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            ClientSearchField(query, ::search, Modifier.weight(1f), largeText)
-                            Button(onClick = actions.add, shape = RoundedCornerShape(8.dp),
-                                modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = "+ Добавить клиента" },
-                                contentPadding = PaddingValues(horizontal = 14.dp)) {
-                                Text("+", fontSize = 22.sp)
-                            }
-                        }
-                    } else {
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Button(onClick = actions.add, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                                Text("+ Добавить клиента")
-                            }
-                            ClientSearchField(query, ::search, Modifier.fillMaxWidth(), largeText)
-                        }
-                    }
+                    ClientSearchField(query, ::search, Modifier.fillMaxWidth(), largeText)
                 }
                 item("filters") {
                     Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)
@@ -328,6 +321,9 @@ private fun ClientRow(status: CollectionsInsights.CustomerStatus, limit: Long, i
         .semantics { contentDescription = description; selected = isSelected }
         .padding(horizontal = 8.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Box(Modifier.size(38.dp).background(Color(LedgerTheme.ELEVATED), RoundedCornerShape(10.dp)), contentAlignment = Alignment.Center) {
+            Text(customer.name.trim().take(1).uppercase(Locale("ru", "RU")), color = Color(LedgerTheme.ACCENT), fontSize = 17.sp, fontWeight = FontWeight.Medium)
+        }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(customer.name, color = text, fontSize = if (largeText) 17.sp else 15.sp, fontWeight = FontWeight.SemiBold)
             if (customer.phone.isNotEmpty()) Text(customer.phone, color = muted, fontSize = 13.sp)
@@ -337,7 +333,9 @@ private fun ClientRow(status: CollectionsInsights.CustomerStatus, limit: Long, i
             if (limitText.isNotEmpty()) Text(limitText, color = alert, fontSize = 12.sp)
         }
         Column(horizontalAlignment = Alignment.End) {
-            Text(money(amount), color = text, fontSize = if (largeText) 18.sp else 16.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.End)
+            Text(money(amount), color = if (amount == 0L) muted else text, fontSize = if (largeText) 18.sp else 16.sp,
+                fontWeight = FontWeight.Medium, textAlign = TextAlign.End,
+                style = androidx.compose.ui.text.TextStyle(fontFeatureSettings = "tnum"))
             if (amount == 0L) Text("Нет долга", color = muted, fontSize = 11.sp)
         }
         Text("›", color = muted, fontSize = 19.sp)
