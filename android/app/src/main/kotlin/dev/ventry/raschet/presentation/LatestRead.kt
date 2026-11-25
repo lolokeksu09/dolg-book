@@ -21,6 +21,17 @@ class LatestRead<T>(private val scope: CoroutineScope, private val load: suspend
     private var generation = 0L
     private var job: Job? = null
 
+    /** Reuse a valid committed result; join an in-flight read instead of restarting it.
+     * Failed/idle/stale results trigger a fresh read. Explicit refresh and clear stay authoritative.
+     */
+    fun ensureFresh(valid: (T) -> Boolean): T? {
+        return when (val current = mutable.value) {
+            is ReadState.Ready -> if (valid(current.value)) current.value else { refresh(); null }
+            is ReadState.Loading -> null
+            else -> { refresh(); null }
+        }
+    }
+
     fun refresh() {
         val request = ++generation
         job?.cancel()
