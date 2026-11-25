@@ -739,6 +739,7 @@ public final class MainActivity extends ComponentActivity {
         historyFromAnalytics=false;
         String client=analyticsClientId;analyticsClientId=null;
         if(client==null){tab="Главная";selectedClient=null;}
+        else if(analyticsReturnTab.equals("Статистика")){tab="Статистика";selectedClient=null;}
         else{tab=analyticsReturnTab;selectedClient=client;}
         render();
     }
@@ -748,7 +749,7 @@ public final class MainActivity extends ComponentActivity {
                 this::returnFromAnalytics,()->{analyticsClientId=null;tab="Отчёт";render();},(from,to)->{
                     historyFrom=from;historyTo=to;historyFilter="Все";historyQuery="";
                     historyClientId=analyticsClientId;historyVisibleLimit=100;historyFromAnalytics=true;tab="История";render();
-                });
+                },this::openClientAnalytics,analyticsClientId!=null&&analyticsReturnTab.equals("Статистика"));
     }
     private View reportView(BookScreenData data){
         return ReportCompose.create(this,data,reportFrom,reportTo,reportDaysLimit,
