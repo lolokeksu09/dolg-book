@@ -4,6 +4,15 @@ import java.time.LocalDate
 
 /** Immutable commands captured from the form before dispatching to IO. */
 sealed interface ClientCommand {
+    /** File commands hold only immutable SAF URI strings and user-approved parameters. */
+    sealed interface FileTask : ClientCommand {
+        data class Export(val uri: String, val csv: Boolean, val preferencesName: String) : FileTask
+        data class Report(val uri: String, val from: LocalDate, val to: LocalDate) : FileTask
+        data class Pdf(val uri: String, val clientId: String, val shop: String) : FileTask
+        data class Import(val uri: String, val preferencesName: String) : FileTask
+        data class RestorePoint(val preferencesName: String) : FileTask
+        data object CreatePoint : FileTask
+    }
     data class Create(val id: String, val name: String, val phone: String, val allowDuplicate: Boolean) : ClientCommand
     data class Edit(val id: String, val name: String, val phone: String) : ClientCommand
     data class Catalog(val record: CatalogRecord) : ClientCommand
@@ -30,11 +39,12 @@ sealed interface ClientCommand {
 
 enum class WriteDestination { KEEP, CLIENTS, BOOK, COLLECTIONS, DETAIL }
 
-data class WriteReceipt(
+data class WriteReceipt @JvmOverloads constructor(
     val destination: WriteDestination,
     val kind: String,
     val clientId: String?,
     val day: LocalDate?,
     val rank: Int,
-    val settled: Boolean
+    val settled: Boolean,
+    val message: String? = null
 )
