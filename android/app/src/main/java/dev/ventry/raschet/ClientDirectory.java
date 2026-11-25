@@ -26,9 +26,9 @@ final class ClientDirectory {
         if(!prefs.edit().putStringSet(key,items).commit())
             throw new IllegalStateException("Не удалось сохранить настройку клиента.");
     }
-    boolean favorite(String id){return ids("favorites").contains(id);}
+    boolean favorite(String id){return prefs.getStringSet("favorites",java.util.Collections.emptySet()).contains(id);}
     void favorite(String id,boolean value){set("favorites",id,value);}
-    boolean archived(String id,long balance){return balance==0&&ids("archived").contains(id);}
+    boolean archived(String id,long balance){return balance==0&&prefs.getStringSet("archived",java.util.Collections.emptySet()).contains(id);}
     void archive(String id,long balance,boolean value){
         if(value&&balance!=0)throw new IllegalArgumentException("Сначала погасите долг.");
         set("archived",id,value);
