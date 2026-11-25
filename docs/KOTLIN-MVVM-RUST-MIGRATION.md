@@ -197,3 +197,12 @@ Owner request 2026-11-25: address product audit and align the native app with Ve
 - REL-01 OPEN: exact-head CI, signed upgrade and physical device acceptance.
 
 Added BackupSizeTest and catalog routing UI test, updated prior removed-catalog assertions to reflect the newly authorized functionality, retained manual purchase smoke. Local Android build/emulator unavailable; CI required, no merge or release until exact-head gates pass.
+
+
+### Product readiness — performance slice
+
+Baseline PR #17 d5dce2d: all five PR workflows passed (Android APK 45562002857, Kotlin/Rust 45562002844, emulator 45562002967, Rust preview 45562002937, unsigned release 45562002856). Signed release not verified.
+
+- Indexed client history uses the existing entries_client_seq index; all reversals and insertion order are retained. Global row caps use SQLite COUNT, and journal rank reads distinct timestamps without allocating purchase rows or running FIFO projections. Client-specific legacy forms and PDF now read only the selected client's history.
+- Automatic recovery queue coalesces pending requests to the latest snapshot: one running + one pending; a request arriving during a snapshot schedules another pass. Up to four completed recovery points retained; intermediate rapid edits may share one point. Manual recovery unchanged. No durability across process death added.
+- Added IndexedLedgerInstrumentedTest for full-book/scoped balance, dated guards, rank, reversal and correction parity; LatestRecoveryQueueTest for burst and failure handling. No schema or financial calculation change. New HEAD CI and representative latency/memory benchmarks pending. Main remains unchanged; no release.
