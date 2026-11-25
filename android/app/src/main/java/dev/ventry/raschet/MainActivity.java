@@ -1290,13 +1290,31 @@ public final class MainActivity extends ComponentActivity {
         if(directory.archived(clientId,LedgerStore.balance(ledger.entriesForClient(clientId),clientId))){
             message("Сначала верните клиента из архива.");return;
         }
+        PurchaseDrafts drafts=new PurchaseDrafts(this);
+        PurchaseDrafts.Draft previous=drafts.get(clientId);
+        if(previous!=null&&ledger.hasEntryId(previous.id)){drafts.clear(clientId);previous=null;}
+        final String purchaseId=previous==null?java.util.UUID.randomUUID().toString():previous.id;
+        final PurchaseDrafts.Draft restored=previous;
+        final boolean[] hydrating={true};
         LinearLayout form=stack(7);
         form.addView(label(client.name+" · товары в долг",14,TEXT,true));
+        if(restored!=null)form.addView(label("Черновик покупки восстановлен. Проверьте товары и цены.",12,ACCENT,false));
         LinearLayout rows=stack(6);
         List<PurchaseRow> items=new ArrayList<>();
         List<CatalogRecord> catalog=catalogRows();
         catalog.removeIf(CatalogRecord::getArchived);
-        EditText discount=field("0,00",null);
+        EditText discount=field("0,00",restored==null?null:restored.discount);
+        EditText due=field("Без срока",restored==null?null:restored.due);
+        EditText note=field("Комментарий",restored==null?null:restored.note);
+        Runnable persist=()->{
+            if(hydrating[0]||items.isEmpty())return;
+            List<PurchaseDrafts.Row> raw=new ArrayList<>();
+            for(PurchaseRow r:items)raw.add(new PurchaseDrafts.Row(r.name.getText().toString(),
+                    r.quantity.getText().toString(),r.price.getText().toString(),
+                    r.unit.getSelectedItemPosition()<=0?"":r.units.get(r.unit.getSelectedItemPosition())));
+            drafts.save(clientId,new PurchaseDrafts.Draft(purchaseId,raw,
+                    discount.getText().toString(),due.getText().toString(),note.getText().toString()));
+        };
         discount.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);
         LinearLayout summary=stack(2);
         TextView total=label("Итого к записи: —",20,ACCENT,true);
@@ -1328,19 +1346,18 @@ public final class MainActivity extends ComponentActivity {
             PurchaseRow r=new PurchaseRow(catalog);items.add(r);rows.addView(r.block,margin(-1,-2,8));
             addButton(r.block,"Удалить позицию",false,()->{
                 if(items.size()==1){message("Оставьте хотя бы одну позицию.");return;}
-                items.remove(r);rows.removeView(r.block);update.run();
+                items.remove(r);rows.removeView(r.block);update.run();persist.run();
             },1);
             r.removeAction=r.block.getChildAt(r.block.getChildCount()-1);
-            r.name.addTextChangedListener(watcher(v->update.run()));
-            r.quantity.addTextChangedListener(watcher(v->update.run()));
-            r.price.addTextChangedListener(watcher(v->update.run()));
-            onSelection(r.unit,index->update.run());
-            update.run();
+            r.name.addTextChangedListener(watcher(v->{update.run();persist.run();}));
+            r.quantity.addTextChangedListener(watcher(v->{update.run();persist.run();}));
+            r.price.addTextChangedListener(watcher(v->{update.run();persist.run();}));
+            onSelection(r.unit,index->{update.run();persist.run();});
+            update.run();persist.run();
         };
         addButton(form,"+ Добавить товар",false,add,1);
         form.addView(formGroup("Скидка на покупку, ₽",discount));
-        discount.addTextChangedListener(watcher(v->update.run()));
-        EditText due=field("Без срока",null);
+        discount.addTextChangedListener(watcher(v->{update.run();persist.run();}));
         due.setFocusable(false);due.setOnClickListener(v->{
             LocalDate today=LocalDate.now();
             new DatePickerDialog(this,(picker,y,m,d)->due.setText(LocalDate.of(y,m+1,d).toString()),
@@ -1349,18 +1366,32 @@ public final class MainActivity extends ComponentActivity {
         form.addView(formGroup("Вернуть до (необязательно)",due));
         LinearLayout clearPurchaseDue=stack(0);
         addButton(clearPurchaseDue,"Без срока",false,()->due.setText(""),1);
-        clearPurchaseDue.setVisibility(View.GONE);
-        due.addTextChangedListener(watcher(v->clearPurchaseDue.setVisibility(v.isEmpty()?View.GONE:View.VISIBLE)));
+        clearPurchaseDue.setVisibility(due.getText().length()==0?View.GONE:View.VISIBLE);
+        due.addTextChangedListener(watcher(v->{clearPurchaseDue.setVisibility(v.isEmpty()?View.GONE:View.VISIBLE);persist.run();}));
         form.addView(clearPurchaseDue);
-        EditText note=field("Комментарий",null);
         form.addView(formGroup("Комментарий (необязательно)",note));
-        form.addView(label("При закрытии незаписанный состав покупки не сохраняется.",12,MUTED,false));
-        add.run();
-        final String purchaseId=java.util.UUID.randomUUID().toString();
+        note.addTextChangedListener(watcher(v->persist.run()));
+        form.addView(label("Черновик сохраняется автоматически до записи покупки.",12,MUTED,false));
+        if(restored==null)add.run();
+        else for(PurchaseDrafts.Row raw:restored.rows){
+            add.run();
+            PurchaseRow r=items.get(items.size()-1);
+            r.name.setText(raw.name);r.quantity.setText(raw.quantity);r.price.setText(raw.price);
+            r.unit.setSelection(Math.max(0,r.units.indexOf(raw.unit)));
+        }
+        hydrating[0]=false;
+        update.run();
+        persist.run();
+        addButton(form,"Очистить черновик",false,()->{
+            if(chooser!=null)chooser.dismiss();
+            drafts.clear(clientId);
+            showPurchaseForm(clientId);
+        },1);
         showDialog("Покупка в долг",form,null,()->{
             List<Purchase.Item> valid=new ArrayList<>();
             for(PurchaseRow r:items)valid.add(r.item());
             Purchase purchase=new Purchase(valid,Purchase.discount(discount.getText().toString()));
+            persist.run();
             return new ClientCommand.ItemizedDebt(purchaseId,clientId,purchase.encode(),
                     due.getText().toString(),note.getText().toString().trim(),notice.confirmation());
         });
