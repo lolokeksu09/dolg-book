@@ -179,7 +179,7 @@ internal fun BookContent(model: BookUiModel, payments: Boolean, hasFilter: Boole
     BoxWithConstraints(Modifier.fillMaxSize().background(ledgerBg), contentAlignment = Alignment.TopCenter) {
         val stacked = maxWidth < 365.dp || LocalDensity.current.fontScale > 1.2f || largeText
         LazyColumn(Modifier.widthIn(max = 800.dp).fillMaxSize().testTag("book-list"),
-            contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 18.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
             item("title") {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text("Долговая книга", color = ledgerText, fontWeight = FontWeight.SemiBold, fontSize = if (stacked) 22.sp else 24.sp,
@@ -189,17 +189,18 @@ internal fun BookContent(model: BookUiModel, payments: Boolean, hasFilter: Boole
                 }
             }
             item("total") {
-                Column(Modifier.fillMaxWidth().background(ledgerPanel, RoundedCornerShape(12.dp)).padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    LedgerTotal("Общая задолженность", model.total, "Должников: " + model.debtors)
+                Column(Modifier.fillMaxWidth().background(ledgerPanel, RoundedCornerShape(12.dp)).padding(horizontal = 14.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(0.dp)) {
+                    LedgerTotal("Общая задолженность", model.total)
                     HorizontalDivider(color = ledgerBorder.copy(alpha = .5f))
                     Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(onClick = actions.collections)
                         .semantics { contentDescription = "Возврат долгов" },
                         verticalAlignment = Alignment.CenterVertically) {
-                        Text(if (model.urgent > 0) "Требуют внимания: " + model.urgent else "Возврат долгов",
-                            color = if (model.urgent > 0) ledgerAlert else ledgerMuted, fontSize = 13.sp,
+                        Text("Должников: " + model.debtors, color = ledgerMuted, fontSize = 12.sp,
                             modifier = Modifier.weight(1f))
-                        Text("›", color = ledgerAccent, fontSize = 24.sp)
+                        Text(if (model.urgent > 0) "К возврату: " + model.urgent else "Возврат долгов",
+                            color = if (model.urgent > 0) ledgerAlert else ledgerAccent, fontSize = 12.sp)
+                        Text(" ›", color = ledgerAccent, fontSize = 20.sp)
                     }
                 }
             }
@@ -250,7 +251,11 @@ internal fun BookContent(model: BookUiModel, payments: Boolean, hasFilter: Boole
                 }
             }
             if (model.hasDays) item("filters") {
-                LedgerMetric("Фильтры книги", filterSummary, if (hasFilter) ledgerAccent else ledgerMuted, actions.filters)
+                Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(onClick = actions.filters)
+                    .semantics { contentDescription = "Фильтры книги" }, verticalAlignment = Alignment.CenterVertically) {
+                    Text("Фильтры книги", color = ledgerAccent, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                    Text(filterSummary, color = ledgerMuted, fontSize = 12.sp, modifier = Modifier.weight(1f), textAlign = TextAlign.End)
+                }
                 if (hasFilter) Text(if (payments) "Получено по фильтру: " + ledgerMoney(model.recorded)
                     else "По фильтру: " + ledgerMoney(model.recorded) + " · осталось " + ledgerMoney(model.remaining),
                     color = ledgerMuted, fontSize = 12.sp)
@@ -291,7 +296,7 @@ internal fun BookContent(model: BookUiModel, payments: Boolean, hasFilter: Boole
                 Column(Modifier.fillMaxWidth().padding(vertical = 18.dp, horizontal = 4.dp),
                     verticalArrangement = Arrangement.spacedBy(5.dp)) {
                     Text(if (payments) "Пока нет оплат" else "Пока нет долгов", color = ledgerText, fontWeight = FontWeight.SemiBold)
-                    Text(if (payments) "Здесь появятся поступления от покупателей." else "Запишите первый долг — он появится в книге за нужную дату.", color = ledgerMuted, fontSize = 13.sp)
+                    Text(if (payments) "Здесь появятся поступления от покупателей." else "Запишите первый долг — он появится в книге за нужную дату.", color = ledgerMuted, fontSize = 13.sp, lineHeight = 17.sp)
                 }
             }
             else if (!calendar && model.days.isEmpty()) item("empty-filter") {
