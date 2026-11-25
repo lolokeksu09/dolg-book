@@ -43,13 +43,6 @@ import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import org.json.JSONException;
-
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -69,7 +62,7 @@ public final class MainActivity extends ComponentActivity {
     private static final int BG=LedgerTheme.BG, PANEL=LedgerTheme.PANEL, ELEVATED=LedgerTheme.ELEVATED;
     private static final int BORDER=LedgerTheme.BORDER, TEXT=LedgerTheme.TEXT, MUTED=LedgerTheme.MUTED;
     private static final int ACCENT=LedgerTheme.ACCENT, INK=LedgerTheme.INK, ALERT=LedgerTheme.ALERT, RED=LedgerTheme.RED;
-    private static final int REQUEST_IMPORT=101, REQUEST_EXPORT=102, REQUEST_PDF=103, REQUEST_REPORT=105, MAX_IMPORT=BackupSize.MAX_BYTES;
+    private static final int REQUEST_IMPORT=101, REQUEST_EXPORT=102, REQUEST_PDF=103, REQUEST_REPORT=105;
     private static final String RECOVERY_PREFS="raschet_local_recovery";
     private static final int NOTIFICATION_PERMISSION_REQUEST=104;
     public static final String EXTRA_FIRST_START = "dev.ventry.raschet.FIRST_START";
@@ -271,7 +264,7 @@ public final class MainActivity extends ComponentActivity {
         navigation.removeAllViews();
         if(bookViewModel.hasPendingWrite()){
             page.removeAllViews();
-            page.addView(scroll(screen("Сохранение записи","Дождитесь завершения записи.")),new FrameLayout.LayoutParams(-1,-1));
+            page.addView(scroll(screen("Обработка данных","Дождитесь завершения операции.")),new FrameLayout.LayoutParams(-1,-1));
             return;
         }
         for(int i=0;i<TABS.length;i++){
@@ -818,28 +811,20 @@ public final class MainActivity extends ComponentActivity {
     private android.content.SharedPreferences recoveryPrefs() {
         return getSharedPreferences(RECOVERY_PREFS,MODE_PRIVATE);
     }
+    private void submitFile(ClientCommand.FileTask command){
+        if(!unlocked||bookViewModel.hasPendingWrite())return;
+        if(bookViewModel.submitClient(command))render();
+        else message("Дождитесь завершения операции.");
+    }
     private void createRecoveryPoint() {
-        try{
-            vault.create(ledger);
-            message("Защищённая точка создана.");
-            render();
-        }catch(Exception e){message("Точка не создана: "+e.getMessage());}
+        submitFile(ClientCommand.FileTask.CreatePoint.INSTANCE);
     }
     private void restoreRecoveryPoint() {
-        final String snapshot;
-        try{snapshot=vault.readLatest();}
-        catch(Exception ex){message("Не удалось прочитать точку: "+ex.getMessage());return;}
+        if(!vault.hasPoints()){message("Нет защищённых точек.");return;}
         LinearLayout form=stack(10);
-        form.addView(label("Текущая книга будет заменена. Сначала автоматически создадим защищённую копию текущих записей. Для переноса между устройствами используйте внешний JSON.",14,ALERT,false));
-        showDialog("Восстановить точку?",form,()->{
-            vault.create(ledger); // Fail closed: do not replace if recovery point cannot be created.
-            bookViewModel.clear(); // Invalidate before replacing the authoritative book.
-            ledger.importJson(snapshot);
-            directory.clearAfterRestore();new QuickDebtDrafts(this).clear();new LedgerDrafts(this).clearAll();
-            getPreferences(MODE_PRIVATE).edit().remove("last_json_export").apply();
-            selectedClient=null;tab="Клиенты";
-            return true;
-        });
+        form.addView(label("Текущая книга будет заменена последней защищённой точкой на момент подтверждения. Сначала автоматически создадим копию текущих записей. Для переноса между устройствами используйте внешний JSON.",14,ALERT,false));
+        showDialog("Восстановить точку?",form,null,()->
+                new ClientCommand.FileTask.RestorePoint(getLocalClassName()));
     }
     private void setAutoRecovery(boolean checked){
         recoveryPrefs().edit().putBoolean("enabled",checked).apply();
@@ -1768,11 +1753,12 @@ public final class MainActivity extends ComponentActivity {
         restoreClientDialog();
         bookViewModel.acknowledgeWrite(state);
         if(state instanceof WriteState.Done<?> done){
-            applyWriteReceipt((WriteReceipt)done.getValue());
+            WriteReceipt receipt=(WriteReceipt)done.getValue();
+            applyWriteReceipt(receipt);
             saving=true;
             try{if(dialog!=null&&dialog.isShowing())dialog.dismiss();}
             finally{saving=false;}
-            render();message("Сохранено.");
+            render();message(receipt.getMessage()==null?"Сохранено.":receipt.getMessage());
         }else if(state instanceof WriteState.Failed failed){
             if(dialog!=null&&dialog.isShowing()&&error!=null){
                 error.setText(failed.getMessage());error.setVisibility(View.VISIBLE);
@@ -1824,23 +1810,6 @@ public final class MainActivity extends ComponentActivity {
             message("Не удалось открыть выбор файла: "+e.getMessage());
         }
     }
-    private String makeCsv() {
-        StringBuilder out=new StringBuilder("\uFEFFКлиент;Телефон;Дата;Тип;Сумма (руб);Срок;Комментарий;ID;Отменяет ID;Состав покупки\r\n");
-        Map<String,LedgerStore.Client> people=new HashMap<>();
-        for(LedgerStore.Client c:ledger.clients())people.put(c.id,c);
-        for(LedgerStore.Entry e:ledger.entries()){
-            LedgerStore.Client c=people.get(e.clientId);
-            for(String cell:new String[]{c==null?"":c.name,c==null?"":c.phone,e.date,e.type,
-                    String.format(Locale.ROOT,"%.2f",e.amount/100d).replace('.',','),e.due,e.note,e.id,e.reverses,e.purchase==null?"":e.purchase.summary()})
-                out.append(csvCell(cell)).append(';');
-            out.setLength(out.length()-1);out.append("\r\n");
-        }
-        return out.toString();
-    }
-    private static String csvCell(String s) {
-        if(!s.isEmpty()&&"=+-@\t\r".indexOf(s.charAt(0))>=0)s="'"+s;
-        return "\""+s.replace("\"","\"\"")+"\"";
-    }
     @Override protected void onActivityResult(int request,int result,Intent data) {
         super.onActivityResult(request,result,data);
         if(request==BookPrivacy.OPEN||request==BookPrivacy.ENABLE||request==BookPrivacy.DISABLE){
@@ -1854,78 +1823,34 @@ public final class MainActivity extends ComponentActivity {
             unlocked=true;stoppedAt=-1;reloadOnStart=false;applyPrivacyFlag();render();
             onClientWriteState(bookViewModel.getWriteState().getValue());return;
         }
+        // Never start a file operation using a result returned after the credential gate expired.
+        boolean authorized=unlocked&&!BookPrivacy.shouldRelock(privacy.enabled(),stoppedAt,
+                android.os.SystemClock.elapsedRealtime());
+        boolean ready=authorized&&result==RESULT_OK&&data!=null&&data.getData()!=null;
         if(request==REQUEST_EXPORT){
             boolean canExport=pendingExport;
             boolean csv=pendingExportCsv;
             pendingExport=false;
-            if(result!=RESULT_OK||data==null||data.getData()==null||!canExport)return;
-            try {
-                String body=csv?makeCsv():ledger.exportJson();
-                byte[] payload=body.getBytes(StandardCharsets.UTF_8);
-                boolean restorable=csv||BackupSize.isSupported(payload.length);
-                try(OutputStream out=getContentResolver().openOutputStream(data.getData(),"wt")){
-                    if(out==null)throw new IOException("Нет доступа к файлу.");
-                    out.write(payload);
-                    out.flush();
-                }
-                if(!csv){
-                    android.content.SharedPreferences.Editor status=getPreferences(MODE_PRIVATE).edit();
-                    if(restorable)status.putLong("last_json_export",System.currentTimeMillis());
-                    else status.remove("last_json_export");
-                    status.apply();
-                }
-                message(csv?"Таблица CSV сохранена.":restorable?"Резервная копия сохранена.":
-                        "JSON сохранён, но превышает допустимый размер импорта ("+BackupSize.MAX_MIB+" МиБ). Не удаляйте приложение.");
-                if(tab.equals("Настройки")||tab.equals("Главная"))render();
-            }catch(Exception ex){message("Ошибка сохранения: "+ex.getMessage());}
+            if(ready&&canExport)submitFile(new ClientCommand.FileTask.Export(
+                    data.getData().toString(),csv,getLocalClassName()));
         }else if(request==REQUEST_REPORT){
             LocalDate from=pendingReportFrom,to=pendingReportTo;
             pendingReportFrom=null;pendingReportTo=null;
-            if(from==null||to==null||result!=RESULT_OK||data==null||data.getData()==null)return;
-            try(OutputStream out=getContentResolver().openOutputStream(data.getData(),"wt")){
-                if(out==null)throw new IOException("Нет доступа к файлу.");
-                out.write(PeriodReport.build(ledger.entries(),from,to,ZoneId.systemDefault()).csv().getBytes(StandardCharsets.UTF_8));
-                out.flush();message("Отчёт CSV сохранён.");
-            }catch(Exception ex){message("Ошибка отчёта: "+ex.getMessage());}
+            if(ready&&from!=null&&to!=null)submitFile(new ClientCommand.FileTask.Report(
+                    data.getData().toString(),from,to));
         }else if(request==REQUEST_PDF){
             String id=pendingPdfClientId;
             pendingPdfClientId=null;
-            if(id==null||result!=RESULT_OK||data==null||data.getData()==null)return;
-            LedgerStore.Client client=null;
-            for(LedgerStore.Client item:ledger.clients())if(item.id.equals(id)){client=item;break;}
-            if(client==null){message("Клиент не найден.");return;}
-            try(OutputStream out=getContentResolver().openOutputStream(data.getData(),"wt")){
-                if(out==null)throw new IOException("Не удалось открыть PDF-файл.");
-                CustomerStatementPdf.write(out,shopName,client,ledger.entriesForClient(id));
-                out.flush();
-                message("Выписка PDF сохранена.");
-            }catch(Exception ex){message("Ошибка PDF: "+ex.getMessage());}
-        }else if(request==REQUEST_IMPORT && result==RESULT_OK && data!=null && data.getData()!=null){
-            try(InputStream in=getContentResolver().openInputStream(data.getData())){
-                if(in==null)throw new IOException("Не удалось прочитать файл.");
-                ByteArrayOutputStream bytes=new ByteArrayOutputStream();
-                byte[] buf=new byte[8192];int n;
-                while((n=in.read(buf))!=-1){
-                    if(bytes.size()+n>MAX_IMPORT)throw new IOException("JSON-копия больше "+BackupSize.MAX_MIB+" МиБ.");
-                    bytes.write(buf,0,n);
-                }
-                String backup=bytes.toString("UTF-8");
-                LinearLayout form=stack(12);
-                form.addView(label("Текущие клиенты и операции будут полностью заменены содержимым JSON-файла. Сохраните свою копию перед продолжением.",15,ALERT,false));
-                showDialog("Восстановить книгу?",form,()->{
-                    // Import is destructive. Keep an authenticated encrypted rollback point first.
-                    // If creating this point fails, abort before touching SQLite.
-                    vault.create(ledger);
-                    bookViewModel.clear(); // A restored database must never reuse the previous snapshot.
-                    int[] count=ledger.importJson(backup);
-                    directory.clearAfterRestore();new QuickDebtDrafts(this).clear();new LedgerDrafts(this).clearAll();
-                    // A backup of the previous book is not a backup of this restored book.
-                    getPreferences(MODE_PRIVATE).edit().remove("last_json_export").apply();
-                    selectedClient=null;tab="Клиенты";
-                    message("Восстановлено: "+count[0]+" клиентов, "+count[1]+" операций.");
-                    return true;
-                });
-            }catch(Exception ex){message("Не удалось прочитать JSON: "+ex.getMessage());}
+            if(ready&&id!=null)submitFile(new ClientCommand.FileTask.Pdf(data.getData().toString(),id,shopName));
+        }else if(request==REQUEST_IMPORT&&ready){
+            String uri=data.getData().toString();
+            LinearLayout form=stack(12);
+            form.addView(label("Текущие клиенты и операции будут полностью заменены содержимым JSON-файла. Сохраните свою копию перед продолжением.",15,ALERT,false));
+            showDialog("Восстановить книгу?",form,null,()->new ClientCommand.FileTask.Import(uri,getLocalClassName()));
+        }
+        if(!authorized&&result==RESULT_OK&&(request==REQUEST_EXPORT||request==REQUEST_REPORT||
+                request==REQUEST_PDF||request==REQUEST_IMPORT)){
+            message("Откройте книгу и повторите файловую операцию.");
         }
     }
     @Override public void onBackPressed() {
