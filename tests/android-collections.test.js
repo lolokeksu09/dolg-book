@@ -19,12 +19,13 @@ test('collections insight model is derived from active entries with oldest-first
 
 test('customer filters, full repayment form and explicit Android sharing are wired',()=>{
   const activity=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
+  const compose=read('android/app/src/main/kotlin/dev/ventry/raschet/ClientsCompose.kt');
   for(const text of ['Просрочено','Просроченных долгов нет','Нет ближайших сроков',
     'Погасить весь остаток','Поделиться сводкой','Сортировка: по остатку ↓']){
-    assert.ok(activity.includes(text),'Missing customer workflow: '+text);
+    assert.ok(activity.includes(text)||compose.includes(text),'Missing customer workflow: '+text);
   }
   assert.match(activity,/metricRow\(due,"Просрочено",money\(overdue\),[\s\S]*?\(\)->openClientFilter\(CollectionsInsights\.LATE\)\)/);
-  assert.ok(activity.includes('CollectionsInsights.visible('));
+  assert.ok(compose.includes('CollectionsInsights.visible(model.scoped, filter, amountFirst, recentFirst, query)'));
   const viewModel=read('android/app/src/main/kotlin/dev/ventry/raschet/presentation/BookViewModel.kt');
   assert.ok(viewModel.includes('CollectionsInsights.analyze(snapshot.clients, snapshot.entries, today)'));
   assert.ok(activity.includes('data.getStatuses()'));
