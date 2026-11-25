@@ -19,7 +19,7 @@ test('Android UI is native and does not contain web UI runtime',()=>{
     assert.ok(!activity.includes(unwanted),'Development or website section leaked into customer app: '+unwanted);
   assert.ok(activity.includes('ic_nav_home')&&activity.includes('ic_nav_people'));
   assert.ok(!manifest.includes('android.permission.INTERNET'));
-  for(const screen of ['homeView(data)', 'clientsView(data)', 'detailView(', 'historyView()', 'settingsView()'])
+  for(const screen of ['homeView(data)', 'clientsView(data)', 'detailView(', 'historyView(data)', 'settingsView()'])
     assert.ok(activity.includes(screen),'Missing native view '+screen);
 });
 
@@ -124,8 +124,9 @@ test('dense lists, selected filters and content-sized dialogs are wired',()=>{
   assert.ok(ui.includes('filterMenuAction(menu,scope,scope.equals(clientScope)'));
   assert.ok(ui.includes('filterMenuAction(menu,choice,choice.equals(clientFilter)'));
   assert.ok(ui.includes('if(selected)item.addView(label("Выбрано"'));
-  assert.ok(ui.includes('LocalDate lastHistoryDay=null;'));
-  assert.ok(ui.includes('date.equals(lastHistoryDay)'));
+  const history=read('android/app/src/main/kotlin/dev/ventry/raschet/HistoryCompose.kt');
+  assert.ok(history.includes('shown[index - 1].date != row.date'));
+  assert.ok(history.includes('DetailOperationRow(row, largeText'));
   assert.ok(ui.includes('textView.setFontFeatureSettings("kern, tnum")'));
   const dialog=ui.slice(ui.indexOf('private void showDialog('),ui.indexOf('private void pickImport('));
   assert.ok(dialog.includes('WindowManager.LayoutParams.WRAP_CONTENT'));
@@ -248,7 +249,9 @@ test('repeat debt shortcuts prefill without posting and quick debt has optional 
 
 test('operation inspector uses exact selected IDs and history search',()=>{
   const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
-  assert.ok(ui.includes('HistoryRows.select(all,people,historyClientId,historyQuery'));
+  const history=read('android/app/src/main/kotlin/dev/ventry/raschet/HistoryCompose.kt');
+  assert.ok(history.includes('HistoryRows.select(entries, people, clientId, query, from, to, filter, zone)'));
+  assert.ok(ui.includes('return HistoryCompose.create(this,data,historyClientId,historyQuery'));
   assert.ok(ui.includes('showOperation(e.id)'));
   const repository=read('android/app/src/main/kotlin/dev/ventry/raschet/data/LedgerRepository.kt');
   const service=read('android/app/src/main/kotlin/dev/ventry/raschet/ClientWriteService.kt');
