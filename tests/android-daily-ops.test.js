@@ -57,3 +57,11 @@ test('tablet adaptation and bounded history belong to 0.5 beta',()=>{
   assert.ok(gradle.includes('versionCode = 34'));
   assert.ok(gradle.includes('versionName = "0.29.0-beta.1"'));
 });
+
+// A weighted horizontal LinearLayout must not baseline-measure a lazy Compose child with UNSPECIFIED height.
+test('Compose page and tablet panes receive bounded weighted measurement',()=>{
+  const activity=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
+  assert.match(activity,/LinearLayout body=row\(\);[\s\S]*?body\.setBaselineAligned\(false\);[\s\S]*?body\.addView\(page,new LinearLayout\.LayoutParams\(0,-1,1\)\)/);
+  assert.match(activity,/LinearLayout columns=row\(\);\s*columns\.setBaselineAligned\(false\);/);
+  assert.ok(activity.includes('page.addView(contents,new FrameLayout.LayoutParams(-1,-1))'));
+});
