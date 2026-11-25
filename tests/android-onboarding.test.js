@@ -54,10 +54,17 @@ test('native navigation and empty states are accessible, with actionable call-to
   assert.ok(activity.includes('item.setSelected(active)'));
   assert.ok(activity.includes('tab.equals("Возврат")||tab.equals("Отчёт")'));
   assert.ok(activity.includes('emptyState('));
-  assert.ok(activity.includes('Добавить первого клиента'));
-  assert.ok(activity.includes('История пока пустая'));
-  assert.ok(activity.includes('Записать долг'));
-  assert.ok(activity.includes('android.widget.Switch') || activity.includes('import android.widget.Switch;'));
+  const clients=read('android/app/src/main/kotlin/dev/ventry/raschet/ClientsCompose.kt');
+  const history=read('android/app/src/main/kotlin/dev/ventry/raschet/HistoryCompose.kt');
+  const book=read('android/app/src/main/kotlin/dev/ventry/raschet/BookCompose.kt');
+  const settings=read('android/app/src/main/kotlin/dev/ventry/raschet/SettingsCompose.kt');
+  assert.ok(clients.includes('Добавить первого клиента'));
+  assert.ok(history.includes('История пока пустая'));
+  assert.ok(history.includes('Добавить первого клиента'));
+  assert.ok(book.includes('Записать долг'));
+  assert.ok(settings.includes('Switch(checked = checked, onCheckedChange = null)'));
+  assert.ok(settings.includes('role = Role.Switch'));
+  assert.ok(activity.includes('return SettingsCompose.create(this,state,actions)'));
   assert.ok(activity.includes('EXTRA_FIRST_START'));
 });
 
