@@ -48,10 +48,10 @@ class HistoryReportComposeTest {
                 HistoryContent(data, null, "яблоки", null, null, "Долги", 100, false, actions)
             }
         }
+        compose.onNodeWithTag("history-list").performScrollToIndex(4)
         compose.waitUntil(10000) {
             compose.onAllNodesWithContentDescription("Запись · 100,00 ₽").fetchSemanticsNodes().isNotEmpty()
         }
-        compose.onNodeWithTag("history-list").performScrollToIndex(4)
         compose.onNodeWithContentDescription("Запись · 100,00 ₽").performClick()
         assertEquals("d", opened.get())
     }
