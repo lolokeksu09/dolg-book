@@ -117,7 +117,7 @@ internal fun SettingsContent(state: SettingsSnapshot, actions: SettingsActions) 
                         modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Восстановить защищённую точку") }
                 }
                 SettingsToggle("Автозащита после изменений",
-                    "Создаёт локальную зашифрованную точку после сохранения операции. Сохраняются последние четыре.",
+                    "Создаёт локальную зашифрованную точку после сохранения. При серии быстрых записей сохраняется последнее состояние. Хранятся до четырёх точек.",
                     "Автозащита книги", state.autoRecovery, state.largeText, actions.autoRecovery::accept)
                 LedgerMetric("Скачать JSON-копию", "Для переноса на другое устройство", action = actions.json::run)
                 LedgerMetric("Экспортировать CSV", "Таблица операций", action = actions.csv::run)
