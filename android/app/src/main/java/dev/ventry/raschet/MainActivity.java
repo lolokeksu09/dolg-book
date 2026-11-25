@@ -152,6 +152,9 @@ public final class MainActivity extends ComponentActivity {
             historyQuery=state.getString("history_query","");historyClientId=state.getString("history_client_id");
             analyticsClientId=state.getString("analytics_client_id");analyticsReturnTab=state.getString("analytics_return_tab","Клиенты");
             historyFromAnalytics=state.getBoolean("history_from_analytics",false);
+            analyticsViewModel.focus(analyticsClientId);
+            analyticsViewModel.restoreFilters(state.getString("analytics_preset"),readDate(state,"analytics_range_from"),readDate(state,"analytics_range_to"),
+                    state.getString("analytics_overview_section"),state.getString("analytics_personal_section"),state.getString("analytics_ranking"));
             LocalDate analyticsFrom=readDate(state,"pending_analytics_from"), analyticsTo=readDate(state,"pending_analytics_to");
             if(analyticsFrom!=null&&analyticsTo!=null)pendingAnalytics=new AnalyticsExport.Spec(analyticsFrom,analyticsTo,
                     readDate(state,"pending_analytics_prev_from"),readDate(state,"pending_analytics_prev_to"),
@@ -201,6 +204,12 @@ public final class MainActivity extends ComponentActivity {
         out.putString("history_query",historyQuery);out.putString("history_client_id",historyClientId);
         out.putString("analytics_client_id",analyticsClientId);out.putString("analytics_return_tab",analyticsReturnTab);
         out.putBoolean("history_from_analytics",historyFromAnalytics);
+        var selection=analyticsViewModel.getRequest().getValue().getSelection();
+        out.putString("analytics_preset",selection.getPreset().name());
+        if(selection.getCustom()!=null){saveDate(out,"analytics_range_from",selection.getCustom().getFrom());saveDate(out,"analytics_range_to",selection.getCustom().getTo());}
+        out.putString("analytics_overview_section",analyticsViewModel.getOverviewSection().getValue().name());
+        out.putString("analytics_personal_section",analyticsViewModel.getPersonalSection().getValue().name());
+        out.putString("analytics_ranking",analyticsViewModel.getRanking().getValue());
         if(pendingAnalytics!=null){
             saveDate(out,"pending_analytics_from",pendingAnalytics.getFrom());saveDate(out,"pending_analytics_to",pendingAnalytics.getTo());
             saveDate(out,"pending_analytics_prev_from",pendingAnalytics.getPreviousFrom());saveDate(out,"pending_analytics_prev_to",pendingAnalytics.getPreviousTo());
