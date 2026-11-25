@@ -571,19 +571,22 @@ public final class LedgerStore extends SQLiteOpenHelper {
             db.execSQL("CREATE TEMP TABLE raschet_import_stage (seq INTEGER PRIMARY KEY,kind TEXT NOT NULL,row_json TEXT NOT NULL)");
             int version=0,clientCount=-1,entryCount=-1,productCount=-1;
             Set<String> fields=new HashSet<>();
-            android.util.JsonReader reader=new android.util.JsonReader(source);
+            android.util.JsonReader reader=new android.util.JsonReader(new ImportJsonGuard(source));
             reader.beginObject();
             try(android.database.sqlite.SQLiteStatement stage=db.compileStatement(
                     "INSERT INTO raschet_import_stage(kind,row_json) VALUES(?,?)")){
                 while(reader.hasNext()){
                     String key=reader.nextName();
                     if(!fields.add(key))throw new IllegalArgumentException("Повтор поля JSON.");
+                    if(fields.size()>32)throw new IllegalArgumentException("Слишком много полей JSON.");
                     switch(key){
                         case "version":
-                            Object raw=readImportValue(reader,0);
-                            if(!(raw instanceof Number)||!raw.toString().matches("[1-4]"))
+                            if(reader.peek()!=android.util.JsonToken.NUMBER)
                                 throw new IllegalArgumentException("Поддерживаются копии v1–v4.");
-                            version=((Number)raw).intValue();
+                            String raw=reader.nextString();
+                            if(!raw.matches("[1-4]"))
+                                throw new IllegalArgumentException("Поддерживаются копии v1–v4.");
+                            version=Integer.parseInt(raw);
                             break;
                         case "clients": clientCount=stageRows(reader,stage,key,MAX_CLIENTS);break;
                         case "entries": entryCount=stageRows(reader,stage,key,MAX_ENTRIES);break;
