@@ -198,11 +198,11 @@ internal fun ClientListContent(
         val compact = maxWidth >= 340.dp && LocalDensity.current.fontScale <= 1.2f && !largeText
         LazyColumn(
             modifier = Modifier.widthIn(max = 800.dp).fillMaxSize(),
-            contentPadding = PaddingValues(start = 14.dp, top = 8.dp, end = 14.dp, bottom = 16.dp),
+            contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             item("title") {
-                Text("Клиенты", color = text, fontSize = if (largeText) 24.sp else 20.sp, fontWeight = FontWeight.Bold)
+                Text("Клиенты", color = text, fontSize = if (largeText) 30.sp else 28.sp, fontWeight = FontWeight.SemiBold)
             }
             if (model.allCount == 0) {
                 item("empty-book") {
@@ -309,11 +309,7 @@ private fun ClientSearchField(value: String, changed: (String) -> Unit, modifier
 
 @Composable
 private fun ClientEmpty(title: String, description: String, action: String, run: () -> Unit, largeText: Boolean) {
-    Column(Modifier.fillMaxWidth().padding(top = 24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(title, color = text, fontSize = if (largeText) 20.sp else 18.sp, fontWeight = FontWeight.Bold)
-        Text(description, color = muted, fontSize = if (largeText) 16.sp else 14.sp)
-        OutlinedButton(onClick = run, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(action) }
-    }
+    LedgerEmpty(R.drawable.ic_nav_people, title, description, action, run, largeText)
 }
 
 @Composable
