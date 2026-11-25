@@ -24,7 +24,10 @@ test('customer filters, full repayment form and explicit Android sharing are wir
     'Погасить весь остаток','Поделиться сводкой','Сортировка: по остатку ↓']){
     assert.ok(activity.includes(text)||compose.includes(text),'Missing customer workflow: '+text);
   }
-  assert.match(activity,/metricRow\(due,"Просрочено",money\(overdue\),[\s\S]*?\(\)->openClientFilter\(CollectionsInsights\.LATE\)\)/);
+  const queue=read('android/app/src/main/kotlin/dev/ventry/raschet/CollectionsCompose.kt');
+  assert.ok(queue.includes('LedgerMetric("Просрочено", ledgerMoney(model.overdue)'));
+  assert.ok(queue.includes('actions.filter(CollectionsInsights.LATE)'));
+  assert.ok(activity.includes('limit->collectionLimit=limit,this::openClientFilter'));
   assert.ok(compose.includes('CollectionsInsights.visible(model.scoped, filter, amountFirst, recentFirst, query)'));
   const viewModel=read('android/app/src/main/kotlin/dev/ventry/raschet/presentation/BookViewModel.kt');
   assert.ok(viewModel.includes('CollectionsInsights.analyze(snapshot.clients, snapshot.entries, today)'));
@@ -48,8 +51,15 @@ test('book exports stay local and preserve entries',()=>{
 
 test('near-term debt totals are not presented as entirely due on the earliest date',()=>{
   const activity=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
-  assert.ok(activity.includes('Ближайший срок: '));
-  assert.ok(activity.includes('за 7 дней: '));
-  assert.ok(!activity.includes('К возврату до "+status.nextDue'));
-  assert.ok(activity.includes('openClientFilter(CollectionsInsights.SOON)'));
+  const list=read('android/app/src/main/kotlin/dev/ventry/raschet/ClientsCompose.kt');
+  const detail=read('android/app/src/main/kotlin/dev/ventry/raschet/ClientDetailCompose.kt');
+  const queue=read('android/app/src/main/kotlin/dev/ventry/raschet/CollectionsCompose.kt');
+  for(const screen of [list,detail]){
+    assert.ok(screen.includes('Ближайший срок: '));
+    assert.ok(screen.includes('за 7 дней: '));
+    assert.ok(!screen.includes('К возврату до '));
+  }
+  assert.ok(queue.includes('За 7 дней: '));
+  assert.ok(queue.includes('actions.filter(CollectionsInsights.SOON)'));
+  assert.ok(activity.includes('limit->collectionLimit=limit,this::openClientFilter'));
 });
