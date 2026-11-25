@@ -490,7 +490,12 @@ sleep 0.4
 dump_ui
 grep -Fq 'Остаток долга' android/build/native-ui.xml
 grep -Fq '321,00' android/build/native-ui.xml
-tap_text 'Книга'
+# System Back returns to the originating book instead of the client directory.
+adb shell input keyevent 4
+sleep 0.4
+dump_ui
+grep -Fq 'Долговая книга' android/build/native-ui.xml
+grep -Fq 'QuickBuyer' android/build/native-ui.xml
 
 # Client directory plus can create a customer and the first debt in the same form.
 tap_text 'Клиенты'
