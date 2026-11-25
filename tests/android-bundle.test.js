@@ -334,7 +334,8 @@ test('client directory supports cleared balances and recent insertion order with
  const model=read('android/app/src/main/java/dev/ventry/raschet/CollectionsInsights.java');
  const search=read('android/app/src/main/java/dev/ventry/raschet/ClientSearch.java');
  assert.ok(ui.includes('Сортировка: последние операции'));
- assert.ok(ui.includes('Клиентов: "+visible.size()'));
+ const compose=read('android/app/src/main/kotlin/dev/ventry/raschet/ClientsCompose.kt');
+ assert.ok(compose.includes('"Клиентов: " + result.size'));
  assert.ok(model.includes('CLEAR.equals(filter) && status.balance != 0'));
  assert.ok(model.includes('item.lastOperationIndex'));
  assert.ok(search.includes('wanted.substring(1).equals(actual.substring(1))'));
