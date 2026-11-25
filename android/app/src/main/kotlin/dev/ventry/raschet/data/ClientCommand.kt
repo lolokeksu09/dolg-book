@@ -6,6 +6,7 @@ import java.time.LocalDate
 sealed interface ClientCommand {
     data class Create(val id: String, val name: String, val phone: String, val allowDuplicate: Boolean) : ClientCommand
     data class Edit(val id: String, val name: String, val phone: String) : ClientCommand
+    data class Catalog(val record: CatalogRecord) : ClientCommand
     data class Debt(
         val id: String, val existingId: String?, val name: String, val phone: String,
         val amount: Long, val day: LocalDate, val due: String, val note: String,
