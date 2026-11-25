@@ -777,6 +777,41 @@ dump_ui
 grep -Fq '13,00' android/build/native-ui.xml
 tap_text 'Книга'
 
+# Analytics: use real transactions from this smoke run, never sample dashboard data.
+tap_text 'Статистика'
+sleep 1
+tap_text 'День'
+sleep 1
+reveal_text 'Общая задолженность на сегодня'
+adb exec-out screencap -p > android/build/native-analytics-overview.png
+tap_text 'Вкладка Клиенты'
+sleep 0.5
+reveal_text 'Рейтинг клиентов'
+adb exec-out screencap -p > android/build/native-analytics-ranking.png
+tap_text 'DraftBuyer'
+sleep 0.8
+reveal_text 'Остаток долга на сегодня'
+grep -Fq '13,00' android/build/native-ui.xml
+adb exec-out screencap -p > android/build/native-analytics-client.png
+tap_text 'Вкладка Детали'
+sleep 0.4
+reveal_text 'Движение задолженности'
+tap_text 'Вкладка Экспорт'
+sleep 0.4
+reveal_text 'Сохранить CSV'
+tap_text 'Сохранить CSV'
+sleep 0.4
+dump_ui
+grep -Fq 'Экспорт данных клиента' android/build/native-ui.xml
+tap_text 'Отмена'
+tap_text '← Статистика'
+sleep 0.7
+reveal_text 'Рейтинг клиентов'
+tap_text '← Книга'
+sleep 0.4
+reveal_text 'Долговая книга'
+echo 'NATIVE_ANALYTICS_SMOKE_PASS'
+
 adb logcat -d -s AndroidRuntime:E > android/build/android-runtime-errors.txt
 if grep -F 'FATAL EXCEPTION' android/build/android-runtime-errors.txt; then
   echo 'Android crash observed during onboarding smoke test'
