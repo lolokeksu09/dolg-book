@@ -16,6 +16,9 @@ interface LedgerRepository {
     fun saveClient(command: ClientCommand)
     fun saveDebt(command: ClientCommand.Debt, context: Context): WriteReceipt
     fun savePayment(command: ClientCommand.Payment): WriteReceipt
+    fun savePurchase(command: ClientCommand.ItemizedDebt, context: Context): WriteReceipt
+    fun catalog(): List<CatalogRecord>
+    fun saveCatalogProduct(record: CatalogRecord)
     fun correct(command: ClientCommand.Correction): WriteReceipt
     fun reverse(command: ClientCommand.Reversal): WriteReceipt
 }
@@ -33,6 +36,10 @@ class SqliteLedgerRepository(private val store: LedgerStore) : LedgerRepository 
     }
     override fun saveDebt(command: ClientCommand.Debt, context: Context): WriteReceipt = store.recordCheckedDebt(command, context)
     override fun savePayment(command: ClientCommand.Payment): WriteReceipt = store.recordCheckedPayment(command)
+
+    override fun savePurchase(command: ClientCommand.ItemizedDebt, context: Context): WriteReceipt = store.recordCheckedPurchase(command, context)
+    override fun catalog(): List<CatalogRecord> = store.catalogRecords()
+    override fun saveCatalogProduct(record: CatalogRecord) = store.saveCatalogRecord(record)
 
     override fun correct(command: ClientCommand.Correction): WriteReceipt {
         require(command.expectedId.isNotBlank()) { "Не выбрана операция для исправления." }
