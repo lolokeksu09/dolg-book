@@ -8,13 +8,15 @@ import java.util.concurrent.Executors;
 public final class RecoveryScheduler {
     private static final String PREFS="raschet_local_recovery";
     private static final ExecutorService WORK=Executors.newSingleThreadExecutor();
+    private static final LatestRecoveryQueue QUEUE=new LatestRecoveryQueue(WORK);
 
     private RecoveryScheduler(){}
 
     public static void enqueue(Context context){
         Context app=context.getApplicationContext();
         if(!app.getSharedPreferences(PREFS,Context.MODE_PRIVATE).getBoolean("enabled",false))return;
-        WORK.execute(()->{
+        QUEUE.submit(()->{
+            if(!app.getSharedPreferences(PREFS,Context.MODE_PRIVATE).getBoolean("enabled",false))return;
             try(LedgerStore snapshotBook=new LedgerStore(app)){
                 new RecoveryVault(app).create(snapshotBook);
                 app.getSharedPreferences(PREFS,Context.MODE_PRIVATE).edit()
