@@ -25,13 +25,13 @@ import java.util.UUID;
 
 /** Device-only ledger. Never conflates the offline database with the server shop API. */
 public final class LedgerStore extends SQLiteOpenHelper {
-    public static final long MAX_AMOUNT = 100_000_000_000L;
+    public static final long MAX_AMOUNT = dev.ventry.raschet.domain.LedgerArithmetic.MAX_AMOUNT;
     private static final int MAX_CLIENTS = 10_000, MAX_ENTRIES = 100_000;
     public static final class Client {
         public final String id, name, phone;
         Client(String id, String name, String phone) { this.id=id; this.name=name; this.phone=phone; }
     }
-    public static final class Entry {
+    public static final class Entry implements dev.ventry.raschet.domain.DatedLedgerRecord {
         public final String id, clientId, type, date, due, note, reverses;
         public final long amount;
         public final Purchase purchase;
@@ -42,6 +42,13 @@ public final class LedgerStore extends SQLiteOpenHelper {
             this.id=id; this.clientId=clientId; this.type=type; this.amount=amount;
             this.date=date; this.due=due; this.note=note; this.reverses=reverses;this.purchase=purchase;
         }
+        @Override public String getEntryId() { return id; }
+        @Override public String getOwnerId() { return clientId; }
+        @Override public String getOperation() { return type; }
+        @Override public long getAmountKopecks() { return amount; }
+        @Override public String getDueDate() { return due; }
+        @Override public String getReversedId() { return reverses; }
+        @Override public String getRecordedAt() { return date; }
     }
     public static final class Balance {
         public long amount, overdue;
@@ -91,6 +98,16 @@ public final class LedgerStore extends SQLiteOpenHelper {
             db.setTransactionSuccessful();
         }finally{db.endTransaction();}
     }
+    public synchronized List<dev.ventry.raschet.data.CatalogRecord> catalogRecords(){
+        List<dev.ventry.raschet.data.CatalogRecord> result=new ArrayList<>();
+        for(Product p:products())result.add(new dev.ventry.raschet.data.CatalogRecord(
+                p.id,p.name,p.category,p.unit,p.price,p.favorite,p.archived));
+        return java.util.Collections.unmodifiableList(result);
+    }
+    public synchronized void saveCatalogRecord(dev.ventry.raschet.data.CatalogRecord record){
+        saveProduct(new Product(record.getId(),record.getName(),record.getCategory(),record.getUnit(),
+                record.getPrice(),record.getFavorite(),record.getArchived()));
+    }
     private static ContentValues productValues(Product p){
         ContentValues row=new ContentValues();
         row.put("id",p.id);row.put("name",p.name);row.put("category",p.category);
@@ -114,6 +131,17 @@ public final class LedgerStore extends SQLiteOpenHelper {
         }
         return result;
     }
+    /** Both ordered queries observe the same committed SQLite transaction. */
+    public synchronized dev.ventry.raschet.data.LedgerSnapshot readSnapshot() {
+        SQLiteDatabase db=getWritableDatabase();
+        db.beginTransactionNonExclusive();
+        try {
+            dev.ventry.raschet.data.LedgerSnapshot snapshot=
+                    new dev.ventry.raschet.data.LedgerSnapshot(clients(),entries());
+            db.setTransactionSuccessful();
+            return snapshot;
+        }finally{db.endTransaction();}
+    }
     public synchronized void addClient(String name,String phone) {
         insertClient(getWritableDatabase(),name,phone);
     }
@@ -122,6 +150,26 @@ public final class LedgerStore extends SQLiteOpenHelper {
     }
     synchronized void addDraftClient(String id,String name,String phone){
         insertClient(getWritableDatabase(),name,phone,id);
+    }
+    /** Duplicate consent and stable draft ID checked within the write transaction. */
+    public synchronized void addCheckedDraftClient(String id,String name,String phone,boolean allowDuplicate){
+        UUID.fromString(id);
+        checkClient(name,phone);
+        SQLiteDatabase db=getWritableDatabase();
+        db.beginTransaction();
+        try{
+            if(hasClientId(id)||hasEntryId(id))
+                throw new IllegalArgumentException("Этот черновик уже сохранён. Откройте книгу.");
+            if(!allowDuplicate){
+                String n=name.trim(),d=phone.replaceAll("[^0-9]","");
+                for(Client other:clients()){
+                    if(other.name.trim().equalsIgnoreCase(n)||ClientSearch.sameNumber(other.phone,d))
+                        throw new IllegalArgumentException("Выберите существующего клиента или подтвердите создание отдельного.");
+                }
+            }
+            insertClient(db,name,phone,id);
+            db.setTransactionSuccessful();
+        }finally{db.endTransaction();}
     }
     private String insertClient(SQLiteDatabase db,String name,String phone,String id){
         checkClient(name,phone);
@@ -155,6 +203,68 @@ public final class LedgerStore extends SQLiteOpenHelper {
             return id;
         }finally{db.endTransaction();}
     }
+    /** The consent check and existing debt transaction run under one outer SQLite transaction. */
+    public synchronized dev.ventry.raschet.data.WriteReceipt recordCheckedDebt(
+            dev.ventry.raschet.data.ClientCommand.Debt command, Context context){
+        UUID.fromString(command.getId());
+        SQLiteDatabase db=getWritableDatabase();
+        db.beginTransaction();
+        try{
+            String client=command.getExistingId();
+            if(hasEntryId(command.getId())||hasClientId(command.getId()))
+                throw new IllegalArgumentException("Этот черновик уже сохранён. Откройте книгу.");
+            List<Entry> all=entries();
+            if(client==null){
+                checkClient(command.getName(),command.getPhone());
+                if(!command.getAllowDuplicate()){
+                    String n=command.getName().trim(),d=command.getPhone().replaceAll("[^0-9]","");
+                    for(Client other:clients())
+                        if(other.name.trim().equalsIgnoreCase(n)||ClientSearch.sameNumber(other.phone,d))
+                            throw new IllegalArgumentException("Выберите существующего клиента или подтвердите создание отдельного.");
+                }
+            }else{
+                ClientDirectory directory=new ClientDirectory(context);
+                long balance=balance(all,client),limit=directory.debtLimit(client);
+                if(directory.archived(client,balance))
+                    throw new IllegalArgumentException("Сначала верните клиента из архива.");
+                boolean confirmed=dev.ventry.raschet.domain.DebtApproval.matches(
+                        command.getApproval(),client,balance,limit,command.getAmount());
+                if(!confirmed&&!command.getApproval().isEmpty()&&DebtLimits.requiresConfirmation(limit,balance,command.getAmount()))
+                    throw new IllegalArgumentException("Остаток или лимит изменился. Откройте форму заново и подтвердите превышение.");
+                DebtLimits.requireConsent(limit,balance,command.getAmount(),confirmed);
+            }
+            int rank=1;
+            for(BookDays.Day existing:BookDays.group(all,ZoneId.systemDefault()))
+                if(existing.date.isAfter(command.getDay()))rank++;
+            String id=recordDatedDebt(client,command.getName(),command.getPhone(),command.getAmount(),
+                    command.getDay(),command.getDue(),command.getNote(),command.getId());
+            dev.ventry.raschet.data.WriteReceipt receipt=new dev.ventry.raschet.data.WriteReceipt(
+                    command.getDestination(),"debt",id,command.getDay(),rank,false);
+            db.setTransactionSuccessful();
+            return receipt;
+        }finally{db.endTransaction();}
+    }
+
+    /** Retain the existing historical-payment guard and compute the journal position before commit. */
+    public synchronized dev.ventry.raschet.data.WriteReceipt recordCheckedPayment(
+            dev.ventry.raschet.data.ClientCommand.Payment command){
+        UUID.fromString(command.getId());
+        SQLiteDatabase db=getWritableDatabase();
+        db.beginTransaction();
+        try{
+            List<Entry> all=entries();
+            int rank=1;
+            for(BookDays.Day existing:BookDays.groupPayments(all,ZoneId.systemDefault()))
+                if(existing.date.isAfter(command.getDay()))rank++;
+            boolean settled=balance(all,command.getClientId())==command.getAmount();
+            addDraftPayment(command.getClientId(),command.getAmount(),command.getNote(),command.getId(),command.getDay());
+            dev.ventry.raschet.data.WriteReceipt receipt=new dev.ventry.raschet.data.WriteReceipt(
+                    command.getDestination(),"payment",command.getClientId(),command.getDay(),rank,settled);
+            db.setTransactionSuccessful();
+            return receipt;
+        }finally{db.endTransaction();}
+    }
+
     public synchronized void editClient(String id,String name,String phone) {
         checkClient(name,phone);
         ContentValues row=new ContentValues(); row.put("name",name.trim()); row.put("phone",phone.trim());
@@ -183,6 +293,35 @@ public final class LedgerStore extends SQLiteOpenHelper {
     public synchronized void addPurchase(String clientId,Purchase purchase,String due,String note){
         if(purchase==null)throw new IllegalArgumentException("Добавьте товары.");
         addEntry(clientId,"debt",purchase.total,due,note,purchase);
+    }
+    /** Revalidate the immutable purchase and exact credit approval inside one transaction. */
+    public synchronized dev.ventry.raschet.data.WriteReceipt recordCheckedPurchase(
+            dev.ventry.raschet.data.ClientCommand.ItemizedDebt command, Context context){
+        UUID.fromString(command.getId());
+        Purchase purchase=Purchase.decode(command.getPurchaseJson());
+        if(purchase==null)throw new IllegalArgumentException("Добавьте товары.");
+        SQLiteDatabase db=getWritableDatabase();
+        db.beginTransaction();
+        try{
+            if(hasEntryId(command.getId())||hasClientId(command.getId()))
+                throw new IllegalArgumentException("Эта покупка уже сохранена. Откройте историю.");
+            String client=command.getClientId();
+            ClientDirectory directory=new ClientDirectory(context);
+            long balance=balance(entries(),client),limit=directory.debtLimit(client);
+            if(directory.archived(client,balance))
+                throw new IllegalArgumentException("Сначала верните клиента из архива.");
+            boolean confirmed=dev.ventry.raschet.domain.DebtApproval.matches(
+                    command.getApproval(),client,balance,limit,purchase.total);
+            if(!confirmed&&!command.getApproval().isEmpty()&&DebtLimits.requiresConfirmation(limit,balance,purchase.total))
+                throw new IllegalArgumentException("Остаток или лимит изменился. Откройте форму заново и подтвердите превышение.");
+            DebtLimits.requireConsent(limit,balance,purchase.total,confirmed);
+            insertEntry(db,client,"debt",purchase.total,command.getDue(),command.getNote(),purchase,
+                    Instant.now().toString(),command.getId());
+            dev.ventry.raschet.data.WriteReceipt receipt=new dev.ventry.raschet.data.WriteReceipt(
+                    dev.ventry.raschet.data.WriteDestination.DETAIL,"purchase",client,null,0,false);
+            db.setTransactionSuccessful();
+            return receipt;
+        }finally{db.endTransaction();}
     }
     /** Existing-client draft submission uses an immutable operation ID, just like quick debt. */
     synchronized void addDraftPayment(String clientId,long amount,String note,String entryId){
@@ -316,13 +455,8 @@ public final class LedgerStore extends SQLiteOpenHelper {
 
     /** Same balance guard for correction preview and actual transaction. Zero is reversal only. */
     static long correctedBalance(long available,Entry last,long amount){
-        if(last==null||amount<0||amount>MAX_AMOUNT||(!"debt".equals(last.type)&&!"payment".equals(last.type)))
-            throw new IllegalArgumentException("Неверная операция.");
-        long withoutOld="debt".equals(last.type)?available-last.amount:available+last.amount;
-        if(withoutOld<0)throw new IllegalArgumentException("Этот долг уже погашался. Сначала исправьте последнюю оплату.");
-        long updated="debt".equals(last.type)?withoutOld+amount:withoutOld-amount;
-        if(updated<0||updated>MAX_AMOUNT)throw new IllegalArgumentException("Исправление создаёт переплату или превышение.");
-        return updated;
+        if(last==null)throw new IllegalArgumentException("Неверная операция.");
+        return dev.ventry.raschet.bridge.CorrectionEngine.correctedBalance(available,last.type,last.amount,amount);
     }
 
     private static ContentValues values(Entry entry) {
@@ -334,29 +468,13 @@ public final class LedgerStore extends SQLiteOpenHelper {
         return row;
     }
     public static Set<String> canceled(List<Entry> list) {
-        Set<String> removed=new HashSet<>();
-        for(Entry e:list)if("reversal".equals(e.type))removed.add(e.reverses);
-        return removed;
+        return dev.ventry.raschet.domain.LedgerProjection.canceled(list);
     }
     public static long balance(List<Entry> list,String clientId) {
-        Set<String> reversed=canceled(list);
-        long sum=0;
-        for(Entry e:list) if(e.clientId.equals(clientId)&&!"reversal".equals(e.type)&&!reversed.contains(e.id))
-            sum+= "debt".equals(e.type) ? e.amount : -e.amount;
-        return sum;
+        return dev.ventry.raschet.domain.LedgerProjection.balance(list,clientId);
     }
     public static long overdue(List<Entry> list,String clientId,LocalDate today) {
-        Set<String> reversed=canceled(list);
-        long totalPaid=0;
-        for(Entry e:list)if(e.clientId.equals(clientId)&&"payment".equals(e.type)&&!reversed.contains(e.id))totalPaid+=e.amount;
-        long overdue=0;
-        for(Entry e:list){
-            if(!e.clientId.equals(clientId)||!"debt".equals(e.type)||reversed.contains(e.id))continue;
-            long paid=Math.min(totalPaid,e.amount);
-            totalPaid-=paid;
-            if(!e.due.isEmpty() && e.due.compareTo(today.toString())<0)overdue+=e.amount-paid;
-        }
-        return overdue;
+        return dev.ventry.raschet.domain.LedgerProjection.overdue(list,clientId,today.toString());
     }
 
     /** Compatible with the original web book JSON format, including v1 and v2 reversals. */
@@ -411,9 +529,8 @@ public final class LedgerStore extends SQLiteOpenHelper {
             newClients.add(new Client(id,name.trim(),phone));
         }
         Set<String> entryIds=new HashSet<>();
-        Map<String,Long> sums=new HashMap<>();
-        Map<String,List<Entry>> active=new HashMap<>();
-        for(Client c:newClients){sums.put(c.id,0L);active.put(c.id,new ArrayList<>());}
+        dev.ventry.raschet.domain.ImportLedgerValidation history=
+                new dev.ventry.raschet.domain.ImportLedgerValidation(version,ids);
         for(int i=0;i<es.length();i++){
             JSONObject j=es.getJSONObject(i);
             String id=j.getString("id"),cid=j.getString("clientId"),type=j.getString("type"),
@@ -423,7 +540,7 @@ public final class LedgerStore extends SQLiteOpenHelper {
             if(!(rawAmount instanceof Number) || !rawAmount.toString().matches("\\d{1,12}"))
                 throw new IllegalArgumentException("Сумма операции должна быть целым числом копеек.");
             long amount=Long.parseLong(rawAmount.toString());
-            if(id.isEmpty()||id.length()>100||!entryIds.add(id)||!sums.containsKey(cid)
+            if(id.isEmpty()||id.length()>100||!entryIds.add(id)||!ids.contains(cid)
                     ||!type.equals("debt")&&!type.equals("payment")&&!type.equals("reversal")
                     ||amount<=0||amount>MAX_AMOUNT||note.length()>200||date.length()>40
                     ||due.length()>10)throw new IllegalArgumentException("Некорректная запись.");
@@ -441,24 +558,7 @@ public final class LedgerStore extends SQLiteOpenHelper {
                 if(purchase.total!=amount||(version<4&&purchase.hasUnits()))throw new IllegalArgumentException("Неверный состав или сумма покупки.");
             }
             Entry e=new Entry(id,cid,type,amount,date,due,note,reverses,purchase);
-            long delta;
-            List<Entry> stack=active.get(cid);
-            if(type.equals("reversal")){
-                if(version==1||stack.isEmpty()||note.trim().isEmpty())
-                    throw new IllegalArgumentException("Некорректная отмена.");
-                Entry previous=stack.get(stack.size()-1);
-                if(!previous.id.equals(reverses)||previous.amount!=amount)
-                    throw new IllegalArgumentException("Неверная связь отмены.");
-                stack.remove(stack.size()-1);
-                delta=previous.type.equals("debt")?-amount:amount;
-            }else{
-                if(!reverses.isEmpty())throw new IllegalArgumentException("Неверная ссылка.");
-                stack.add(e);
-                delta=type.equals("debt")?amount:-amount;
-            }
-            long current=sums.get(cid),updated=current+delta;
-            if(updated<0||updated>MAX_AMOUNT)throw new IllegalArgumentException("Книга содержит переплату или слишком большой остаток.");
-            sums.put(cid,updated);
+            history.accept(cid,id,type,amount,reverses,note);
             newEntries.add(e);
         }
         SQLiteDatabase db=getWritableDatabase();

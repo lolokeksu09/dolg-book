@@ -1,11 +1,15 @@
 plugins {
-    id("com.android.application") version "8.9.2"
+    id("com.android.application") version "8.10.1"
+    id("org.jetbrains.kotlin.android") version "2.2.21"
+    id("org.jetbrains.kotlin.plugin.compose") version "2.2.21"
 }
 
 android {
     namespace = "dev.ventry.raschet"
     compileSdk = 35
+    buildFeatures { buildConfig = true; compose = true }
     defaultConfig {
+        buildConfigField("boolean", "RUST_PREVIEW", "false")
         applicationId = "dev.ventry.raschet"
         minSdk = 26
         targetSdk = 35
@@ -24,7 +28,51 @@ android {
     }
 }
 
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+    }
+}
+
+android.sourceSets.getByName("test").resources.srcDir(rootProject.projectDir.parentFile.resolve("tests/contracts"))
+
+// Opt-in debug-only native preview. Ordinary APKs and signed releases stay Kotlin-only.
+val rustPreview = providers.gradleProperty("raschetRustPreview").orNull == "true"
+if (rustPreview) {
+    android.buildTypes.getByName("debug").buildConfigField("boolean", "RUST_PREVIEW", "true")
+    val nativeRoot = layout.buildDirectory.dir("generated/rustPreview")
+    val nativeLibs = nativeRoot.map { it.dir("jniLibs") }
+    val nativeAssets = nativeRoot.map { it.dir("testAssets") }
+    android.sourceSets.getByName("debug").jniLibs.srcDir(nativeLibs)
+    android.sourceSets.getByName("androidTest").java.srcDir("src/nativePreviewAndroidTest/java")
+    android.sourceSets.getByName("androidTest").assets.srcDir(nativeAssets)
+    val verifyRustPreview = tasks.register("verifyRustPreviewLibraries") {
+        doLast {
+            for (abi in listOf("arm64-v8a", "armeabi-v7a", "x86", "x86_64")) {
+                val so = nativeLibs.get().file("$abi/libraschet_jni.so").asFile
+                check(so.isFile && so.length() > 0) { "Missing Rust preview library for $abi; run scripts/build-rust-android.sh" }
+            }
+            check(nativeAssets.get().file("correction.tsv").asFile.isFile) { "Missing Rust preview test fixture" }
+        }
+    }
+    tasks.matching { it.name == "preDebugBuild" || it.name == "preDebugAndroidTestBuild" }
+        .configureEach { dependsOn(verifyRustPreview) }
+}
+
 dependencies {
+    val composeBom = platform("androidx.compose:compose-bom:2025.04.01")
+    implementation(composeBom)
+    androidTestImplementation(composeBom)
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.foundation:foundation")
+    implementation("androidx.compose.material3:material3")
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
+    implementation("androidx.activity:activity:1.10.1")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.7")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+    testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test:runner:1.6.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
 }

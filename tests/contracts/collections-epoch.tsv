@@ -1,0 +1,18 @@
+# row|id|client|kind|kopecks|local due epoch day or empty|reverses
+# today|day; expected|client|balance|overdue|upcoming|next due or empty|latest index
+today|20781
+row|1|a|debt|1000|20789|
+row|2|a|debt|2000|20777|
+row|3|a|debt|3000|20781|
+row|4|a|debt|4000|20788|
+row|5|a|debt|5000|20789|
+row|6|a|payment|1500||
+row|7|b|debt|1000|20780|
+row|8|b|reversal|1000||7
+row|9|a|payment|2000||
+row|10|a|reversal|2000||9
+row|11|c|debt|100||
+row|12|c|payment|100||
+expected|a|13500|1500|7000|20781|9
+expected|b|0|0|0||7
+expected|c|0|0|0||11

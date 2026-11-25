@@ -3,12 +3,9 @@ package dev.ventry.raschet;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Set;
 
 /**
  * Read-only collection insights. Calculates unpaid amounts by allocating valid
@@ -47,41 +44,14 @@ public final class CollectionsInsights {
 
     public static List<CustomerStatus> analyze(List<LedgerStore.Client> clients,
             List<LedgerStore.Entry> entries, LocalDate today) {
-        Set<String> reversed = LedgerStore.canceled(entries);
-        Map<String, List<LedgerStore.Entry>> active = new HashMap<>();
-        Map<String,Integer> latest=new HashMap<>();
-        for(int i=0;i<entries.size();i++){
-            LedgerStore.Entry entry=entries.get(i);
-            latest.put(entry.clientId,i);
-            if ("reversal".equals(entry.type) || reversed.contains(entry.id)) continue;
-            active.computeIfAbsent(entry.clientId, ignored -> new ArrayList<>()).add(entry);
-        }
+        Map<String, dev.ventry.raschet.domain.CollectionProjection.Status> projections =
+                dev.ventry.raschet.domain.CollectionProjection.analyze(entries,today);
         List<CustomerStatus> output = new ArrayList<>(clients.size());
-        LocalDate windowEnd = today.plusDays(7);
         for (LedgerStore.Client client : clients) {
-            List<LedgerStore.Entry> rows = active.get(client.id);
-            if (rows == null) rows = java.util.Collections.emptyList();
-            long payments = 0L;
-            for (LedgerStore.Entry entry : rows)
-                if ("payment".equals(entry.type)) payments += entry.amount;
-            long balance = 0L, overdue = 0L, upcoming = 0L;
-            LocalDate next = null;
-            for (LedgerStore.Entry entry : rows) {
-                if (!"debt".equals(entry.type)) continue;
-                long applied = Math.min(payments, entry.amount);
-                payments -= applied;
-                long unpaid = entry.amount - applied;
-                balance += unpaid;
-                if (unpaid == 0 || entry.due.isEmpty()) continue;
-                LocalDate due = LocalDate.parse(entry.due);
-                if (due.isBefore(today)) {
-                    overdue += unpaid;
-                } else if (!due.isAfter(windowEnd)) {
-                    upcoming += unpaid;
-                    if (next == null || due.isBefore(next)) next = due;
-                }
-            }
-            output.add(new CustomerStatus(client, balance, overdue, upcoming, next,latest.getOrDefault(client.id,-1)));
+            dev.ventry.raschet.domain.CollectionProjection.Status status =
+                    projections.getOrDefault(client.id, dev.ventry.raschet.domain.CollectionProjection.EMPTY);
+            output.add(new CustomerStatus(client,status.getBalance(),status.getOverdue(),
+                    status.getUpcoming(),status.getNextDue(),status.getLastOperationIndex()));
         }
         return output;
     }

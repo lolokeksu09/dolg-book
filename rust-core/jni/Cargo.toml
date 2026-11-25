@@ -1,0 +1,17 @@
+[package]
+name = "raschet-jni"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+publish = false
+
+[lib]
+name = "raschet_jni"
+crate-type = ["cdylib"]
+
+[dependencies]
+raschet-ledger = { path = ".." }
+
+[profile.release]
+overflow-checks = true
+panic = "unwind"

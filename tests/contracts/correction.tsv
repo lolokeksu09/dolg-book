@@ -1,0 +1,19 @@
+# available type oldAmount replacement expected
+6000 payment 4000 3000 7000
+6000 payment 4000 0 10000
+6000 payment 4000 10001 range
+20000 debt 10000 15000 25000
+6000 debt 10000 5000 paid
+10000 debt 10000 0 0
+100000000000 debt 1 2 range
+100000000000 debt 1 1 100000000000
+0 payment 100000000000 1 99999999999
+100000000000 payment 1 0 range
+0 debt 1 0 paid
+0 reversal 1 1 invalid
+0 debt 0 0 invalid
+-1 payment 1 1 invalid
+1 debt 1 -1 invalid
+1 debt 1 100000000001 invalid
+9223372036854775807 payment 1 0 invalid
+1 payment 9223372036854775807 0 invalid
