@@ -10,11 +10,22 @@ test('recovery uses authenticated Android Keystore encryption and fail-closed im
   assert.match(vault,/AES\/GCM\/NoPadding/);
   assert.match(vault,/AndroidKeyStore/);
   assert.match(vault,/setRandomizedEncryptionRequired\(true\)/);
-  const start=activity.indexOf('String backup=bytes.toString');
-  const snapshot=activity.indexOf('vault.create(ledger)',start);
-  const mutate=activity.indexOf('int[] count=ledger.importJson(backup)',start);
+  const service=read('android/app/src/main/kotlin/dev/ventry/raschet/BookFileService.kt');
+  const vm=read('android/app/src/main/kotlin/dev/ventry/raschet/presentation/BookViewModel.kt');
+  const writer=read('android/app/src/main/kotlin/dev/ventry/raschet/ClientWriteService.kt');
+  const start=service.indexOf('private fun restore(');
+  const snapshot=service.indexOf('RecoveryVault(app).create(ledger)',start);
+  const mutate=service.indexOf('val count = ledger.importJson(backup)',start);
   assert.ok(start>=0 && snapshot>start && mutate>snapshot);
-  assert.ok(activity.includes('vault.readLatest()'));
+  assert.ok(service.includes('RecoveryVault(app).readLatest()'));
+  assert.ok(service.includes('BackupSize.readUtf8(it)'));
+  assert.ok(activity.includes('new ClientCommand.FileTask.Import(uri,getLocalClassName())'));
+  assert.ok(activity.includes('new ClientCommand.FileTask.RestorePoint(getLocalClassName())'));
+  assert.ok(!activity.includes('ledger.importJson('));
+  assert.ok(!activity.includes('openInputStream('));
+  assert.ok(!activity.includes('openOutputStream('));
+  assert.ok(writer.includes('return BookFileService.execute(application, command, store)'));
+  assert.ok(vm.includes('readMutex.withLock { ClientWriteService.execute(application, command) }'));
 });
 
 test('due reminders are opt-in, permission-gated, local-only',()=>{
