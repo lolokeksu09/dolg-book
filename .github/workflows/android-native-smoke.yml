@@ -1,17 +1,24 @@
 name: Native Android emulator smoke
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - 'android/**'
       - 'scripts/android-native-smoke.sh'
       - '.github/workflows/android-native-smoke.yml'
   workflow_dispatch:
 
+concurrency:
+  group: native-smoke-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
 jobs:
   emulator:
+    # Defer only the analytics draft; manual runs and ready-for-review remain enabled.
+    if: github.event_name != 'pull_request' || github.head_ref != 'feature/analytics-module' || !github.event.pull_request.draft
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
