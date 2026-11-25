@@ -123,9 +123,17 @@ public final class LedgerStore extends SQLiteOpenHelper {
         }
         return result;
     }
-    public synchronized List<Entry> entries() {
+    public synchronized List<Entry> entries() { return readEntries(null); }
+    /** Indexed client history, including every reversal, in insertion order. */
+    public synchronized List<Entry> entriesForClient(String clientId) {
+        if(clientId==null)throw new IllegalArgumentException("Клиент не выбран.");
+        return readEntries(clientId);
+    }
+    private List<Entry> readEntries(String clientId) {
         List<Entry> result=new ArrayList<>();
-        try(Cursor c=getReadableDatabase().rawQuery("SELECT id,client_id,type,amount,date,due,note,reverses,purchase FROM entries ORDER BY seq",null)) {
+        String query="SELECT id,client_id,type,amount,date,due,note,reverses,purchase FROM entries"+
+                (clientId==null?"":" WHERE client_id=?")+" ORDER BY seq";
+        try(Cursor c=getReadableDatabase().rawQuery(query,clientId==null?null:new String[]{clientId})) {
             while(c.moveToNext()) result.add(new Entry(c.getString(0),c.getString(1),c.getString(2),
                     c.getLong(3),c.getString(4),c.getString(5),c.getString(6),c.getString(7),Purchase.decode(c.getString(8))));
         }
@@ -173,7 +181,7 @@ public final class LedgerStore extends SQLiteOpenHelper {
     }
     private String insertClient(SQLiteDatabase db,String name,String phone,String id){
         checkClient(name,phone);
-        if(clients().size()>=MAX_CLIENTS)throw new IllegalArgumentException("Достигнут лимит клиентов.");
+        if(android.database.DatabaseUtils.queryNumEntries(db,"clients")>=MAX_CLIENTS)throw new IllegalArgumentException("Достигнут лимит клиентов.");
         ContentValues row=new ContentValues();
         row.put("id",id);row.put("name",name.trim());row.put("phone",phone.trim());
         db.insertOrThrow("clients",null,row);
@@ -213,7 +221,6 @@ public final class LedgerStore extends SQLiteOpenHelper {
             String client=command.getExistingId();
             if(hasEntryId(command.getId())||hasClientId(command.getId()))
                 throw new IllegalArgumentException("Этот черновик уже сохранён. Откройте книгу.");
-            List<Entry> all=entries();
             if(client==null){
                 checkClient(command.getName(),command.getPhone());
                 if(!command.getAllowDuplicate()){
@@ -224,7 +231,7 @@ public final class LedgerStore extends SQLiteOpenHelper {
                 }
             }else{
                 ClientDirectory directory=new ClientDirectory(context);
-                long balance=balance(all,client),limit=directory.debtLimit(client);
+                long balance=balance(entriesForClient(client),client),limit=directory.debtLimit(client);
                 if(directory.archived(client,balance))
                     throw new IllegalArgumentException("Сначала верните клиента из архива.");
                 boolean confirmed=dev.ventry.raschet.domain.DebtApproval.matches(
@@ -233,9 +240,7 @@ public final class LedgerStore extends SQLiteOpenHelper {
                     throw new IllegalArgumentException("Остаток или лимит изменился. Откройте форму заново и подтвердите превышение.");
                 DebtLimits.requireConsent(limit,balance,command.getAmount(),confirmed);
             }
-            int rank=1;
-            for(BookDays.Day existing:BookDays.group(all,ZoneId.systemDefault()))
-                if(existing.date.isAfter(command.getDay()))rank++;
+            int rank=journalRank(db,"debt",command.getDay(),ZoneId.systemDefault());
             String id=recordDatedDebt(client,command.getName(),command.getPhone(),command.getAmount(),
                     command.getDay(),command.getDue(),command.getNote(),command.getId());
             dev.ventry.raschet.data.WriteReceipt receipt=new dev.ventry.raschet.data.WriteReceipt(
@@ -245,6 +250,21 @@ public final class LedgerStore extends SQLiteOpenHelper {
         }finally{db.endTransaction();}
     }
 
+    /** Count journal days without decoding purchases or projecting monetary balances.
+     * Reversed entries remain visible in both journals; count original operation dates.
+     */
+    static int journalRank(SQLiteDatabase db,String type,LocalDate day,ZoneId zone){
+        if(day==null)throw new IllegalArgumentException("Дата не выбрана.");
+        Set<LocalDate> later=new HashSet<>();
+        try(Cursor cursor=db.rawQuery("SELECT DISTINCT date FROM entries WHERE type=?",new String[]{type})){
+            while(cursor.moveToNext()){
+                LocalDate date=dev.ventry.raschet.domain.DatedLedger.localDate(cursor.getString(0),zone);
+                if(date.isAfter(day))later.add(date);
+            }
+        }
+        return 1+later.size();
+    }
+
     /** Retain the existing historical-payment guard and compute the journal position before commit. */
     public synchronized dev.ventry.raschet.data.WriteReceipt recordCheckedPayment(
             dev.ventry.raschet.data.ClientCommand.Payment command){
@@ -252,11 +272,8 @@ public final class LedgerStore extends SQLiteOpenHelper {
         SQLiteDatabase db=getWritableDatabase();
         db.beginTransaction();
         try{
-            List<Entry> all=entries();
-            int rank=1;
-            for(BookDays.Day existing:BookDays.groupPayments(all,ZoneId.systemDefault()))
-                if(existing.date.isAfter(command.getDay()))rank++;
-            boolean settled=balance(all,command.getClientId())==command.getAmount();
+            int rank=journalRank(db,"payment",command.getDay(),ZoneId.systemDefault());
+            boolean settled=balance(entriesForClient(command.getClientId()),command.getClientId())==command.getAmount();
             addDraftPayment(command.getClientId(),command.getAmount(),command.getNote(),command.getId(),command.getDay());
             dev.ventry.raschet.data.WriteReceipt receipt=new dev.ventry.raschet.data.WriteReceipt(
                     command.getDestination(),"payment",command.getClientId(),command.getDay(),rank,settled);
@@ -307,7 +324,7 @@ public final class LedgerStore extends SQLiteOpenHelper {
                 throw new IllegalArgumentException("Эта покупка уже сохранена. Откройте историю.");
             String client=command.getClientId();
             ClientDirectory directory=new ClientDirectory(context);
-            long balance=balance(entries(),client),limit=directory.debtLimit(client);
+            long balance=balance(entriesForClient(client),client),limit=directory.debtLimit(client);
             if(directory.archived(client,balance))
                 throw new IllegalArgumentException("Сначала верните клиента из архива.");
             boolean confirmed=dev.ventry.raschet.domain.DebtApproval.matches(
@@ -336,7 +353,7 @@ public final class LedgerStore extends SQLiteOpenHelper {
         db.beginTransaction();
         try{
             if(hasEntryId(entryId))throw new IllegalArgumentException("Этот черновик уже сохранён. Откройте историю.");
-            if(day.isBefore(today)&&amount>DatedPayments.maximum(entries(),clientId,day,today,zone))
+            if(day.isBefore(today)&&amount>DatedPayments.maximum(entriesForClient(clientId),clientId,day,today,zone))
                 throw new IllegalArgumentException("Оплата на эту дату создаст переплату в истории. Уменьшите сумму или выберите более позднюю дату.");
             insertEntry(db,clientId,"payment",amount,"",note,null,timestamp,entryId);
             db.setTransactionSuccessful();
@@ -363,9 +380,8 @@ public final class LedgerStore extends SQLiteOpenHelper {
             boolean exists=false;
             try(Cursor c=db.rawQuery("SELECT 1 FROM clients WHERE id=?",new String[]{clientId})) {exists=c.moveToFirst();}
             if(!exists)throw new IllegalArgumentException("Клиент не найден.");
-            List<Entry> all=entries();
-            if(all.size()>=MAX_ENTRIES)throw new IllegalArgumentException("Достигнут лимит операций.");
-            long available=balance(all,clientId);
+            if(android.database.DatabaseUtils.queryNumEntries(db,"entries")>=MAX_ENTRIES)throw new IllegalArgumentException("Достигнут лимит операций.");
+            long available=balance(entriesForClient(clientId),clientId);
             if("payment".equals(type)&&amount>available)
                 throw new IllegalArgumentException("Оплата превышает остаток долга.");
             if("debt".equals(type)&&amount>MAX_AMOUNT-available)
@@ -376,7 +392,7 @@ public final class LedgerStore extends SQLiteOpenHelper {
     }
     public synchronized Entry lastActive(String clientId) {
         Set<String> undone=new HashSet<>();
-        List<Entry> all=entries();
+        List<Entry> all=entriesForClient(clientId);
         for(Entry e:all)if("reversal".equals(e.type))undone.add(e.reverses);
         for(int i=all.size()-1;i>=0;i--){
             Entry e=all.get(i);
@@ -397,9 +413,8 @@ public final class LedgerStore extends SQLiteOpenHelper {
             Entry last=lastActive(clientId);
             if(last==null)throw new IllegalArgumentException("Нет действующей операции для отмены.");
             if(expectedId!=null&&!expectedId.equals(last.id))throw new IllegalArgumentException("Запись уже не последняя. Откройте актуальную историю.");
-            List<Entry> all=entries();
-            if(all.size()>=MAX_ENTRIES)throw new IllegalArgumentException("Достигнут лимит операций.");
-            long b=balance(all,clientId);
+            if(android.database.DatabaseUtils.queryNumEntries(db,"entries")>=MAX_ENTRIES)throw new IllegalArgumentException("Достигнут лимит операций.");
+            long b=balance(entriesForClient(clientId),clientId);
             if("debt".equals(last.type)&&b<last.amount)
                 throw new IllegalArgumentException("Этот долг уже частично погашен. Сначала отмените последнюю оплату.");
             Entry undo=new Entry(UUID.randomUUID().toString(),clientId,"reversal",last.amount,Instant.now().toString(),"",reason.trim(),last.id);
@@ -434,8 +449,8 @@ public final class LedgerStore extends SQLiteOpenHelper {
                 if(!due.isEmpty())try{LocalDate.parse(due);}
                     catch(Exception ex){throw new IllegalArgumentException("Неверный срок.");}
             }else due="";
-            List<Entry> all=entries();
-            if(all.size()+2>MAX_ENTRIES)
+            List<Entry> all=entriesForClient(clientId);
+            if(android.database.DatabaseUtils.queryNumEntries(db,"entries")+2>MAX_ENTRIES)
                 throw new IllegalArgumentException("Недостаточно места в истории операций.");
             correctedBalance(balance(all,clientId),last,amount);
             if(last.purchase!=null&&amount!=last.amount)
