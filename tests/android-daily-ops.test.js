@@ -14,11 +14,11 @@ test('recovery uses authenticated Android Keystore encryption and fail-closed im
   const vm=read('android/app/src/main/kotlin/dev/ventry/raschet/presentation/BookViewModel.kt');
   const writer=read('android/app/src/main/kotlin/dev/ventry/raschet/ClientWriteService.kt');
   const start=service.indexOf('private fun restore(');
-  const snapshot=service.indexOf('RecoveryVault(app).create(ledger)',start);
+  const snapshot=service.indexOf('vault.create(ledger)',start);
   const mutate=service.indexOf('val count = ledger.importJson(backup)',start);
   assert.ok(start>=0 && snapshot>start && mutate>snapshot);
-  assert.ok(service.includes('RecoveryVault(app).readLatest()'));
-  assert.ok(service.includes('BackupSize.readUtf8(it)'));
+  assert.ok(service.includes('vault.readLatest()'));
+  assert.ok(service.includes('BackupSize.openUtf8(stream).use'));
   assert.ok(activity.includes('new ClientCommand.FileTask.Import(uri,getLocalClassName())'));
   assert.ok(activity.includes('new ClientCommand.FileTask.RestorePoint(getLocalClassName())'));
   assert.ok(!activity.includes('ledger.importJson('));
