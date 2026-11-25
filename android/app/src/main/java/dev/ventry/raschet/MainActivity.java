@@ -1392,6 +1392,7 @@ public final class MainActivity extends ComponentActivity {
         if(privacy!=null&&!authInFlight)stoppedAt=android.os.SystemClock.elapsedRealtime();
         reloadOnStart=true;
         bookViewModel.clear();
+        if(page!=null&&needsBookSnapshot())page.removeAllViews();
         super.onStop();
     }
     private void showQuickDebt(){showQuickDebt(false);}
