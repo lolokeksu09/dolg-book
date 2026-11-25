@@ -171,7 +171,8 @@ test('Ventry ledger uses shared semantic palette and real metric rows',()=>{
   for(const screen of ['MainActivity','IntroActivity','SplashActivity']) assert.ok(read('android/app/src/main/java/dev/ventry/raschet/'+screen+'.java').includes('LedgerTheme.BG'));
   const book=read('android/app/src/main/kotlin/dev/ventry/raschet/BookCompose.kt');
   const collections=read('android/app/src/main/kotlin/dev/ventry/raschet/CollectionsCompose.kt');
-  assert.ok(book.includes('LedgerTotal("Общая задолженность", model.total, "Должников: " + model.debtors)'));
+  assert.ok(book.includes('LedgerTotal("Общая задолженность", model.total)'));
+  assert.ok(book.includes('"Должников: " + model.debtors'));
   assert.ok(collections.includes('LedgerMetric("Просрочено", ledgerMoney(model.overdue)'));
   assert.ok(book.includes('contentDescription = "Возврат долгов"'));
   assert.ok(book.includes('clickable(onClick = actions.collections)'));
