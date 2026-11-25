@@ -41,7 +41,28 @@ fun verifyLatestRead() = runBlocking {
     requests.receive().complete("retry")
     yield()
     check((reader.state.value as ReadState.Ready).value == "retry")
+    // A navigation burst joins the pending request and reuses its completed value.
     reader.clear()
+    check(reader.ensureFresh { true } == null)
+    val shared = requests.receive()
+    repeat(20) { check(reader.ensureFresh { true } == null) }
+    check(requests.tryReceive().isFailure)
+    shared.complete("today")
+    yield()
+    repeat(20) { check(reader.ensureFresh { it == "today" } == "today") }
+    check(requests.tryReceive().isFailure)
+    // Date rollover and explicit invalidation require another read.
+    check(reader.ensureFresh { it == "tomorrow" } == null)
+    requests.receive().complete("tomorrow")
+    yield()
+    check(reader.ensureFresh { it == "tomorrow" } == "tomorrow")
+    reader.clear()
+    check(reader.ensureFresh { true } == null)
+    val afterClear = requests.receive()
+    reader.clear()
+    afterClear.complete("private")
+    yield()
+    check(reader.state.value == ReadState.Idle)
     requests.close()
 }
 
