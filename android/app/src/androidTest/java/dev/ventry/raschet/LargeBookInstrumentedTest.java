@@ -28,8 +28,12 @@ public class LargeBookInstrumentedTest {
         Context context=InstrumentationRegistry.getInstrumentation().getTargetContext();
         String name="raschet-large-book-qa-only.db";
         File file=new File(context.getCacheDir(),"raschet-large-book-qa-only.json");
+        File points=new File(context.getCacheDir(),"raschet-large-book-points-"+System.nanoTime());
         context.deleteDatabase(name);
         try(LedgerStore book=new LedgerStore(context,name)){
+            RecoveryVault vault=new RecoveryVault(points);
+            String original=book.exportJson();
+            vault.create(book);
             long start=SystemClock.elapsedRealtime();
             seed(book.getWritableDatabase());
             long seedMs=SystemClock.elapsedRealtime()-start;
@@ -72,11 +76,22 @@ public class LargeBookInstrumentedTest {
             }
             assertEquals(CLIENTS,clients);assertEquals(ROWS,entries);assertEquals(2,version);
             assertTrue("Fixture must exercise oversized portable export",file.length()>BackupSize.MAX_BYTES);
+            try{
+                vault.create(book);
+                fail("Oversized protected point must be rejected");
+            }catch(java.io.IOException expected){
+                assertEquals(1,vault.count());
+                assertEquals(original,vault.readLatest());
+                assertEquals(1,points.listFiles().length);
+            }
             Log.i("RaschetBenchmark","LARGE_BOOK_PASS rows="+ROWS+" clients="+CLIENTS+
                     " seed_ms="+seedMs+" snapshot_projection_ms="+projectionMs+
                     " indexed_read_ms="+indexedMs+" export_ms="+exportMs+" json_bytes="+file.length());
         }finally{
             file.delete();
+            File[] remaining=points.listFiles();
+            if(remaining!=null)for(File point:remaining)point.delete();
+            points.delete();
             context.deleteDatabase(name);
         }
     }
