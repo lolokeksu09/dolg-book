@@ -163,7 +163,9 @@ test('AMOLED ledger uses shared semantic palette and real metric rows',()=>{
   assert.ok(collections.includes('LedgerMetric("Просрочено", ledgerMoney(model.overdue)'));
   assert.ok(book.includes('LedgerMetric("Возврат долгов"'));
   assert.ok(ui.includes('android.R.attr.state_focused'));
-  assert.ok(ui.includes('STRIKE_THRU_TEXT_FLAG'));
+  const detail=read('android/app/src/main/kotlin/dev/ventry/raschet/ClientDetailCompose.kt');
+  assert.ok(detail.includes('TextDecoration.LineThrough'));
+  assert.ok(book.includes('TextDecoration.LineThrough'));
 });
 
 
@@ -252,7 +254,8 @@ test('operation inspector uses exact selected IDs and history search',()=>{
   const history=read('android/app/src/main/kotlin/dev/ventry/raschet/HistoryCompose.kt');
   assert.ok(history.includes('HistoryRows.select(entries, people, clientId, query, from, to, filter, zone)'));
   assert.ok(ui.includes('return HistoryCompose.create(this,data,historyClientId,historyQuery'));
-  assert.ok(ui.includes('showOperation(e.id)'));
+  assert.ok(history.includes('actions.open(row.entry.id)'));
+  assert.ok(ui.includes('this::showOperation,this::showPurchaseDetails'));
   const repository=read('android/app/src/main/kotlin/dev/ventry/raschet/data/LedgerRepository.kt');
   const service=read('android/app/src/main/kotlin/dev/ventry/raschet/ClientWriteService.kt');
   assert.ok(ui.includes('new ClientCommand.Correction(clientId,original.id'));
