@@ -114,7 +114,7 @@ test('compact book keeps essential controls and hides redundant empty-state filt
   const clients=ui.slice(ui.indexOf('private View clientsView(BookScreenData data)'),ui.indexOf('private void showClientFilters()'));
   const compose=read('android/app/src/main/kotlin/dev/ventry/raschet/ClientsCompose.kt');
   assert.ok(clients.includes('ClientsCompose.create(this,data,clientScope,clientFilter'));
-  assert.ok(compose.indexOf('if (model.allCount == 0)')<compose.indexOf('"+ Добавить клиента"'));
+  assert.match(compose, /if \(model\.allCount > 0\) TextButton\(onClick = actions\.add,/);
   assert.ok(compose.includes('LazyColumn('));
   assert.ok(compose.includes('CollectionsInsights.visible(model.scoped, filter, amountFirst, recentFirst, query)'));
   assert.ok(clients.includes('this::showClientFilters'));
