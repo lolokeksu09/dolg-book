@@ -38,6 +38,9 @@ import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import java.util.function.BiConsumer
+import java.util.function.Consumer
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.lazy.items
 
 internal val analyticsDate = DateTimeFormatter.ofPattern("dd.MM.yyyy", Locale("ru", "RU"))
 internal fun analyticsMoney(amount: Long): String = String.format(Locale("ru", "RU"),
@@ -49,7 +52,8 @@ internal fun analyticsRange(from: LocalDate, to: LocalDate) =
 object AnalyticsCompose {
     @JvmStatic
     fun create(owner: ComponentActivity, data: BookScreenData, model: AnalyticsViewModel,
-        onBack: Runnable, onReport: Runnable, onHistory: BiConsumer<LocalDate, LocalDate>): ComposeView {
+        onBack: Runnable, onReport: Runnable, onHistory: BiConsumer<LocalDate, LocalDate>,
+        onCustomer: Consumer<String>, fromOverview: Boolean): ComposeView {
         model.bindBook(data)
         return ComposeView(owner).apply {
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindowOrReleasedFromPool)
@@ -60,7 +64,7 @@ object AnalyticsCompose {
                     Column(Modifier.fillMaxSize().background(ledgerBg)) {
                         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp),
                             verticalAlignment = Alignment.CenterVertically) {
-                            TextButton(onClick = onBack::run) { Text(if (request.customerId == null) "← Книга" else "← Клиент") }
+                            TextButton(onClick = onBack::run) { Text(if (request.customerId == null) "← Книга" else if (fromOverview) "← Статистика" else "← Клиент") }
                             Spacer(Modifier.weight(1f))
                             if (request.customerId == null) TextButton(onClick = onReport::run) { Text("Финансовый отчёт") }
                         }
@@ -73,7 +77,7 @@ object AnalyticsCompose {
                         when (val current = state) {
                             is ReadState.Ready -> {
                                 if (current.value.request != request) AnalyticsLoading()
-                                else if (request.customerId == null) AnalyticsOverview(current.value, onHistory)
+                                else if (request.customerId == null) AnalyticsOverview(current.value, onHistory, onCustomer)
                                 else ClientAnalyticsContent(current.value, onHistory)
                             }
                             is ReadState.Failed -> Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -147,8 +151,13 @@ internal fun AnalyticsHeading(title: String) {
 }
 
 @Composable
-internal fun AnalyticsOverview(result: AnalyticsResult, onHistory: BiConsumer<LocalDate, LocalDate>) {
+internal fun AnalyticsOverview(result: AnalyticsResult, onHistory: BiConsumer<LocalDate, LocalDate>,
+    onCustomer: Consumer<String>) {
     val data = result.period
+    var ranking by remember { mutableStateOf(AnalyticsRanking.BALANCE) }
+    var rankLimit by remember(data, ranking) { mutableIntStateOf(20) }
+    val ranked = remember(data, ranking) { data.customers.filter { it.id in result.names && ranking.value(it) > 0L }
+        .sortedWith(compareByDescending<AnalyticsProjection.Customer> { ranking.value(it) }.thenBy { result.names[it.id] }.thenBy { it.id }) }
     LazyColumn(Modifier.fillMaxSize().testTag("analytics-list"), contentPadding = PaddingValues(18.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item("heading") {
@@ -214,6 +223,39 @@ internal fun AnalyticsOverview(result: AnalyticsResult, onHistory: BiConsumer<Lo
                     AnalyticsChange("Остаток на конец", data.closing, previous.closing)
                 }
             }
+        }
+        item("ranking-title") {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                AnalyticsHeading("Рейтинг клиентов")
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    AnalyticsRanking.entries.forEach { mode ->
+                        FilterChip(selected = ranking == mode, onClick = { ranking = mode }, label = { Text(mode.title) })
+                    }
+                }
+                Text(if (ranking == AnalyticsRanking.BALANCE || ranking == AnalyticsRanking.OVERDUE) "На сегодня" else "За выбранный период · действительные операции",
+                    color = ledgerMuted, fontSize = 12.sp)
+                if (ranked.isEmpty()) Text("Нет клиентов с таким показателем.", color = ledgerMuted)
+            }
+        }
+        items(ranked.take(rankLimit), key = { "rank-" + it.id }) { customer ->
+            val amount = ranking.value(customer)
+            val label = if (ranking == AnalyticsRanking.FREQUENCY) "$amount записей" else analyticsMoney(amount)
+            Column(Modifier.fillMaxWidth().clickable { onCustomer.accept(customer.id) }.padding(vertical = 6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(result.names.getValue(customer.id), color = ledgerText, modifier = Modifier.weight(1f), fontWeight = FontWeight.Medium)
+                    Text(label, color = if (ranking == AnalyticsRanking.OVERDUE) ledgerAlert else ledgerText,
+                        fontSize = 14.sp, style = TextStyle(fontFeatureSettings = "tnum"))
+                    Text("›", color = ledgerMuted, fontSize = 18.sp)
+                }
+                val fraction = (amount.toDouble() / ranking.value(ranked.first()).toDouble()).toFloat().coerceIn(0f, 1f)
+                Box(Modifier.fillMaxWidth().height(3.dp).background(ledgerPanel, RoundedCornerShape(2.dp))) {
+                    Box(Modifier.fillMaxWidth(fraction).height(3.dp).background(ledgerAccent, RoundedCornerShape(2.dp)))
+                }
+            }
+        }
+        if (ranked.size > rankLimit) item("more-ranked") {
+            TextButton(onClick = { rankLimit += 20 }, modifier = Modifier.fillMaxWidth()) { Text("Показать ещё клиентов") }
         }
         item("history") {
             OutlinedButton(onClick = { onHistory.accept(data.range.from, data.range.to) },
@@ -289,5 +331,16 @@ internal fun AnalyticsChart(buckets: List<AnalyticsSeries.Bucket>) {
         AnalyticsValue("Остаток", analyticsMoney(selected.closing))
         AnalyticsValue("Долги", analyticsMoney(selected.movement.debts), ledgerAlert)
         AnalyticsValue("Оплаты", analyticsMoney(selected.movement.payments), ledgerAccent)
+    }
+}
+
+private enum class AnalyticsRanking(val title: String) {
+    BALANCE("Остаток"), OVERDUE("Просрочка"), DEBTS("Сумма долгов"), FREQUENCY("Частота"), PAYMENTS("Оплаты");
+    fun value(customer: AnalyticsProjection.Customer): Long = when (this) {
+        BALANCE -> customer.current.balance
+        OVERDUE -> customer.current.overdue
+        DEBTS -> customer.effective.debts
+        FREQUENCY -> customer.effective.debtCount.toLong()
+        PAYMENTS -> customer.effective.payments
     }
 }
