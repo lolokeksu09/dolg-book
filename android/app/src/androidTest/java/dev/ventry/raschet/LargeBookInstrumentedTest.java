@@ -84,9 +84,23 @@ public class LargeBookInstrumentedTest {
                 assertEquals(original,vault.readLatest());
                 assertEquals(1,points.listFiles().length);
             }
+            // Exercise the streaming parser above the current public safety boundary
+            // in QA only. The real file service still enforces the 10 MiB limit.
+            String restoredName="raschet-large-restore-qa-only.db";
+            context.deleteDatabase(restoredName);
+            long importMs;
+            try(LedgerStore restored=new LedgerStore(context,restoredName);
+                java.io.Reader input=new InputStreamReader(new FileInputStream(file),StandardCharsets.UTF_8)){
+                start=SystemClock.elapsedRealtime();
+                assertArrayEquals(new int[]{CLIENTS,ROWS},restored.importJson(input));
+                importMs=SystemClock.elapsedRealtime()-start;
+                assertEquals(ROWS_PER_CLIENT,restored.entriesForClient("qa-0").size());
+                assertEquals(3500L,LedgerStore.balance(restored.entriesForClient("qa-999"),"qa-999"));
+                assertEquals(ROWS,android.database.DatabaseUtils.queryNumEntries(restored.getReadableDatabase(),"entries"));
+            }finally{context.deleteDatabase(restoredName);}
             Log.i("RaschetBenchmark","LARGE_BOOK_PASS rows="+ROWS+" clients="+CLIENTS+
                     " seed_ms="+seedMs+" snapshot_projection_ms="+projectionMs+
-                    " indexed_read_ms="+indexedMs+" export_ms="+exportMs+" json_bytes="+file.length());
+                    " indexed_read_ms="+indexedMs+" export_ms="+exportMs+" import_ms="+importMs+" json_bytes="+file.length());
         }finally{
             file.delete();
             File[] remaining=points.listFiles();
