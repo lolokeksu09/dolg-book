@@ -74,17 +74,22 @@ test('itemized debts use an additive migration and versioned validated purchase 
   assert.ok(ui.includes('e.purchase.summary()'));
 });
 
-test('legacy catalog data stays portable but the standalone catalog and picker are removed',()=>{
+test('catalog data stays portable and real editing/picking is routed to the repository',()=>{
   const store=read('android/app/src/main/java/dev/ventry/raschet/LedgerStore.java');
   const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
+  const settings=read('android/app/src/main/kotlin/dev/ventry/raschet/SettingsCompose.kt');
+  const service=read('android/app/src/main/kotlin/dev/ventry/raschet/ClientWriteService.kt');
   assert.ok(store.includes('CREATE TABLE products'));
   assert.ok(store.includes('root.put("products",ps)'));
   assert.ok(store.includes('root.put("version",4)'));
   assert.ok(store.includes('for(Product p:newProducts)'));
-  assert.doesNotMatch(ui,/\b(?:openCatalog|catalogView|showProductForm|addCatalogPicker|applyProduct)\s*\(/);
-  assert.doesNotMatch(ui,/ledger\.(?:products|saveProduct)\s*\(/);
-  assert.ok(!ui.includes('Каталог товаров'));
-  assert.ok(!ui.includes('Выбрать из каталога'));
+  assert.ok(settings.includes('LedgerMetric("Каталог товаров"'));
+  assert.ok(ui.includes('new SqliteLedgerRepository(ledger).catalog()'));
+  assert.ok(ui.includes('new ClientCommand.Catalog(new CatalogRecord('));
+  assert.ok(service.includes('repository.saveCatalogProduct(command.record)'));
+  assert.ok(ui.includes('Выбрать из каталога'));
+  assert.ok(ui.includes('catalog.removeIf(CatalogRecord::getArchived)'));
+  assert.ok(ui.includes('units.get(unit.getSelectedItemPosition())'));
   assert.ok(ui.includes('new ClientCommand.ItemizedDebt(purchaseId,clientId,purchase.encode()'));
   assert.ok(ui.includes('showPurchaseDetails('));
 });
