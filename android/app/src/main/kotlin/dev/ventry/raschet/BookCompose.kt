@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.ventry.raschet.presentation.BookScreenData
 import java.time.LocalDate
+import java.time.YearMonth
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -154,6 +155,11 @@ internal fun BookContent(model: BookUiModel, payments: Boolean, hasFilter: Boole
     var expanded by remember { mutableStateOf(initialExpanded) }
     var limit by remember { mutableIntStateOf(initialLimit) }
     val rowLimits = remember { mutableStateMapOf<String, Int>() }
+    var calendar by remember { mutableStateOf(false) }
+    var selectedDay by remember { mutableStateOf(if (hasFilter) model.days.firstOrNull()?.date ?: model.today else model.today) }
+    var month by remember { mutableStateOf(YearMonth.from(selectedDay)) }
+    val byDate = remember(model.days) { model.days.associateBy { it.date } }
+    val visibleDays = if (calendar) listOfNotNull(byDate[selectedDay]) else model.days.take(limit)
     BoxWithConstraints(Modifier.fillMaxSize().background(ledgerBg), contentAlignment = Alignment.TopCenter) {
         val stacked = maxWidth < 365.dp || LocalDensity.current.fontScale > 1.2f || largeText
         LazyColumn(Modifier.widthIn(max = 800.dp).fillMaxSize().testTag("book-list"),
@@ -196,23 +202,50 @@ internal fun BookContent(model: BookUiModel, payments: Boolean, hasFilter: Boole
                     else "По фильтру: " + ledgerMoney(model.recorded) + " · осталось " + ledgerMoney(model.remaining),
                     color = ledgerMuted, fontSize = 12.sp)
             }
-            if (!model.hasDays) item("empty") { Text(if (payments) "Пока нет оплат. Нажмите «Принять оплату»." else
+            item("calendar-mode") {
+                OutlinedButton(onClick = { calendar = !calendar }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                    Text(if (calendar) "Список дат" else "Календарь")
+                }
+            }
+            if (calendar) {
+                item("calendar") {
+                    BookCalendar(month, selectedDay, model.today, byDate, payments,
+                        onMonth = { next -> month = next; selectedDay = if (next == YearMonth.from(model.today)) model.today else next.atDay(1) },
+                        onDay = { selectedDay = it })
+                }
+                item("selected-calendar-date") {
+                    Text("Выбранный день · " + ledgerDayFormat.format(selectedDay), color = ledgerText,
+                        fontWeight = FontWeight.SemiBold)
+                }
+                if (visibleDays.isEmpty()) item("calendar-empty") {
+                    Text(if (hasFilter) "Нет записей по выбранным условиям за этот день." else
+                        if (payments) "За этот день нет оплат." else "За этот день нет долгов.", color = ledgerMuted)
+                    if (!selectedDay.isAfter(model.today)) OutlinedButton(
+                        onClick = { if (payments) actions.paymentDate(selectedDay) else actions.debtDate(selectedDay) },
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                        Text(if (payments) "+ Оплата за этот день" else "+ Долг за этот день")
+                    }
+                }
+            }
+            if (!calendar && !model.hasDays) item("empty") { Text(if (payments) "Пока нет оплат. Нажмите «Принять оплату»." else
                 "Пока нет долгов. Нажмите «Записать долг», чтобы начать.", color = ledgerMuted) }
-            else if (model.days.isEmpty()) item("empty-filter") {
+            else if (!calendar && model.days.isEmpty()) item("empty-filter") {
                 Text("Нет записей по выбранным условиям.", color = ledgerMuted)
                 OutlinedButton(onClick = actions.clear, modifier = Modifier.fillMaxWidth()) { Text("Сбросить фильтры книги") }
             }
-            for (day in model.days.take(limit)) {
+            for (day in visibleDays) {
                 val key = day.date.toString()
-                val open = key in expanded
+                val open = calendar || key in expanded
                 item("day-" + key) {
                     val description = ledgerDayFormat.format(day.date) + ", записей " + day.entries.size +
                         (if (payments) ", получено " + ledgerMoney(day.recorded) else ", записано " + ledgerMoney(day.recorded) +
-                            ", осталось " + ledgerMoney(day.remaining)) + if (open) ", свернуть" else ", раскрыть"
-                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable {
-                        expanded = if (open) expanded - key else expanded + key
-                        actions.toggle(key)
-                    }.semantics { selected = open; contentDescription = description }.padding(vertical = 8.dp),
+                            ", осталось " + ledgerMoney(day.remaining)) + if (calendar) "" else if (open) ", свернуть" else ", раскрыть"
+                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).then(
+                        if (calendar) Modifier else Modifier.clickable {
+                            expanded = if (open) expanded - key else expanded + key
+                            actions.toggle(key)
+                        }
+                    ).semantics { selected = open; contentDescription = description }.padding(vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Column(Modifier.weight(1f)) {
                             Text(ledgerDayFormat.format(day.date), color = ledgerText, fontWeight = FontWeight.Bold)
@@ -223,7 +256,7 @@ internal fun BookContent(model: BookUiModel, payments: Boolean, hasFilter: Boole
                             Text(if (payments) "Получено" else "Осталось " + ledgerMoney(day.remaining),
                                 color = if (payments || day.remaining == 0L) ledgerAccent else ledgerMuted, fontSize = 12.sp)
                         }
-                        Text(if (open) "⌃" else "⌄", color = ledgerMuted, fontSize = 20.sp)
+                        if (!calendar) Text(if (open) "⌃" else "⌄", color = ledgerMuted, fontSize = 20.sp)
                     }
                     HorizontalDivider(color = ledgerBorder)
                 }
@@ -236,7 +269,7 @@ internal fun BookContent(model: BookUiModel, payments: Boolean, hasFilter: Boole
                     if (day.entries.size > count) item("more-" + key) {
                         OutlinedButton(onClick = { rowLimits[key] = count + 60 }, modifier = Modifier.fillMaxWidth()) { Text("Показать ещё записи") }
                     }
-                    item("date-add-" + key) {
+                    if (!calendar || !day.date.isAfter(model.today)) item("date-add-" + key) {
                         OutlinedButton(onClick = { if (payments) actions.paymentDate(day.date) else actions.debtDate(day.date) },
                             modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                             Text(if (payments) "+ Оплата за этот день" else "+ Долг за этот день")
@@ -244,7 +277,7 @@ internal fun BookContent(model: BookUiModel, payments: Boolean, hasFilter: Boole
                     }
                 }
             }
-            if (model.days.size > limit) item("more-dates") {
+            if (!calendar && model.days.size > limit) item("more-dates") {
                 OutlinedButton(onClick = { limit += 30; actions.limit(limit) }, modifier = Modifier.fillMaxWidth()) { Text("Показать более ранние даты") }
             }
             item("report") { LedgerMetric("Финансовый отчёт", "Долги и оплаты за выбранные даты", action = actions.report) }
