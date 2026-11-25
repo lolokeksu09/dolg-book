@@ -70,7 +70,7 @@ test('itemized debts use an additive migration and versioned validated purchase 
   assert.ok(store.includes('purchase.total!=amount'));
   assert.ok(store.includes('last.purchase!=null&&amount!=last.amount'));
   assert.ok(purchase.includes('RoundingMode.HALF_UP'));
-  assert.ok(ui.includes('ledger.addPurchase(clientId,purchase'));
+  assert.ok(ui.includes('new ClientCommand.ItemizedDebt(purchaseId,clientId,purchase.encode()'));
   assert.ok(ui.includes('e.purchase.summary()'));
 });
 
@@ -85,7 +85,7 @@ test('legacy catalog data stays portable but the standalone catalog and picker a
   assert.doesNotMatch(ui,/ledger\.(?:products|saveProduct)\s*\(/);
   assert.ok(!ui.includes('Каталог товаров'));
   assert.ok(!ui.includes('Выбрать из каталога'));
-  assert.ok(ui.includes('ledger.addPurchase(clientId,purchase'));
+  assert.ok(ui.includes('new ClientCommand.ItemizedDebt(purchaseId,clientId,purchase.encode()'));
   assert.ok(ui.includes('showPurchaseDetails('));
 });
 
@@ -243,8 +243,14 @@ test('all new debt forms check the local client credit limit before storing debt
   const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
   assert.ok(ui.includes('separate[0],notice.confirmation()'));
   assert.ok(ui.includes('false,notice.confirmation(),false,destination'));
-  assert.ok(ui.includes('notice.verify(clientId,purchase.total)'));
-  assert.ok(ui.includes('DebtLimits.requireConsent('));
+  const store=read('android/app/src/main/java/dev/ventry/raschet/LedgerStore.java');
+  const purchase=store.slice(store.indexOf('WriteReceipt recordCheckedPurchase('),store.indexOf('/** Existing-client draft submission'));
+  assert.ok(ui.includes('new ClientCommand.ItemizedDebt(purchaseId,clientId,purchase.encode()'));
+  assert.ok(ui.includes('note.getText().toString().trim(),notice.confirmation()'));
+  assert.ok(purchase.includes('DebtApproval.matches('));
+  assert.ok(purchase.includes('DebtLimits.requireConsent(limit,balance,purchase.total,confirmed)'));
+  assert.ok(purchase.includes('db.beginTransaction()'));
+  assert.ok(purchase.includes('db.setTransactionSuccessful()'));
   assert.ok(ui.includes('consent.setChecked(false)'));
 });
 
