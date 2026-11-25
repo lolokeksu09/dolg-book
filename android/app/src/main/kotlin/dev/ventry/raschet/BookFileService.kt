@@ -36,9 +36,21 @@ internal object BookFileService {
                         }
                         receipt("Таблица CSV сохранена.")
                     } else {
-                        val bytes = ledger.exportJson().toByteArray(Charsets.UTF_8)
-                        val restorable = BackupSize.isSupported(bytes.size.toLong())
-                        output(app, task.uri) { it.write(bytes) }
+                        var written = 0L
+                        output(app, task.uri) { stream ->
+                            val counted = object : OutputStream() {
+                                override fun write(b: Int) { stream.write(b); written++ }
+                                override fun write(b: ByteArray, off: Int, len: Int) {
+                                    stream.write(b, off, len)
+                                    written += len
+                                }
+                                override fun flush() = stream.flush()
+                            }
+                            val writer = OutputStreamWriter(counted, Charsets.UTF_8).buffered()
+                            ledger.writeJson(writer)
+                            writer.flush()
+                        }
+                        val restorable = BackupSize.isSupported(written)
                         val status = app.getSharedPreferences(task.preferencesName, Context.MODE_PRIVATE).edit()
                         if (restorable) status.putLong("last_json_export", System.currentTimeMillis())
                         else status.remove("last_json_export")
