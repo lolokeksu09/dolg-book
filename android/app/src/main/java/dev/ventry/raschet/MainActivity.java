@@ -4,6 +4,7 @@ import androidx.activity.ComponentActivity;
 import androidx.lifecycle.ViewModelProvider;
 import dev.ventry.raschet.presentation.BookViewModel;
 import dev.ventry.raschet.presentation.AnalyticsViewModel;
+import dev.ventry.raschet.domain.AnalyticsExport;
 import dev.ventry.raschet.presentation.BookScreenData;
 import dev.ventry.raschet.presentation.ReadState;
 import dev.ventry.raschet.presentation.WriteState;
@@ -63,7 +64,7 @@ public final class MainActivity extends ComponentActivity {
     private static final int BG=LedgerTheme.BG, PANEL=LedgerTheme.PANEL, ELEVATED=LedgerTheme.ELEVATED;
     private static final int BORDER=LedgerTheme.BORDER, TEXT=LedgerTheme.TEXT, MUTED=LedgerTheme.MUTED;
     private static final int ACCENT=LedgerTheme.ACCENT, INK=LedgerTheme.INK, ALERT=LedgerTheme.ALERT, RED=LedgerTheme.RED;
-    private static final int REQUEST_IMPORT=101, REQUEST_EXPORT=102, REQUEST_PDF=103, REQUEST_REPORT=105;
+    private static final int REQUEST_IMPORT=101, REQUEST_EXPORT=102, REQUEST_PDF=103, REQUEST_REPORT=105, REQUEST_ANALYTICS=106;
     private static final String RECOVERY_PREFS="raschet_local_recovery";
     private static final int NOTIFICATION_PERMISSION_REQUEST=104;
     public static final String EXTRA_FIRST_START = "dev.ventry.raschet.FIRST_START";
@@ -75,6 +76,7 @@ public final class MainActivity extends ComponentActivity {
     private AnalyticsViewModel analyticsViewModel;
     private String analyticsClientId=null, analyticsReturnTab="Клиенты";
     private boolean historyFromAnalytics;
+    private AnalyticsExport.Spec pendingAnalytics;
     private boolean reloadOnStart,firstStartPending;
     private Dialog pendingClientDialog;
     private TextView pendingClientError;
@@ -150,6 +152,10 @@ public final class MainActivity extends ComponentActivity {
             historyQuery=state.getString("history_query","");historyClientId=state.getString("history_client_id");
             analyticsClientId=state.getString("analytics_client_id");analyticsReturnTab=state.getString("analytics_return_tab","Клиенты");
             historyFromAnalytics=state.getBoolean("history_from_analytics",false);
+            LocalDate analyticsFrom=readDate(state,"pending_analytics_from"), analyticsTo=readDate(state,"pending_analytics_to");
+            if(analyticsFrom!=null&&analyticsTo!=null)pendingAnalytics=new AnalyticsExport.Spec(analyticsFrom,analyticsTo,
+                    readDate(state,"pending_analytics_prev_from"),readDate(state,"pending_analytics_prev_to"),
+                    state.getString("pending_analytics_client"),state.getBoolean("pending_analytics_pdf",false));
             detailVisibleLimit=state.getInt("detail_visible_limit",80);
             detailFilter=state.getString("detail_filter",ClientStatement.ALL);detailFilterClient=state.getString("detail_filter_client");
             bookDayLimit=state.getInt("book_day_limit",30);
@@ -195,6 +201,11 @@ public final class MainActivity extends ComponentActivity {
         out.putString("history_query",historyQuery);out.putString("history_client_id",historyClientId);
         out.putString("analytics_client_id",analyticsClientId);out.putString("analytics_return_tab",analyticsReturnTab);
         out.putBoolean("history_from_analytics",historyFromAnalytics);
+        if(pendingAnalytics!=null){
+            saveDate(out,"pending_analytics_from",pendingAnalytics.getFrom());saveDate(out,"pending_analytics_to",pendingAnalytics.getTo());
+            saveDate(out,"pending_analytics_prev_from",pendingAnalytics.getPreviousFrom());saveDate(out,"pending_analytics_prev_to",pendingAnalytics.getPreviousTo());
+            out.putString("pending_analytics_client",pendingAnalytics.getCustomerId());out.putBoolean("pending_analytics_pdf",pendingAnalytics.getPdf());
+        }
         out.putInt("detail_visible_limit",detailVisibleLimit);
         out.putString("detail_filter",detailFilter);out.putString("detail_filter_client",detailFilterClient);
         out.putInt("book_day_limit",bookDayLimit);
@@ -749,7 +760,17 @@ public final class MainActivity extends ComponentActivity {
                 this::returnFromAnalytics,()->{analyticsClientId=null;tab="Отчёт";render();},(from,to)->{
                     historyFrom=from;historyTo=to;historyFilter="Все";historyQuery="";
                     historyClientId=analyticsClientId;historyVisibleLimit=100;historyFromAnalytics=true;tab="История";render();
-                },this::openClientAnalytics,analyticsClientId!=null&&analyticsReturnTab.equals("Статистика"));
+                },this::openClientAnalytics,analyticsClientId!=null&&analyticsReturnTab.equals("Статистика"),this::exportAnalytics);
+    }
+    private void exportAnalytics(AnalyticsExport.Spec spec){
+        if(!unlocked||bookViewModel.hasPendingWrite())return;
+        Intent save=new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        save.addCategory(Intent.CATEGORY_OPENABLE);
+        save.setType(spec.getPdf()?"application/pdf":"text/csv");
+        save.putExtra(Intent.EXTRA_TITLE,"raschet-analytics-"+spec.getFrom()+"-"+spec.getTo()+(spec.getPdf()?".pdf":".csv"));
+        pendingAnalytics=spec;
+        try{startActivityForResult(save,REQUEST_ANALYTICS);}
+        catch(ActivityNotFoundException ex){pendingAnalytics=null;message("Выбор файла недоступен.");}
     }
     private View reportView(BookScreenData data){
         return ReportCompose.create(this,data,reportFrom,reportTo,reportDaysLimit,
@@ -2064,6 +2085,9 @@ public final class MainActivity extends ComponentActivity {
             pendingReportFrom=null;pendingReportTo=null;
             if(ready&&from!=null&&to!=null)submitFile(new ClientCommand.FileTask.Report(
                     data.getData().toString(),from,to));
+        }else if(request==REQUEST_ANALYTICS){
+            AnalyticsExport.Spec spec=pendingAnalytics;pendingAnalytics=null;
+            if(ready&&spec!=null)submitFile(new ClientCommand.FileTask.Analytics(data.getData().toString(),spec));
         }else if(request==REQUEST_PDF){
             String id=pendingPdfClientId;
             pendingPdfClientId=null;
@@ -2075,7 +2099,7 @@ public final class MainActivity extends ComponentActivity {
             showDialog("Восстановить книгу?",form,null,()->new ClientCommand.FileTask.Import(uri,getLocalClassName()));
         }
         if(!authorized&&result==RESULT_OK&&(request==REQUEST_EXPORT||request==REQUEST_REPORT||
-                request==REQUEST_PDF||request==REQUEST_IMPORT)){
+                request==REQUEST_PDF||request==REQUEST_IMPORT||request==REQUEST_ANALYTICS)){
             message("Откройте книгу и повторите файловую операцию.");
         }
     }
