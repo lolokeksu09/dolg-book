@@ -11,7 +11,6 @@ import java.io.IOException
 import java.io.OutputStream
 import java.io.OutputStreamWriter
 import java.io.Reader
-import java.io.StringReader
 import java.time.ZoneId
 
 /** Runs under the same serialized IO boundary as financial writes. No Activity or View is retained. */
@@ -83,8 +82,7 @@ internal object BookFileService {
                     }
                 }
                 is FileTask.RestorePoint -> {
-                    val backup = vault.readLatest()
-                    StringReader(backup).use { restore(app, ledger, it, task.preferencesName, vault) }
+                    vault.openLatest().use { restore(app, ledger, it, task.preferencesName, vault) }
                 }
                 FileTask.CreatePoint -> {
                     vault.create(ledger)
