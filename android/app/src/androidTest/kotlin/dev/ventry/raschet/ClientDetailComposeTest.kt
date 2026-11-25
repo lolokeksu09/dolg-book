@@ -67,4 +67,25 @@ class ClientDetailComposeTest {
             context.deleteSharedPreferences(draftsName)
         }
     }
+
+    @Test fun settledClientOffersDebtButNotMeaninglessPayment() {
+        val client = LedgerStore.Client("settled", "Погашенный клиент", "")
+        val status = CollectionsInsights.CustomerStatus(client, 0L, 0L, 0L, null)
+        val model = DetailData(status, false, emptyList(), emptyList(), emptyList(), 0)
+        val debts = AtomicInteger()
+        val payments = AtomicInteger()
+        val actions = DetailActions({}, {}, { debts.incrementAndGet() }, { payments.incrementAndGet() },
+            {}, {}, {}, {}, {})
+        compose.setContent {
+            LedgerMaterialTheme {
+                ClientDetailContent(model, ClientStatement.ALL, 80, false, false, actions)
+            }
+        }
+        compose.onNodeWithText("Остаток долга").assertExists()
+        compose.onNodeWithText("Оплата").assertDoesNotExist()
+        compose.onNodeWithText("+ Долг").performClick()
+        assertEquals(1, debts.get())
+        assertEquals(0, payments.get())
+    }
+
 }
