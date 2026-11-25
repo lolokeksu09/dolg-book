@@ -492,31 +492,64 @@ public final class LedgerStore extends SQLiteOpenHelper {
         return dev.ventry.raschet.domain.LedgerProjection.overdue(list,clientId,today.toString());
     }
 
-    /** Compatible with the original web book JSON format, including v1 and v2 reversals. */
+    /** Compatibility API for callers that need a string; exports share one serializer. */
     public synchronized String exportJson() throws JSONException {
+        java.io.StringWriter output=new java.io.StringWriter();
+        try{writeJson(output);}catch(java.io.IOException impossible){throw new IllegalStateException(impossible);}
+        return output.toString();
+    }
+
+    /** Stream a consistent book in insertion order. Version is written last because purchases
+     * determine the format; JSON object key order is not part of the v2-v4 contract.
+     * The caller owns the writer and is responsible for flushing/closing it.
+     */
+    public synchronized void writeJson(java.io.Writer output) throws JSONException,java.io.IOException {
         SQLiteDatabase db=getReadableDatabase();
-        db.beginTransaction();
-        try {
-        JSONObject root=new JSONObject();root.put("version",2);
-        JSONArray cs=new JSONArray(),es=new JSONArray();
-        for(Client c:clients()) cs.put(new JSONObject().put("id",c.id).put("name",c.name).put("phone",c.phone));
-        for(Entry e:entries()){
-            JSONObject object=new JSONObject().put("id",e.id).put("clientId",e.clientId).put("type",e.type)
-                .put("amount",e.amount).put("date",e.date).put("due",e.due).put("note",e.note);
-            if("reversal".equals(e.type))object.put("reverses",e.reverses);
-            if(e.purchase!=null){root.put("version",e.purchase.hasUnits()?4:Math.max(root.getInt("version"),3));object.put("purchase",new JSONObject(e.purchase.encode()));}
-            es.put(object);
-        }
-        List<Product> catalog=products();
-        if(!catalog.isEmpty()||root.getInt("version")==4){
-            root.put("version",4);
-            JSONArray ps=new JSONArray();
-            for(Product p:catalog)ps.put(p.json());
-            root.put("products",ps);
-        }
-        String json=root.put("clients",cs).put("entries",es).toString();
-        db.setTransactionSuccessful();
-        return json;
+        db.beginTransactionNonExclusive();
+        try{
+            output.write("{\"clients\":[");
+            boolean first=true;
+            try(Cursor c=db.rawQuery("SELECT id,name,phone FROM clients ORDER BY name COLLATE NOCASE,id",null)){
+                while(c.moveToNext()){
+                    if(!first)output.write(',');first=false;
+                    output.write(new JSONObject().put("id",c.getString(0)).put("name",c.getString(1))
+                            .put("phone",c.getString(2)).toString());
+                }
+            }
+            output.write("],\"entries\":[");
+            first=true;
+            int version=2;
+            try(Cursor c=db.rawQuery("SELECT id,client_id,type,amount,date,due,note,reverses,purchase FROM entries ORDER BY seq",null)){
+                while(c.moveToNext()){
+                    if(!first)output.write(',');first=false;
+                    JSONObject row=new JSONObject().put("id",c.getString(0)).put("clientId",c.getString(1))
+                            .put("type",c.getString(2)).put("amount",c.getLong(3)).put("date",c.getString(4))
+                            .put("due",c.getString(5)).put("note",c.getString(6));
+                    if("reversal".equals(c.getString(2)))row.put("reverses",c.getString(7));
+                    Purchase purchase=Purchase.decode(c.getString(8));
+                    if(purchase!=null){
+                        version=purchase.hasUnits()?4:Math.max(version,3);
+                        row.put("purchase",new JSONObject(purchase.encode()));
+                    }
+                    output.write(row.toString());
+                }
+            }
+            output.write(']');
+            List<Product> catalog=products();
+            if(!catalog.isEmpty()||version==4){
+                version=4;
+                output.write(",\"products\":[");
+                first=true;
+                for(Product product:catalog){
+                    if(!first)output.write(',');first=false;
+                    output.write(product.json().toString());
+                }
+                output.write(']');
+            }
+            output.write(",\"version\":");
+            output.write(Integer.toString(version));
+            output.write('}');
+            db.setTransactionSuccessful();
         }finally{db.endTransaction();}
     }
 
