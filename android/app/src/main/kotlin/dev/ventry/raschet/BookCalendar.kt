@@ -1,6 +1,7 @@
 package dev.ventry.raschet
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -13,7 +14,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -46,15 +46,17 @@ internal fun BookCalendar(month: YearMonth, selectedDay: LocalDate, today: Local
     val weeks = remember(month) { calendarWeeks(month) }
     val title = month.format(DateTimeFormatter.ofPattern("LLLL yyyy", Locale("ru", "RU")))
         .replaceFirstChar { it.titlecase(Locale("ru", "RU")) }
-    Column(Modifier.fillMaxWidth().background(ledgerPanel, RoundedCornerShape(10.dp)).padding(8.dp),
+    Column(Modifier.fillMaxWidth().background(ledgerPanel, RoundedCornerShape(12.dp)).padding(8.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            OutlinedButton(onClick = { onMonth(month.minusMonths(1)) },
-                modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = "Предыдущий месяц" }) { Text("‹") }
+            TextButton(onClick = { onMonth(month.minusMonths(1)) },
+                contentPadding = PaddingValues(horizontal = 8.dp),
+                modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = "Предыдущий месяц" }) { Text("‹", fontSize = 24.sp) }
             Text(title, color = ledgerText, fontWeight = FontWeight.SemiBold,
                 textAlign = TextAlign.Center, modifier = Modifier.weight(1f))
-            OutlinedButton(onClick = { onMonth(month.plusMonths(1)) },
-                modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = "Следующий месяц" }) { Text("›") }
+            TextButton(onClick = { onMonth(month.plusMonths(1)) },
+                contentPadding = PaddingValues(horizontal = 8.dp),
+                modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = "Следующий месяц" }) { Text("›", fontSize = 24.sp) }
         }
         Row(Modifier.fillMaxWidth()) {
             for (weekday in listOf("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс")) {
@@ -79,20 +81,28 @@ internal fun BookCalendar(month: YearMonth, selectedDay: LocalDate, today: Local
                         }
                     }
                     Column(Modifier.weight(1f).heightIn(min = 48.dp)
-                        .background(if (chosen) Color(LedgerTheme.SELECTED) else Color.Transparent, RoundedCornerShape(6.dp))
+                        .background(if (chosen) ledgerAccent else Color.Transparent, RoundedCornerShape(6.dp))
+                        .then(if (date == today && !chosen) Modifier.border(1.dp, ledgerAccent, RoundedCornerShape(6.dp)) else Modifier)
                         .clickable { onDay(date) }.semantics { selected = chosen; contentDescription = description }
                         .padding(vertical = 4.dp), horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center) {
-                        Text(date.dayOfMonth.toString(), color = if (date == today || chosen) ledgerAccent else ledgerText,
-                            fontWeight = if (date == today || chosen) FontWeight.Bold else FontWeight.Normal, fontSize = 14.sp)
+                        Text(date.dayOfMonth.toString(), color = when {
+                            chosen -> Color(LedgerTheme.INK)
+                            date == today -> ledgerAccent
+                            date.isAfter(today) -> ledgerMuted
+                            else -> ledgerText
+                        }, fontWeight = if (date == today || chosen) FontWeight.SemiBold else FontWeight.Normal, fontSize = 15.sp)
                         Text(if (day == null) "—" else day.entries.size.toString(),
-                            color = if (day != null && day.remaining > 0 && !payments) ledgerAlert else ledgerMuted,
-                            fontSize = 10.sp, maxLines = 1)
+                            color = when {
+                                chosen -> Color(LedgerTheme.INK)
+                                day != null && day.remaining > 0 && !payments -> ledgerAlert
+                                else -> ledgerMuted
+                            }, fontSize = 10.sp, maxLines = 1)
                     }
                 }
             }
         }
-        Text("Под датой — число записей. Выберите день, чтобы открыть список.", color = ledgerMuted, fontSize = 11.sp)
+        Text("Число под датой — записи за день.", color = ledgerMuted, fontSize = 11.sp)
     }
 }
 
@@ -106,6 +116,7 @@ internal fun BookWeek(anchor: LocalDate, selectedDay: LocalDate?, today: LocalDa
     val dates = remember(monday) { (0L..6L).map { monday.plusDays(it) } }
     val title = anchor.format(DateTimeFormatter.ofPattern("LLLL yyyy", Locale("ru", "RU")))
         .replaceFirstChar { it.titlecase(Locale("ru", "RU")) }
+    val weekday = remember { DateTimeFormatter.ofPattern("EE", Locale("ru", "RU")) }
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = onMonth, contentPadding = PaddingValues(horizontal = 0.dp),
@@ -135,16 +146,22 @@ internal fun BookWeek(anchor: LocalDate, selectedDay: LocalDate?, today: LocalDa
                 }
                 Column(Modifier.weight(1f).heightIn(min = 64.dp)
                     .background(if (active) ledgerAccent else ledgerPanel, RoundedCornerShape(8.dp))
+                    .then(if (date == today && !active) Modifier.border(1.dp, ledgerAccent, RoundedCornerShape(8.dp)) else Modifier)
                     .clickable { onDay(date) }.semantics { selected = active; contentDescription = desc }
                     .padding(vertical = 5.dp), horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(1.dp, Alignment.CenterVertically)) {
-                    Text(date.format(DateTimeFormatter.ofPattern("EE", Locale("ru", "RU"))),
+                    Text(date.format(weekday),
                         color = if (active) Color(LedgerTheme.INK) else ledgerMuted, fontSize = 10.sp, lineHeight = 13.sp)
                     Text(date.dayOfMonth.toString(),
                         color = if (active) Color(LedgerTheme.INK) else if (date == today) ledgerAccent else ledgerText,
                         fontSize = 18.sp, lineHeight = 22.sp, fontWeight = if (active || date == today) FontWeight.SemiBold else FontWeight.Medium)
                     Text(entry?.entries?.size?.toString() ?: "—",
-                        color = if (active) Color(LedgerTheme.INK) else if (entry != null) ledgerAccent else ledgerMuted,
+                        color = when {
+                            active -> Color(LedgerTheme.INK)
+                            entry != null && entry.remaining > 0 && !payments -> ledgerAlert
+                            entry != null -> ledgerAccent
+                            else -> ledgerMuted
+                        },
                         fontSize = 10.sp, lineHeight = 13.sp)
                 }
             }
