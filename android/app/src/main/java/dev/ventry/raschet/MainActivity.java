@@ -67,7 +67,7 @@ public final class MainActivity extends ComponentActivity {
     private static final int BG=LedgerTheme.BG, PANEL=LedgerTheme.PANEL, ELEVATED=LedgerTheme.ELEVATED;
     private static final int BORDER=LedgerTheme.BORDER, TEXT=LedgerTheme.TEXT, MUTED=LedgerTheme.MUTED;
     private static final int ACCENT=LedgerTheme.ACCENT, INK=LedgerTheme.INK, ALERT=LedgerTheme.ALERT, RED=LedgerTheme.RED;
-    private static final int REQUEST_IMPORT=101, REQUEST_EXPORT=102, REQUEST_PDF=103, REQUEST_REPORT=105, MAX_IMPORT=5*1024*1024;
+    private static final int REQUEST_IMPORT=101, REQUEST_EXPORT=102, REQUEST_PDF=103, REQUEST_REPORT=105, MAX_IMPORT=BackupSize.MAX_BYTES;
     private static final String RECOVERY_PREFS="raschet_local_recovery";
     private static final int NOTIFICATION_PERMISSION_REQUEST=104;
     public static final String EXTRA_FIRST_START = "dev.ventry.raschet.FIRST_START";
@@ -247,7 +247,7 @@ public final class MainActivity extends ComponentActivity {
             navigation=stack(8);
             navigation.setPadding(dp(8),dp(12),dp(8),dp(8));
             navigation.setBackgroundColor(PANEL);
-            body.addView(navigation,new LinearLayout.LayoutParams(dp(largeText?160:132),-1));
+            body.addView(navigation,new LinearLayout.LayoutParams(dp(largeText?196:164),-1));
         }
         page=new FrameLayout(this);
         body.addView(page,new LinearLayout.LayoutParams(0,-1,1));
@@ -291,7 +291,7 @@ public final class MainActivity extends ComponentActivity {
             name.setIncludeFontPadding(false);
             name.setEllipsize(android.text.TextUtils.TruncateAt.END);
             LinearLayout.LayoutParams np=new LinearLayout.LayoutParams(-2,-2);
-            if(tablet)np.leftMargin=dp(12);
+            if(tablet){np.width=0;np.weight=1f;np.leftMargin=dp(10);}
             item.addView(name,np);
             item.setContentDescription(caption);
             item.setSelected(active);
@@ -445,6 +445,10 @@ public final class MainActivity extends ComponentActivity {
         addButton(presets,"Сегодня",false,()->{period[0]=today;period[1]=today;update.run();},1);
         addButton(presets,"Последние 7 дней",false,()->{period[0]=today.minusDays(6);period[1]=today;update.run();},1);
         addButton(presets,"Этот месяц",false,()->{period[0]=today.withDayOfMonth(1);period[1]=today;update.run();},1);
+        addButton(presets,"Выбрать день в календаре",false,()->pickReportDate("Дата записей",period[0]==null?today:period[0],chosen->{
+            if(chosen.isAfter(LocalDate.now())){message("Выберите прошедшую дату.");return;}
+            period[0]=chosen;period[1]=chosen;update.run();
+        }),1);
         addButton(presets,"Выбрать период",false,()->pickReportDate("Начало периода",period[0]==null?today:period[0],from->{
             LocalDate end=period[1]==null||period[1].isBefore(from)?from:period[1];
             pickReportDate("Конец периода",end,to->{
@@ -1739,16 +1743,21 @@ public final class MainActivity extends ComponentActivity {
             if(result!=RESULT_OK||data==null||data.getData()==null||!canExport)return;
             try {
                 String body=csv?makeCsv():ledger.exportJson();
+                byte[] payload=body.getBytes(StandardCharsets.UTF_8);
+                boolean restorable=csv||BackupSize.isSupported(payload.length);
                 try(OutputStream out=getContentResolver().openOutputStream(data.getData(),"wt")){
                     if(out==null)throw new IOException("Нет доступа к файлу.");
-                    out.write(body.getBytes(StandardCharsets.UTF_8));
+                    out.write(payload);
                     out.flush();
                 }
                 if(!csv){
-                    getPreferences(MODE_PRIVATE).edit()
-                            .putLong("last_json_export",System.currentTimeMillis()).apply();
+                    android.content.SharedPreferences.Editor status=getPreferences(MODE_PRIVATE).edit();
+                    if(restorable)status.putLong("last_json_export",System.currentTimeMillis());
+                    else status.remove("last_json_export");
+                    status.apply();
                 }
-                message("Резервная копия сохранена.");
+                message(csv?"Таблица CSV сохранена.":restorable?"Резервная копия сохранена.":
+                        "JSON сохранён, но превышает допустимый размер импорта ("+BackupSize.MAX_MIB+" МиБ). Не удаляйте приложение.");
                 if(tab.equals("Настройки")||tab.equals("Главная"))render();
             }catch(Exception ex){message("Ошибка сохранения: "+ex.getMessage());}
         }else if(request==REQUEST_REPORT){
@@ -1779,7 +1788,7 @@ public final class MainActivity extends ComponentActivity {
                 ByteArrayOutputStream bytes=new ByteArrayOutputStream();
                 byte[] buf=new byte[8192];int n;
                 while((n=in.read(buf))!=-1){
-                    if(bytes.size()+n>MAX_IMPORT)throw new IOException("JSON-копия больше 5 МБ.");
+                    if(bytes.size()+n>MAX_IMPORT)throw new IOException("JSON-копия больше "+BackupSize.MAX_MIB+" МиБ.");
                     bytes.write(buf,0,n);
                 }
                 String backup=bytes.toString("UTF-8");
