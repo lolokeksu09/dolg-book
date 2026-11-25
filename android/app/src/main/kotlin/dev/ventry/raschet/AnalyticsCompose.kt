@@ -156,7 +156,7 @@ internal fun AnalyticsOverview(result: AnalyticsResult, onHistory: BiConsumer<Lo
     val data = result.period
     var ranking by remember { mutableStateOf(AnalyticsRanking.BALANCE) }
     var rankLimit by remember(data, ranking) { mutableIntStateOf(20) }
-    val ranked = remember(data, ranking) { data.customers.filter { it.id in result.names && ranking.value(it) > 0L }
+    val ranked = remember(data, ranking) { data.customers.filter { it.id in result.names && ranking.includes(it, data.range) }
         .sortedWith(compareByDescending<AnalyticsProjection.Customer> { ranking.value(it) }.thenBy { result.names[it.id] }.thenBy { it.id }) }
     LazyColumn(Modifier.fillMaxSize().testTag("analytics-list"), contentPadding = PaddingValues(18.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -232,7 +232,7 @@ internal fun AnalyticsOverview(result: AnalyticsResult, onHistory: BiConsumer<Lo
                         FilterChip(selected = ranking == mode, onClick = { ranking = mode }, label = { Text(mode.title) })
                     }
                 }
-                Text(if (ranking == AnalyticsRanking.BALANCE || ranking == AnalyticsRanking.OVERDUE) "На сегодня" else "За выбранный период · действительные операции",
+                Text(if (ranking == AnalyticsRanking.BALANCE || ranking == AnalyticsRanking.OVERDUE) "На сегодня" else if (ranking == AnalyticsRanking.SETTLED) "Положительный остаток на начало, нулевой на конец" else if (ranking == AnalyticsRanking.NEW) "Первый действительный долг в выбранном периоде" else "За выбранный период · действительные операции",
                     color = ledgerMuted, fontSize = 12.sp)
                 if (ranked.isEmpty()) Text("Нет клиентов с таким показателем.", color = ledgerMuted)
             }
@@ -248,7 +248,13 @@ internal fun AnalyticsOverview(result: AnalyticsResult, onHistory: BiConsumer<Lo
                         fontSize = 14.sp, style = TextStyle(fontFeatureSettings = "tnum"))
                     Text("›", color = ledgerMuted, fontSize = 18.sp)
                 }
-                val fraction = (amount.toDouble() / ranking.value(ranked.first()).toDouble()).toFloat().coerceIn(0f, 1f)
+                val denominator = if (ranking == AnalyticsRanking.BALANCE) data.current.balance else ranking.value(ranked.first())
+                val fraction = if (denominator > 0) (amount.toDouble() / denominator.toDouble()).toFloat().coerceIn(0f, 1f) else 0f
+                if (ranking == AnalyticsRanking.BALANCE && denominator > 0) {
+                    val share = BigDecimal.valueOf(amount).multiply(BigDecimal.valueOf(100))
+                        .divide(BigDecimal.valueOf(denominator), 1, java.math.RoundingMode.HALF_UP)
+                    Text(share.toPlainString().replace('.', ',') + "% общей задолженности", color = ledgerMuted, fontSize = 12.sp)
+                }
                 Box(Modifier.fillMaxWidth().height(3.dp).background(ledgerPanel, RoundedCornerShape(2.dp))) {
                     Box(Modifier.fillMaxWidth(fraction).height(3.dp).background(ledgerAccent, RoundedCornerShape(2.dp)))
                 }
@@ -335,12 +341,19 @@ internal fun AnalyticsChart(buckets: List<AnalyticsSeries.Bucket>) {
 }
 
 private enum class AnalyticsRanking(val title: String) {
-    BALANCE("Остаток"), OVERDUE("Просрочка"), DEBTS("Сумма долгов"), FREQUENCY("Частота"), PAYMENTS("Оплаты");
+    BALANCE("Остаток"), OVERDUE("Просрочка"), DEBTS("Сумма долгов"), FREQUENCY("Частота"), PAYMENTS("Оплаты"), NEW("Новые"), SETTLED("Погасили");
+    fun includes(customer: AnalyticsProjection.Customer, range: AnalyticsProjection.Range): Boolean = when (this) {
+        NEW -> customer.firstDebtAsOfEnd?.let { !it.isBefore(range.from) && !it.isAfter(range.to) } == true
+        SETTLED -> customer.opening > 0L && customer.closing == 0L
+        else -> value(customer) > 0L
+    }
     fun value(customer: AnalyticsProjection.Customer): Long = when (this) {
         BALANCE -> customer.current.balance
         OVERDUE -> customer.current.overdue
         DEBTS -> customer.effective.debts
         FREQUENCY -> customer.effective.debtCount.toLong()
         PAYMENTS -> customer.effective.payments
+        NEW -> customer.effective.debts
+        SETTLED -> customer.opening
     }
 }
