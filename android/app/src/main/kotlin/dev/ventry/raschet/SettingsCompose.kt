@@ -48,7 +48,7 @@ data class SettingsActions(
     val expand: Consumer<String>, val authenticate: Runnable, val lock: Runnable,
     val screenshots: Runnable, val createPoint: Runnable, val restorePoint: Runnable,
     val autoRecovery: Consumer<Boolean>, val json: Runnable, val csv: Runnable,
-    val restoreJson: Runnable
+    val restoreJson: Runnable, val catalog: Runnable
 )
 
 object SettingsCompose {
@@ -69,6 +69,7 @@ internal fun SettingsContent(state: SettingsSnapshot, actions: SettingsActions) 
                 fontWeight = FontWeight.Bold)
             SettingsSection("Общие", state.largeText)
             LedgerMetric(state.shopName, "Изменить название", action = actions.shop::run)
+            LedgerMetric("Каталог товаров", "Цены, единицы и избранное", action = actions.catalog::run)
             SettingsToggle("Крупный текст", "Увеличить текст для удобного чтения", "Крупный текст",
                 state.largeText, state.largeText, actions.largeText::accept)
             SettingsSection("Напоминания о долгах", state.largeText)
