@@ -3,8 +3,8 @@
     <string name="app_name">Расчёт</string>
     <style name="RaschetTheme" parent="android:style/Theme.Material.NoActionBar">
         <item name="android:fontFamily">sans</item>
-        <item name="android:colorAccent">#B9EFD0</item>
+        <item name="android:colorAccent">#D5DFC9</item>
         <item name="android:windowLightStatusBar">false</item>
-        <item name="android:windowBackground">#090E0C</item>
+        <item name="android:windowBackground">#061D16</item>
     </style>
 </resources>
