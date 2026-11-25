@@ -104,7 +104,8 @@ public final class MainActivity extends ComponentActivity {
     private int historyVisibleLimit=100, detailVisibleLimit=80, bookDayLimit=30;
     private String detailFilter=ClientStatement.ALL, detailFilterClient;
     private final Set<String> expandedBookDays=new java.util.HashSet<>();
-    private LocalDate bookFrom,bookTo;
+    private LocalDate bookFrom,bookTo,bookCalendarDay;
+    private boolean bookCalendar;
     private String bookQuery="";
     private boolean bookOnlyUnpaid,bookAutoExpand,bookPayments;
     private final DateTimeFormatter bookDateFormat=DateTimeFormatter.ofPattern("dd.MM.yy",new Locale("ru","RU"));
@@ -147,6 +148,7 @@ public final class MainActivity extends ComponentActivity {
             bookFrom=readDate(state,"book_from");bookTo=readDate(state,"book_to");
             bookQuery=state.getString("book_query","");bookOnlyUnpaid=state.getBoolean("book_unpaid",false);
             bookPayments=state.getBoolean("book_payments",false);
+            bookCalendar=state.getBoolean("book_calendar",false);bookCalendarDay=readDate(state,"book_calendar_day");
             ArrayList<String> expanded=state.getStringArrayList("expanded_book_days");
             if(expanded!=null)expandedBookDays.addAll(expanded);
             pendingExport=state.getBoolean("pending_export");
@@ -188,6 +190,7 @@ public final class MainActivity extends ComponentActivity {
         saveDate(out,"book_from",bookFrom);saveDate(out,"book_to",bookTo);
         out.putString("book_query",bookQuery);out.putBoolean("book_unpaid",bookOnlyUnpaid);
         out.putBoolean("book_payments",bookPayments);
+        out.putBoolean("book_calendar",bookCalendar);saveDate(out,"book_calendar_day",bookCalendarDay);
         out.putStringArrayList("expanded_book_days",new ArrayList<>(expandedBookDays));
         out.putBoolean("pending_export",pendingExport);
         out.putBoolean("pending_export_csv",pendingExportCsv);
@@ -364,14 +367,15 @@ public final class MainActivity extends ComponentActivity {
                 getPreferences(MODE_PRIVATE).getLong("last_json_export",0L)==0L,
                 this::showQuickDebt,()->chooseClient("payment"),this::openCollections,
                 payments->{if(bookPayments!=payments){bookPayments=payments;clearBookFilters();expandedBookDays.clear();bookAutoExpand=true;render();}},
-                this::showBookFilters,()->{clearBookFilters();render();},
+                this::showBookFilters,()->{clearBookFilters();bookCalendarDay=null;render();},
                 key->{if(!expandedBookDays.add(key))expandedBookDays.remove(key);},
                 key->{if(key!=null)expandedBookDays.add(key);bookAutoExpand=false;},
                 limit->bookDayLimit=limit,
                 id->{returnToCollections=false;selectedClient=id;tab="Клиенты";render();},
                 this::showOperation,id->showEntryForm(id,"payment"),id->showEntryForm(id,"debt"),
                 day->showQuickDebt(false,day),day->chooseClient("payment",day),
-                ()->{tab="Отчёт";selectedClient=null;render();},()->exportBook(false));
+                ()->{tab="Отчёт";selectedClient=null;render();},()->exportBook(false),
+                bookCalendar,bookCalendarDay,(calendar,day)->{bookCalendar=calendar;bookCalendarDay=day;});
     }
 
     private void openCollections(){
@@ -468,7 +472,7 @@ public final class MainActivity extends ComponentActivity {
         },1);
         showDialog("Фильтры книги",form,()->{
             bookQuery=query.getText().toString().trim();bookFrom=period[0];bookTo=period[1];bookOnlyUnpaid=!bookPayments&&unpaid.isChecked();
-            bookDayLimit=30;bookAutoExpand=hasBookFilter();expandedBookDays.clear();return true;
+            bookDayLimit=30;bookAutoExpand=hasBookFilter();bookCalendarDay=null;expandedBookDays.clear();return true;
         });
     }
     private View tabletClientsView(BookScreenData data) {
@@ -1866,10 +1870,12 @@ public final class MainActivity extends ComponentActivity {
         if("debt".equals(receipt.getKind())){
             bookPayments=false;clearBookFilters();
             bookDayLimit=Math.max(bookDayLimit,receipt.getRank());
+            bookCalendarDay=receipt.getDay();
             expandedBookDays.add(receipt.getDay().toString());
         }else if("payment".equals(receipt.getKind())&&receipt.getDestination()==WriteDestination.BOOK){
             bookPayments=true;clearBookFilters();
             bookDayLimit=Math.max(bookDayLimit,receipt.getRank());
+            bookCalendarDay=receipt.getDay();
             expandedBookDays.clear();expandedBookDays.add(receipt.getDay().toString());
         }
         switch(receipt.getDestination()){
