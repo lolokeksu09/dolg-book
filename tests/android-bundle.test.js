@@ -110,7 +110,7 @@ test('client history follows two primary actions and secondary actions live in o
 test('compact book keeps essential controls and hides redundant empty-state filters',()=>{
   const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
   assert.ok(ui.includes('private int controlHeight(){return largeText?54:48;}'));
-  assert.ok(ui.includes('private int navHeight(){return largeText?68:56;}'));
+  assert.ok(ui.includes('private int navHeight(){return largeText?76:64;}'));
   const clients=ui.slice(ui.indexOf('private View clientsView(BookScreenData data)'),ui.indexOf('private void showClientFilters()'));
   const compose=read('android/app/src/main/kotlin/dev/ventry/raschet/ClientsCompose.kt');
   assert.ok(clients.includes('ClientsCompose.create(this,data,clientScope,clientFilter'));
