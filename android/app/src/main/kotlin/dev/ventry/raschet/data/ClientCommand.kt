@@ -12,6 +12,10 @@ sealed interface ClientCommand {
         val allowDuplicate: Boolean, val approval: String, val quick: Boolean,
         val destination: WriteDestination
     ) : ClientCommand
+    data class ItemizedDebt(
+        val id: String, val clientId: String, val purchaseJson: String,
+        val due: String, val note: String, val approval: String
+    ) : ClientCommand
     data class Correction(
         val clientId: String, val expectedId: String, val amount: Long,
         val due: String, val note: String, val reason: String
