@@ -429,6 +429,17 @@ tap_text '0,00'
 adb shell input text 150
 adb shell input keyevent 4
 sleep 0.4
+# Closing and reopening must retain the uncommitted purchase without changing the ledger.
+tap_text 'Закрыть'
+sleep 0.4
+tap_text 'Ещё действия'
+sleep 0.3
+tap_text 'Долг по товарам'
+sleep 0.4
+dump_ui
+grep -Fq 'Черновик покупки восстановлен.' android/build/native-ui.xml
+grep -Fq 'QA-Apple' android/build/native-ui.xml
+grep -Fq 'Итого к записи: 150,00' android/build/native-ui.xml
 adb exec-out screencap -p > android/build/native-purchase-form.png
 tap_text 'Сохранить'
 sleep 0.6
