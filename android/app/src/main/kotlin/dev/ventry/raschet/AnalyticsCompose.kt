@@ -26,6 +26,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.ventry.raschet.domain.AnalyticsExport
 import dev.ventry.raschet.domain.AnalyticsPeriods
 import dev.ventry.raschet.domain.AnalyticsProjection
 import dev.ventry.raschet.domain.AnalyticsSeries
@@ -53,7 +54,7 @@ object AnalyticsCompose {
     @JvmStatic
     fun create(owner: ComponentActivity, data: BookScreenData, model: AnalyticsViewModel,
         onBack: Runnable, onReport: Runnable, onHistory: BiConsumer<LocalDate, LocalDate>,
-        onCustomer: Consumer<String>, fromOverview: Boolean): ComposeView {
+        onCustomer: Consumer<String>, fromOverview: Boolean, onExport: Consumer<AnalyticsExport.Spec>): ComposeView {
         model.bindBook(data)
         return ComposeView(owner).apply {
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindowOrReleasedFromPool)
@@ -77,8 +78,8 @@ object AnalyticsCompose {
                         when (val current = state) {
                             is ReadState.Ready -> {
                                 if (current.value.request != request) AnalyticsLoading()
-                                else if (request.customerId == null) AnalyticsOverview(current.value, onHistory, onCustomer)
-                                else ClientAnalyticsContent(current.value, onHistory)
+                                else if (request.customerId == null) AnalyticsOverview(current.value, onHistory, onCustomer, onExport)
+                                else ClientAnalyticsContent(current.value, onHistory, onExport)
                             }
                             is ReadState.Failed -> Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Text("Не удалось рассчитать статистику.", color = ledgerText)
@@ -152,7 +153,7 @@ internal fun AnalyticsHeading(title: String) {
 
 @Composable
 internal fun AnalyticsOverview(result: AnalyticsResult, onHistory: BiConsumer<LocalDate, LocalDate>,
-    onCustomer: Consumer<String>) {
+    onCustomer: Consumer<String>, onExport: Consumer<AnalyticsExport.Spec>) {
     val data = result.period
     var ranking by remember { mutableStateOf(AnalyticsRanking.BALANCE) }
     var rankLimit by remember(data, ranking) { mutableIntStateOf(20) }
@@ -263,6 +264,7 @@ internal fun AnalyticsOverview(result: AnalyticsResult, onHistory: BiConsumer<Lo
         if (ranked.size > rankLimit) item("more-ranked") {
             TextButton(onClick = { rankLimit += 20 }, modifier = Modifier.fillMaxWidth()) { Text("Показать ещё клиентов") }
         }
+        item("export") { AnalyticsExportActions(result, onExport) }
         item("history") {
             OutlinedButton(onClick = { onHistory.accept(data.range.from, data.range.to) },
                 modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Операции периода") }
@@ -355,5 +357,33 @@ private enum class AnalyticsRanking(val title: String) {
         PAYMENTS -> customer.effective.payments
         NEW -> customer.effective.debts
         SETTLED -> customer.opening
+    }
+}
+
+@Composable
+internal fun AnalyticsExportActions(result: AnalyticsResult, onExport: Consumer<AnalyticsExport.Spec>) {
+    val period = result.period.range
+    val previous = result.previous?.range
+    var confirm by remember { mutableStateOf<Boolean?>(null) }
+    fun export(pdf: Boolean) {
+        onExport.accept(AnalyticsExport.Spec(period.from, period.to, previous?.from, previous?.to,
+            result.request.customerId, pdf))
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        AnalyticsHeading("Экспорт статистики")
+        Text(if (result.request.customerId == null) "Только сводные показатели, без имён и телефонов."
+            else "Отчёт содержит имя клиента и его финансовые показатели. Файл не зашифрован.",
+            color = ledgerMuted, fontSize = 12.sp)
+        OutlinedButton(onClick = { if (result.request.customerId == null) export(false) else confirm = false },
+            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Сохранить CSV") }
+        OutlinedButton(onClick = { if (result.request.customerId == null) export(true) else confirm = true },
+            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Сохранить PDF") }
+    }
+    confirm?.let { pdf ->
+        AlertDialog(onDismissRequest = { confirm = null },
+            title = { Text("Экспорт данных клиента") },
+            text = { Text("Имя и финансовые показатели будут записаны в незашифрованный файл. Выберите безопасное место хранения.") },
+            confirmButton = { TextButton(onClick = { confirm = null; export(pdf) }) { Text("Продолжить") } },
+            dismissButton = { TextButton(onClick = { confirm = null }) { Text("Отмена") } })
     }
 }
