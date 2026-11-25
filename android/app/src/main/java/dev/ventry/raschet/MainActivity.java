@@ -881,6 +881,7 @@ public final class MainActivity extends ComponentActivity {
         }
     }
     @Override protected void onStop(){
+        if(productPickerDialog!=null)productPickerDialog.dismiss();
         if(privacy!=null&&!authInFlight)stoppedAt=android.os.SystemClock.elapsedRealtime();
         reloadOnStart=true;
         bookViewModel.clear();
@@ -1113,7 +1114,7 @@ public final class MainActivity extends ComponentActivity {
         fill.run();
         showDialog("Выберите клиента",content,null);
     }
-    private Dialog chooser;
+    private Dialog chooser, productPickerDialog;
     private void showClientForm(LedgerStore.Client client) {
         if(client==null){showQuickDebt(true);return;}
         LinearLayout content=stack(12);
@@ -1239,6 +1240,8 @@ public final class MainActivity extends ComponentActivity {
     /** Child dialog leaves the purchase form and its draft alive. */
     private void showProductPicker(CatalogPicker catalog,java.util.function.Consumer<CatalogRecord> choose){
         Dialog picker=new Dialog(this);
+        productPickerDialog=picker;
+        picker.setOnDismissListener(d->{if(productPickerDialog==picker)productPickerDialog=null;});
         picker.requestWindowFeature(Window.FEATURE_NO_TITLE);
         LinearLayout body=stack(8);
         body.setPadding(dp(16),dp(16),dp(16),dp(16));
@@ -1252,9 +1255,17 @@ public final class MainActivity extends ComponentActivity {
         body.addView(favorites);
         TextView count=label("",12,MUTED,false);
         body.addView(count);
-        ScrollView list=new ScrollView(this);
+        ScrollView list=new ScrollView(this){
+            @Override protected void onMeasure(int widthSpec,int heightSpec){
+                android.graphics.Rect visible=new android.graphics.Rect();
+                root.getWindowVisibleDisplayFrame(visible);
+                int max=Math.min(dp(248),Math.max(dp(88),visible.height()-dp(240)));
+                if(View.MeasureSpec.getMode(heightSpec)!=View.MeasureSpec.UNSPECIFIED)max=Math.min(max,View.MeasureSpec.getSize(heightSpec));
+                super.onMeasure(widthSpec,View.MeasureSpec.makeMeasureSpec(max,View.MeasureSpec.AT_MOST));
+            }
+        };
         LinearLayout results=stack(4);list.addView(results);
-        body.addView(list,new LinearLayout.LayoutParams(-1,dp(248)));
+        body.addView(list,new LinearLayout.LayoutParams(-1,-2));
         Runnable refresh=()->{
             results.removeAllViews();
             CatalogPicker.Result found=catalog.search(search.getText().toString(),favorites.isChecked());
@@ -1943,7 +1954,7 @@ public final class MainActivity extends ComponentActivity {
         else if(!tab.equals("Главная")){tab="Главная";render();}
         else super.onBackPressed();
     }
-    @Override protected void onDestroy() {if(bookViewModel!=null)bookViewModel.clear();if(ledger!=null)ledger.close();super.onDestroy();}
+    @Override protected void onDestroy() {if(productPickerDialog!=null)productPickerDialog.dismiss();if(bookViewModel!=null)bookViewModel.clear();if(ledger!=null)ledger.close();super.onDestroy();}
     private void message(String m) {Toast.makeText(this,m,Toast.LENGTH_LONG).show();}
 
     private LinearLayout screen(String title,String subtitle) {
