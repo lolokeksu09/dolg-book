@@ -68,9 +68,10 @@ internal fun LedgerTotal(title: String, amount: Long, detail: String? = null) {
         Text(title, color = ink, fontSize = 13.sp, fontWeight = FontWeight.Medium)
         Text(ledgerMoney(amount), color = ink, fontWeight = FontWeight.SemiBold, fontSize = 38.sp,
             style = androidx.compose.ui.text.TextStyle(fontFeatureSettings = "tnum", letterSpacing = (-1).sp))
-        HorizontalDivider(color = ink.copy(alpha = 0.22f))
-        Text(detail ?: if (amount == 0L) "Нет непогашенной задолженности" else "Непогашенный остаток",
-            color = ink, fontSize = 12.sp)
+        if (detail != null) {
+            HorizontalDivider(color = ink.copy(alpha = 0.22f))
+            Text(detail, color = ink, fontSize = 12.sp)
+        }
     }
 }
 
