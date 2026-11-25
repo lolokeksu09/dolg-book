@@ -15,6 +15,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.ventry.raschet.presentation.AnalyticsResult
+import dev.ventry.raschet.presentation.AnalyticsSection
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.LocalDate
@@ -57,11 +58,10 @@ internal fun ClientAnalyticsContent(result: AnalyticsResult, onHistory: BiConsum
         item("effective") {
             Column {
                 AnalyticsHeading("За выбранный период")
-                AnalyticsValue("Всего брал в долг", analyticsMoney(effective.debts))
-                AnalyticsValue("Записей долга", effective.debtCount.toString())
-                AnalyticsValue("Всего оплатил", analyticsMoney(effective.payments), ledgerAccent)
-                AnalyticsValue("Записей оплаты", effective.paymentCount.toString())
-                HorizontalDivider(color = ledgerBorder)
+                Spacer(Modifier.height(8.dp))
+                AnalyticsMetricPair("Всего брал в долг", analyticsMoney(effective.debts), "${effective.debtCount} записей",
+                    "Всего оплатил", analyticsMoney(effective.payments), "${effective.paymentCount} записей")
+                Spacer(Modifier.height(8.dp))
                 AnalyticsValue("Средняя запись долга", average?.let(::analyticsMoney) ?: "Нет данных")
                 AnalyticsValue("Максимальная запись", effective.maximumDebt?.let(::analyticsMoney) ?: "Нет данных")
                 Text("Суммы и количество без записей, отменённых к концу периода.", color = ledgerMuted, fontSize = 12.sp)
