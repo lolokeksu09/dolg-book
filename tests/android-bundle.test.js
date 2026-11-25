@@ -66,7 +66,7 @@ test('itemized debts use an additive migration and versioned validated purchase 
   const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
   const purchase=read('android/app/src/main/java/dev/ventry/raschet/Purchase.java');
   assert.ok(store.includes("ALTER TABLE entries ADD COLUMN purchase"));
-  assert.ok(store.includes('Math.max(root.getInt("version"),3)'));
+  assert.ok(store.includes('Math.max(version,3)'));
   assert.ok(store.includes('purchase.total!=amount'));
   assert.ok(store.includes('last.purchase!=null&&amount!=last.amount'));
   assert.ok(purchase.includes('RoundingMode.HALF_UP'));
@@ -82,8 +82,8 @@ test('catalog data stays portable and real editing/picking is routed to the repo
   const settings=read('android/app/src/main/kotlin/dev/ventry/raschet/SettingsCompose.kt');
   const service=read('android/app/src/main/kotlin/dev/ventry/raschet/ClientWriteService.kt');
   assert.ok(store.includes('CREATE TABLE products'));
-  assert.ok(store.includes('root.put("products",ps)'));
-  assert.ok(store.includes('root.put("version",4)'));
+  assert.ok(store.includes('for(Product product:catalog)'));
+  assert.ok(store.includes('version=4;'));
   assert.ok(store.includes('for(Product p:newProducts)'));
   assert.ok(settings.includes('LedgerMetric("Каталог товаров"'));
   assert.ok(ui.includes('new SqliteLedgerRepository(ledger).catalog()'));
