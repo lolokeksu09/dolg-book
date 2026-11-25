@@ -23,7 +23,7 @@ import org.json.JSONObject;
 public final class RecoveryVault {
     private static final String ALIAS="raschet.recovery.aes.v1";
     private static final byte[] MAGIC={'V','R','C','1'};
-    private static final int IV_SIZE=12, MAX_BYTES=10*1024*1024;
+    private static final int IV_SIZE=12, MAX_BYTES=BackupSize.MAX_BYTES;
     private final File dir;
 
     public RecoveryVault(Context context) {
@@ -37,7 +37,7 @@ public final class RecoveryVault {
     synchronized File createJson(String json) throws Exception {
         if(json==null)throw new IllegalArgumentException("Пустая копия.");
         byte[] source=json.getBytes(StandardCharsets.UTF_8);
-        if(source.length>MAX_BYTES)throw new IOException("Размер книги больше 10 МБ.");
+        BackupSize.requireSupported(source.length);
         JSONObject checked=new JSONObject(json);
         if(!checked.has("version")||!checked.has("clients")||!checked.has("entries"))
             throw new IOException("Недопустимая книга.");
@@ -75,7 +75,7 @@ public final class RecoveryVault {
     }
     synchronized String read(File file) throws Exception {
         if(!file.getParentFile().equals(dir))throw new SecurityException("Недоступная точка.");
-        if(file.length()<4+IV_SIZE+16||file.length()>MAX_BYTES+1024*1024)
+        if(file.length()<4+IV_SIZE+16||file.length()>MAX_BYTES+4+IV_SIZE+16)
             throw new IOException("Неверный размер точки.");
         byte[] bytes=Files.readAllBytes(file.toPath());
         if(!Arrays.equals(MAGIC,Arrays.copyOfRange(bytes,0,4)))
