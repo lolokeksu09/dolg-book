@@ -133,19 +133,19 @@ internal fun BookWeek(anchor: LocalDate, selectedDay: LocalDate?, today: LocalDa
                         if (!payments) append(", осталось ").append(ledgerMoney(entry.remaining))
                     }
                 }
-                Column(Modifier.weight(1f).heightIn(min = 66.dp)
+                Column(Modifier.weight(1f).heightIn(min = 64.dp)
                     .background(if (active) ledgerAccent else ledgerPanel, RoundedCornerShape(8.dp))
                     .clickable { onDay(date) }.semantics { selected = active; contentDescription = desc }
-                    .padding(vertical = 7.dp), horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically)) {
+                    .padding(vertical = 5.dp), horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(1.dp, Alignment.CenterVertically)) {
                     Text(date.format(DateTimeFormatter.ofPattern("EE", Locale("ru", "RU"))),
-                        color = if (active) Color(LedgerTheme.INK) else ledgerMuted, fontSize = 10.sp)
+                        color = if (active) Color(LedgerTheme.INK) else ledgerMuted, fontSize = 10.sp, lineHeight = 13.sp)
                     Text(date.dayOfMonth.toString(),
                         color = if (active) Color(LedgerTheme.INK) else if (date == today) ledgerAccent else ledgerText,
-                        fontSize = 18.sp, fontWeight = if (active || date == today) FontWeight.SemiBold else FontWeight.Medium)
+                        fontSize = 18.sp, lineHeight = 22.sp, fontWeight = if (active || date == today) FontWeight.SemiBold else FontWeight.Medium)
                     Text(entry?.entries?.size?.toString() ?: "—",
                         color = if (active) Color(LedgerTheme.INK) else if (entry != null) ledgerAccent else ledgerMuted,
-                        fontSize = 10.sp)
+                        fontSize = 10.sp, lineHeight = 13.sp)
                 }
             }
         }
