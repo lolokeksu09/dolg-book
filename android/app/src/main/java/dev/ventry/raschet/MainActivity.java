@@ -73,6 +73,8 @@ public final class MainActivity extends ComponentActivity {
     private LedgerStore ledger;
     private BookViewModel bookViewModel;
     private AnalyticsViewModel analyticsViewModel;
+    private String analyticsClientId=null, analyticsReturnTab="Клиенты";
+    private boolean historyFromAnalytics;
     private boolean reloadOnStart,firstStartPending;
     private Dialog pendingClientDialog;
     private TextView pendingClientError;
@@ -146,6 +148,8 @@ public final class MainActivity extends ComponentActivity {
             collectionLimit=state.getInt("collection_limit",60);returnToCollections=state.getBoolean("return_to_collections",false);
             returnToBook=state.getBoolean("return_to_book",false);
             historyQuery=state.getString("history_query","");historyClientId=state.getString("history_client_id");
+            analyticsClientId=state.getString("analytics_client_id");analyticsReturnTab=state.getString("analytics_return_tab","Клиенты");
+            historyFromAnalytics=state.getBoolean("history_from_analytics",false);
             detailVisibleLimit=state.getInt("detail_visible_limit",80);
             detailFilter=state.getString("detail_filter",ClientStatement.ALL);detailFilterClient=state.getString("detail_filter_client");
             bookDayLimit=state.getInt("book_day_limit",30);
@@ -189,6 +193,8 @@ public final class MainActivity extends ComponentActivity {
         out.putInt("collection_limit",collectionLimit);out.putBoolean("return_to_collections",returnToCollections);
         out.putBoolean("return_to_book",returnToBook);
         out.putString("history_query",historyQuery);out.putString("history_client_id",historyClientId);
+        out.putString("analytics_client_id",analyticsClientId);out.putString("analytics_return_tab",analyticsReturnTab);
+        out.putBoolean("history_from_analytics",historyFromAnalytics);
         out.putInt("detail_visible_limit",detailVisibleLimit);
         out.putString("detail_filter",detailFilter);out.putString("detail_filter_client",detailFilterClient);
         out.putInt("book_day_limit",bookDayLimit);
@@ -305,7 +311,7 @@ public final class MainActivity extends ComponentActivity {
             item.setContentDescription(caption);
             item.setSelected(active);
             item.setFocusable(true);
-            item.setOnClickListener(v->{firstStartPending=false;tab=destination;selectedClient=null;returnToCollections=false;returnToBook=false;settingsExpanded="";render();});
+            item.setOnClickListener(v->{firstStartPending=false;tab=destination;selectedClient=null;analyticsClientId=null;historyFromAnalytics=false;returnToCollections=false;returnToBook=false;settingsExpanded="";render();});
             LinearLayout.LayoutParams ip=tablet?new LinearLayout.LayoutParams(-1,dp(controlHeight())):
                     new LinearLayout.LayoutParams(0,-1,1);
             if(tablet)ip.bottomMargin=dp(6);else {ip.leftMargin=dp(2);ip.rightMargin=dp(2);}
@@ -388,7 +394,7 @@ public final class MainActivity extends ComponentActivity {
                 day->showQuickDebt(false,day),day->chooseClient("payment",day),
                 ()->{tab="Отчёт";selectedClient=null;render();},()->exportBook(false),
                 bookCalendar,bookCalendarDay,(calendar,day)->{bookCalendar=calendar;bookCalendarDay=day;},
-                ()->{analyticsViewModel.focus(null);tab="Статистика";selectedClient=null;render();});
+                ()->{analyticsClientId=null;historyFromAnalytics=false;analyticsViewModel.focus(null);tab="Статистика";selectedClient=null;render();});
     }
 
     private void openCollections(){
@@ -551,7 +557,8 @@ public final class MainActivity extends ComponentActivity {
                 archived->showClientActions(status.client,status.balance,status.overdue,archived),
                 ()->showEntryForm(id,"debt"),()->showEntryForm(id,"payment"),
                 ()->changeClientArchive(id,true),this::showDetailFilters,
-                this::showOperation,this::showPurchaseDetails,limit->detailVisibleLimit=limit,returnToBook);
+                this::showOperation,this::showPurchaseDetails,limit->detailVisibleLimit=limit,returnToBook,
+                ()->openClientAnalytics(id));
     }
     private void returnFromClient(){
         selectedClient=null;
@@ -724,11 +731,23 @@ public final class MainActivity extends ComponentActivity {
                 date.getYear(),date.getMonthValue()-1,date.getDayOfMonth());
         picker.setTitle(title);picker.show();
     }
+    private void openClientAnalytics(String id){
+        analyticsClientId=id;analyticsReturnTab=tab;historyFromAnalytics=false;
+        selectedClient=null;tab="Статистика";render();
+    }
+    private void returnFromAnalytics(){
+        historyFromAnalytics=false;
+        String client=analyticsClientId;analyticsClientId=null;
+        if(client==null){tab="Главная";selectedClient=null;}
+        else{tab=analyticsReturnTab;selectedClient=client;}
+        render();
+    }
     private View analyticsView(BookScreenData data){
+        analyticsViewModel.focus(analyticsClientId);
         return AnalyticsCompose.create(this,data,analyticsViewModel,
-                ()->{tab="Главная";render();},()->{tab="Отчёт";render();},(from,to)->{
+                this::returnFromAnalytics,()->{analyticsClientId=null;tab="Отчёт";render();},(from,to)->{
                     historyFrom=from;historyTo=to;historyFilter="Все";historyQuery="";
-                    historyClientId=null;historyVisibleLimit=100;tab="История";render();
+                    historyClientId=analyticsClientId;historyVisibleLimit=100;historyFromAnalytics=true;tab="История";render();
                 });
     }
     private View reportView(BookScreenData data){
@@ -2063,6 +2082,8 @@ public final class MainActivity extends ComponentActivity {
         if(!unlocked){finishAndRemoveTask();return;}
         if(bookViewModel.hasPendingWrite())return;
         if(selectedClient!=null){returnFromClient();}
+        else if(tab.equals("Статистика")){returnFromAnalytics();}
+        else if(tab.equals("История")&&historyFromAnalytics){historyFromAnalytics=false;tab="Статистика";render();}
         else if(!tab.equals("Главная")){tab="Главная";render();}
         else super.onBackPressed();
     }
