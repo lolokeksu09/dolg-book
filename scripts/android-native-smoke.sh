@@ -26,10 +26,10 @@ dump_ui() {
   adb shell uiautomator dump /sdcard/raschet-ui.xml >/dev/null
   adb exec-out cat /sdcard/raschet-ui.xml > android/build/native-ui.xml
 }
-tap_text() {
-  local target="$1" match_mode="${2:-exact}" coords attempt
+find_text() {
+  local target="$1" match_mode="${2:-exact}" action="${3:-tap}" coords attempt
   # Off-screen practice actions require scrolling on compact displays.
-  for attempt in 1 2 3 4; do
+  for attempt in 1 2 3 4 5 6 7 8 9 10; do
     dump_ui
     if coords=$(python3 - "$target" "$match_mode" <<'PY'
 import re, sys, xml.etree.ElementTree as ET
@@ -44,15 +44,21 @@ for node in ET.parse("android/build/native-ui.xml").iter("node"):
 sys.exit(1)
 PY
     ); then
-      adb shell input tap $coords
+      if [[ "$action" == tap ]]; then adb shell input tap $coords; fi
       return 0
     fi
-    adb shell input swipe 540 1490 540 730 300
+    if (( attempt <= 4 )); then
+      adb shell input swipe 540 1490 540 730 300
+    else
+      adb shell input swipe 540 730 540 1490 300
+    fi
     sleep 0.35
   done
-  echo "Cannot find tap target after scrolling: $target" >&2
+  echo "Cannot find UI target after scrolling: $target" >&2
   return 1
 }
+tap_text() { find_text "$1" "${2:-exact}" tap; }
+reveal_text() { find_text "$1" "${2:-exact}" reveal; }
 # Wait for the actual onboarding screen; only recover the known unrelated launcher ANR.
 ready=false
 for attempt in 1 2 3 4 5 6; do
@@ -471,20 +477,19 @@ tap_text 'Скрыть телефон'
 sleep 0.2
 tap_text 'Сохранить'
 sleep 0.6
-dump_ui
-grep -Fq 'QuickBuyer' android/build/native-ui.xml
+reveal_text 'QuickBuyer'
 grep -Fq '321,00' android/build/native-ui.xml
 day=$(adb shell date +%d.%m.%y | tr -d '\r')
 tap_text "$day"
 sleep 0.3
 dump_ui
+grep -Fq 'раскрыть' android/build/native-ui.xml
 if grep -Fq 'QuickBuyer' android/build/native-ui.xml; then
   echo 'Collapsed date still exposes its entries'; exit 1
 fi
 tap_text "$day"
 sleep 0.3
-dump_ui
-grep -Fq 'QuickBuyer' android/build/native-ui.xml
+reveal_text 'QuickBuyer'
 tap_text 'QuickBuyer' client
 sleep 0.4
 dump_ui
@@ -495,7 +500,7 @@ adb shell input keyevent 4
 sleep 0.4
 dump_ui
 grep -Fq 'Долговая книга' android/build/native-ui.xml
-grep -Fq 'QuickBuyer' android/build/native-ui.xml
+reveal_text 'QuickBuyer'
 
 # Client directory plus can create a customer and the first debt in the same form.
 tap_text 'Клиенты'
@@ -524,8 +529,7 @@ dump_ui
 grep -Fq '322,00' android/build/native-ui.xml
 tap_text 'Книга'
 sleep 0.4
-dump_ui
-grep -Fq 'DirectoryBuyer' android/build/native-ui.xml
+reveal_text 'DirectoryBuyer'
 
 # Filter by debtor; matching rows retain their full-book outstanding amount.
 tap_text 'Фильтры книги'
@@ -533,8 +537,7 @@ sleep 0.4
 fill_form_input 0 DirectoryBuyer
 tap_text 'Сохранить'
 sleep 0.5
-dump_ui
-grep -Fq 'DirectoryBuyer' android/build/native-ui.xml
+reveal_text 'DirectoryBuyer'
 grep -Fq '322,00' android/build/native-ui.xml
 if grep -Fq 'QuickBuyer' android/build/native-ui.xml; then
   echo 'Book search leaked another client'; exit 1
@@ -573,7 +576,7 @@ tap_text 'Сохранить'
 sleep 0.5
 dump_ui
 grep -Fq 'Полученные оплаты' android/build/native-ui.xml
-grep -Fq 'DirectoryBuyer' android/build/native-ui.xml
+reveal_text 'DirectoryBuyer'
 grep -Fq '322,00' android/build/native-ui.xml
 tap_text 'Долги по датам'
 sleep 0.4
@@ -594,7 +597,7 @@ tap_text 'Сохранить'
 sleep 0.5
 dump_ui
 grep -Fq 'Долговая книга' android/build/native-ui.xml
-grep -Fq 'DirectoryBuyer' android/build/native-ui.xml
+reveal_text 'DirectoryBuyer'
 tap_text 'DirectoryBuyer' client
 sleep 0.4
 dump_ui
