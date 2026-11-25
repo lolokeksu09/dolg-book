@@ -206,6 +206,7 @@ internal fun ClientListContent(
     }
 
     val result = visible
+    val visibleDebt = remember(result) { result?.sumOf { it.balance } ?: 0L }
     BoxWithConstraints(Modifier.fillMaxSize().background(ledgerBackground), contentAlignment = Alignment.TopCenter) {
         val compact = maxWidth >= 340.dp && LocalDensity.current.fontScale <= 1.2f && !largeText
         LazyColumn(
@@ -260,6 +261,9 @@ internal fun ClientListContent(
                             model.scoped.isEmpty() && scope != ClientDirectory.ACTIVE && query.isBlank() ->
                                 ClientEmpty(if (scope == ClientDirectory.ARCHIVE) "Архив пуст" else "Нет избранных клиентов",
                                     "Управляйте списками из карточки клиента.", "Рабочие клиенты", actions.resetScope, largeText)
+                            model.scoped.isEmpty() && query.isBlank() ->
+                                ClientEmpty("Нет рабочих клиентов", "Проверьте архив и выбранный список клиентов.",
+                                    "Фильтры клиентов", actions.filters, largeText)
                             query.isNotBlank() -> ClientEmpty("Никого не нашли", "Попробуйте другое имя или номер телефона.",
                                 "Очистить поиск", { search("") }, largeText)
                             filter == CollectionsInsights.CLEAR -> ClientEmpty("Нет клиентов без долга",
@@ -278,7 +282,8 @@ internal fun ClientListContent(
                         item("summary") {
                             Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
                                 Text("Клиентов: " + result.size, color = muted, fontSize = 12.sp)
-                                Text("Долг: " + money(result.sumOf { it.balance }), color = text, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                Text("Долг: " + money(visibleDebt), color = text, fontSize = 13.sp, fontWeight = FontWeight.Medium,
+                                    style = TextStyle(fontFeatureSettings = "tnum"))
                             }
                             HorizontalDivider(color = border)
                         }
@@ -304,6 +309,11 @@ private fun ClientSearchField(value: String, changed: (String) -> Unit, modifier
     OutlinedTextField(
         value = value, onValueChange = changed, singleLine = true,
         placeholder = { Text("Поиск по имени или телефону", fontSize = if (largeText) 15.sp else 13.sp) },
+        trailingIcon = {
+            if (value.isNotEmpty()) TextButton(onClick = { changed("") },
+                modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = "Очистить поиск" },
+                contentPadding = PaddingValues(horizontal = 10.dp)) { Text("×", fontSize = 22.sp) }
+        },
         textStyle = MaterialTheme.typography.bodyMedium.copy(fontSize = if (largeText) 17.sp else 15.sp),
         modifier = modifier.semantics { contentDescription = "Поиск по имени или телефону" },
         shape = RoundedCornerShape(8.dp)
