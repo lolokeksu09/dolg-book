@@ -10,7 +10,8 @@ import java.nio.charset.CodingErrorAction;
 
 /** Shared UTF-8 plaintext boundary for portable JSON and local recovery. */
 final class BackupSize {
-    static final int MAX_MIB=10;
+    static final int LEGACY_MAX_BYTES=10*1024*1024;
+    static final int MAX_MIB=256;
     static final int MAX_BYTES=MAX_MIB*1024*1024;
     private BackupSize(){}
 
