@@ -156,7 +156,8 @@ internal fun AnalyticsOverview(result: AnalyticsResult, onHistory: BiConsumer<Lo
         }
         item("today") {
             Column(Modifier.fillMaxWidth().background(ledgerPanel, RoundedCornerShape(12.dp)).padding(14.dp)) {
-                Text("На сегодня · " + analyticsDate.format(data.today), color = ledgerMuted, fontSize = 13.sp)
+                Text("Общая задолженность на сегодня", color = ledgerMuted, fontSize = 13.sp)
+                Text(analyticsDate.format(data.today), color = ledgerMuted, fontSize = 12.sp)
                 Text(analyticsMoney(data.current.balance), color = ledgerText, fontSize = 36.sp,
                     style = TextStyle(fontFeatureSettings = "tnum"), fontWeight = FontWeight.Medium)
                 AnalyticsValue("Должников", data.currentDebtors.toString())
@@ -187,6 +188,10 @@ internal fun AnalyticsOverview(result: AnalyticsResult, onHistory: BiConsumer<Lo
                 AnalyticsValue("Записей долга", data.effective.debtCount.toString())
                 AnalyticsValue("Оплаты · сумма", analyticsMoney(data.effective.payments))
                 AnalyticsValue("Записей оплаты", data.effective.paymentCount.toString())
+                val mean = if (data.effective.debtCount == 0) null else BigDecimal.valueOf(data.effective.debts)
+                    .divide(BigDecimal.valueOf(data.effective.debtCount.toLong()), 0, java.math.RoundingMode.HALF_UP).longValueExact()
+                AnalyticsValue("Средняя запись долга", mean?.let(::analyticsMoney) ?: "Нет данных")
+                AnalyticsValue("Максимальная запись", data.effective.maximumDebt?.let(::analyticsMoney) ?: "Нет данных")
                 AnalyticsValue("Клиентов с операциями", data.activeCustomers.toString())
                 AnalyticsValue("Брали в долг", data.borrowingCustomers.toString())
                 AnalyticsValue("Впервые брали в долг", data.firstTimeBorrowers.toString())
@@ -236,7 +241,7 @@ internal fun AnalyticsChart(buckets: List<AnalyticsSeries.Bucket>) {
     val maxFlow = remember(buckets) { buckets.maxOf { maxOf(it.movement.debts, it.movement.payments, 1L) }.toDouble() }
     Column(Modifier.fillMaxWidth().background(ledgerPanel, RoundedCornerShape(10.dp)).padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(analyticsMoney(balances.maxOrNull() ?: 0L), color = ledgerMuted, fontSize = 12.sp)
+        Text("Шкала: " + analyticsMoney(low.toLong()) + " — " + analyticsMoney(high.toLong()), color = ledgerMuted, fontSize = 12.sp)
         Canvas(Modifier.fillMaxWidth().height(130.dp).semantics {
             contentDescription = "График остатка. Начало " + analyticsMoney(balances.first()) + ", конец " + analyticsMoney(balances.last())
         }) {
