@@ -71,6 +71,11 @@ jobs:
             android/build/native-client-archive.png
             android/build/native-purchase-form.png
             android/build/native-purchase-details.png
+            android/build/native-analytics-overview.png
+            android/build/native-analytics-ranking.png
+            android/build/native-analytics-client.png
+            android/build/native-failure.png
+            android/build/raschet-benchmark.txt
             android/build/native-ui.xml
             android/build/android-runtime-errors.txt
           if-no-files-found: warn
