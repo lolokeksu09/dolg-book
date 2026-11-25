@@ -91,7 +91,8 @@ test('legacy catalog data stays portable but the standalone catalog and picker a
 
 test('client history follows two primary actions and secondary actions live in one menu',()=>{
   const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
-  const detail=ui.slice(ui.indexOf('private View detailView('),ui.indexOf('private void changeClientArchive('));
+  const detail=read('android/app/src/main/kotlin/dev/ventry/raschet/ClientDetailCompose.kt');
+  assert.ok(ui.includes('return ClientDetailCompose.create(this,data,id,detailFilter'));
   assert.ok(detail.includes('"+ Долг"')&&detail.includes('"Оплата"')&&detail.includes('"Ещё действия"'));
   assert.ok(!detail.includes('"Сохранить выписку PDF"')&&!detail.includes('"Долг по товарам"'));
   assert.ok(detail.includes('История клиента'));
@@ -138,7 +139,8 @@ test('counter-first UI keeps both financial actions, compact search and viewport
   assert.ok(ui.includes('addButton(quick,"Принять оплату",false'));
   const compose=read('android/app/src/main/kotlin/dev/ventry/raschet/ClientsCompose.kt');
   assert.ok(compose.includes('contentDescription = "+ Добавить клиента"'));
-  assert.ok(ui.includes('context.addView(moreActions'));
+  const detail=read('android/app/src/main/kotlin/dev/ventry/raschet/ClientDetailCompose.kt');
+  assert.ok(detail.includes('actions.more(model.archived)'));
   assert.ok(ui.includes('root.getWindowVisibleDisplayFrame(visible)'));
   assert.ok(!ui.includes('int limit=dp(380)'));
   assert.ok(ui.includes('items.size()>1?View.VISIBLE:View.GONE'));
@@ -307,10 +309,13 @@ test('client drafts keep operation identity and original date across reopening',
 test('client statement allocates before filtering and reuses the existing operation inspector',()=>{
  const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
  const model=read('android/app/src/main/java/dev/ventry/raschet/ClientStatement.java');
- assert.ok(ui.includes('ClientStatement.build(all,id,ZoneId.systemDefault())'));
- assert.ok(ui.includes('statement.remaining.get(e.id)'));
+ const detail=read('android/app/src/main/kotlin/dev/ventry/raschet/ClientDetailCompose.kt');
+ assert.ok(detail.includes('ClientStatement.build(all, id, zone)'));
+ assert.ok(detail.includes('statement.remaining[entry.id]'));
  assert.ok(ui.includes('this::showDetailFilters'));
- assert.ok(ui.includes('drafts.get(id,type)'));
+ assert.ok(detail.includes('drafts.get(id, kind)'));
+ assert.ok(detail.includes('actions.open(row.entry.id)'));
+ assert.ok(ui.includes('this::showOperation,this::showPurchaseDetails'));
  assert.ok(model.includes('BookDays.group(own,zone)'));
  assert.ok(model.includes('remaining.getOrDefault(e.id,0L)<=0'));
 });
