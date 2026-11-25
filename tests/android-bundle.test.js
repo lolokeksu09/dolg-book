@@ -242,7 +242,9 @@ test('payment journal is separate from unpaid debt and shortcuts only prefill th
   assert.ok(book.includes('BookDays.groupPayments(entries, zone)'));
   assert.ok(book.includes('"Оплаты по датам" to true'));
   assert.ok(book.includes('actions.mode(value)'));
-  assert.ok(ui.includes('amount.setText(amountInput(available))'));
+  assert.ok(ui.includes("if(historicalMaximum[0]>0)amount.setText(amountInput(historicalMaximum[0]));"));
+  assert.ok(ui.includes("historicalMaximum[0]=DatedPayments.maximum(clientEntries,clientId,entryDay[0],today,ZoneId.systemDefault());"));
+  assert.ok(ui.includes("else if(payment&&cents>historicalMaximum[0])"));
   assert.ok(ui.includes('"payment".equals(receipt.getKind())&&receipt.getDestination()==WriteDestination.BOOK'));
   assert.ok(days.includes('if(!"payment".equals(e.type))continue;'));
 });
@@ -311,7 +313,8 @@ test('collection workspace is separate from chronological book and uses a read-o
   assert.ok(ui.includes('tab.equals("Возврат")?collectionView(data)'));
   assert.ok(ui.includes('directory.setFollowUp(person.id,day[0]'));
   assert.ok(ui.includes('fromCollections?WriteDestination.COLLECTIONS:WriteDestination.DETAIL'));
-  assert.ok(ui.includes('case COLLECTIONS: tab="Возврат";selectedClient=null;break;'));
+  assert.ok(ui.includes("case COLLECTIONS: tab=\"Возврат\";selectedClient=null;returnToBook=false;returnToCollections=false;break;"));
+  assert.ok(ui.includes("tab=returnToBook?\"Главная\":returnToCollections?\"Возврат\":\"Клиенты\";"));
   assert.ok(queue.includes('if(s.balance>0)'));
 });
 
