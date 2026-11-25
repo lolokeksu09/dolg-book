@@ -479,6 +479,9 @@ public final class LedgerStore extends SQLiteOpenHelper {
 
     /** Compatible with the original web book JSON format, including v1 and v2 reversals. */
     public synchronized String exportJson() throws JSONException {
+        SQLiteDatabase db=getReadableDatabase();
+        db.beginTransaction();
+        try {
         JSONObject root=new JSONObject();root.put("version",2);
         JSONArray cs=new JSONArray(),es=new JSONArray();
         for(Client c:clients()) cs.put(new JSONObject().put("id",c.id).put("name",c.name).put("phone",c.phone));
@@ -496,7 +499,10 @@ public final class LedgerStore extends SQLiteOpenHelper {
             for(Product p:catalog)ps.put(p.json());
             root.put("products",ps);
         }
-        return root.put("clients",cs).put("entries",es).toString(2);
+        String json=root.put("clients",cs).put("entries",es).toString();
+        db.setTransactionSuccessful();
+        return json;
+        }finally{db.endTransaction();}
     }
 
     /** Parse and verify all rows before replacing anything; apply the replacement in one SQLite transaction. */
