@@ -7,6 +7,8 @@ import dev.ventry.raschet.presentation.BookScreenData;
 import dev.ventry.raschet.presentation.ReadState;
 import dev.ventry.raschet.presentation.WriteState;
 import dev.ventry.raschet.data.ClientCommand;
+import dev.ventry.raschet.data.CatalogRecord;
+import dev.ventry.raschet.data.SqliteLedgerRepository;
 import dev.ventry.raschet.data.WriteReceipt;
 import dev.ventry.raschet.data.WriteDestination;
 import dev.ventry.raschet.domain.DebtApproval;
@@ -745,7 +747,7 @@ public final class MainActivity extends ComponentActivity {
                 ()->{unlocked=false;render();authenticate(BookPrivacy.OPEN);},
                 ()->{if(!privacy.enabled()){privacy.setHideScreens(!privacy.hideScreens());applyPrivacyFlag();render();}},
                 this::createRecoveryPoint,this::restoreRecoveryPoint,this::setAutoRecovery,
-                ()->exportBook(false),()->exportBook(true),this::pickImport);
+                ()->exportBook(false),()->exportBook(true),this::pickImport,this::showCatalog);
         return SettingsCompose.create(this,state,actions);
     }
     private void toggleSettings(String section){
@@ -1157,12 +1159,90 @@ public final class MainActivity extends ComponentActivity {
             return true;
         });
     }
+    private android.widget.Spinner selection(String description,List<String> choices,int selected){
+        android.widget.Spinner spinner=new android.widget.Spinner(this);
+        android.widget.ArrayAdapter<String> adapter=new android.widget.ArrayAdapter<>(this,
+                android.R.layout.simple_spinner_item,choices);
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        spinner.setAdapter(adapter);
+        spinner.setContentDescription(description);
+        spinner.setMinimumHeight(dp(controlHeight()));
+        spinner.setSelection(Math.max(0,selected));
+        return spinner;
+    }
+    private void onSelection(android.widget.Spinner spinner,java.util.function.IntConsumer action){
+        spinner.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener(){
+            @Override public void onItemSelected(android.widget.AdapterView<?> parent,View view,int position,long id){
+                action.accept(position);
+            }
+            @Override public void onNothingSelected(android.widget.AdapterView<?> parent){}
+        });
+    }
+    private List<CatalogRecord> catalogRows(){
+        List<CatalogRecord> records=new ArrayList<>(new SqliteLedgerRepository(ledger).catalog());
+        records.sort(Comparator.comparing((CatalogRecord product)->!product.getFavorite())
+                .thenComparing(product->Product.normalize(product.getName())).thenComparing(CatalogRecord::getId));
+        return records;
+    }
+    private void showCatalog(){
+        List<CatalogRecord> records=catalogRows();
+        LinearLayout form=stack(6), results=stack(2);
+        EditText query=field("Название или категория",null);
+        form.addView(query);
+        addButton(form,"+ Новый товар",true,()->{
+            if(chooser!=null)chooser.dismiss();
+            showCatalogEditor(null);
+        },1);
+        form.addView(results);
+        Runnable filter=()->{
+            results.removeAllViews();
+            String needle=Product.normalize(query.getText().toString());
+            int count=0;
+            for(CatalogRecord product:records){
+                if(!Product.normalize(product.getName()+" "+product.getCategory()).contains(needle))continue;
+                count++;
+                if(count>60)continue;
+                String title=(product.getArchived()?"Архив · ":product.getFavorite()?"Избранное · ":"")+
+                        product.getName()+" · "+money(product.getPrice())+"/"+product.getUnit();
+                clientMenuAction(results,title,()->showCatalogEditor(product));
+            }
+            if(count==0)results.addView(label(records.isEmpty()?"Добавьте первый товар.":"Нет совпадений.",14,MUTED,false));
+            if(count>60)results.addView(label("Показано 60 из "+count+". Уточните поиск.",12,MUTED,false));
+        };
+        query.addTextChangedListener(watcher(v->filter.run()));
+        filter.run();
+        showDialog("Каталог товаров",form,null);
+    }
+    private void showCatalogEditor(CatalogRecord existing){
+        LinearLayout form=stack(7);
+        EditText name=field("Название товара",existing==null?null:existing.getName());
+        EditText category=field("Категория (необязательно)",existing==null?null:existing.getCategory());
+        EditText price=field("Цена за единицу, ₽",existing==null?null:amountInput(existing.getPrice()));
+        price.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        List<String> units=java.util.Arrays.asList(Product.UNITS);
+        android.widget.Spinner unit=selection("Единица измерения",units,existing==null?0:units.indexOf(existing.getUnit()));
+        CheckBox favorite=new CheckBox(this);favorite.setText("В избранном");favorite.setTextColor(TEXT);
+        favorite.setChecked(existing!=null&&existing.getFavorite());
+        CheckBox archive=new CheckBox(this);archive.setText("В архиве");archive.setTextColor(TEXT);
+        archive.setChecked(existing!=null&&existing.getArchived());
+        form.addView(formGroup("Товар",name));form.addView(formGroup("Категория",category));
+        form.addView(formGroup("Цена",price));form.addView(unit);form.addView(favorite);
+        if(existing!=null)form.addView(archive);
+        form.addView(label("Изменение цены не меняет ранее записанные покупки.",12,MUTED,false));
+        final String id=existing==null?java.util.UUID.randomUUID().toString():existing.getId();
+        showDialog(existing==null?"Новый товар":"Изменить товар",form,null,()->
+                new ClientCommand.Catalog(new CatalogRecord(id,name.getText().toString(),category.getText().toString(),
+                        units.get(unit.getSelectedItemPosition()),LedgerStore.parseAmount(price.getText().toString()),
+                        favorite.isChecked(),archive.isChecked())));
+    }
     private final class PurchaseRow {
         final EditText name,quantity,price;
+        final android.widget.Spinner unit;
+        final List<String> units=new ArrayList<>();
         final TextView subtotal;
         View removeAction;
         final LinearLayout block;
-        PurchaseRow(){
+        PurchaseRow(List<CatalogRecord> catalog){
             block=stack(4);
             name=field("Название товара",null);
             quantity=field("1","1");
@@ -1170,17 +1250,36 @@ public final class MainActivity extends ComponentActivity {
             name.setSingleLine(true);
             quantity.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);
             price.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);
+            units.add("Без единицы");
+            units.addAll(java.util.Arrays.asList(Product.UNITS));
+            unit=selection("Единица измерения",units,0);
+            if(!catalog.isEmpty()){
+                List<String> choices=new ArrayList<>();
+                choices.add("Выбрать из каталога");
+                for(CatalogRecord product:catalog)choices.add(product.getName()+" · "+money(product.getPrice())+"/"+product.getUnit());
+                android.widget.Spinner picker=selection("Выбрать из каталога",choices,0);
+                onSelection(picker,index->{
+                    if(index<=0||index>catalog.size())return;
+                    CatalogRecord product=catalog.get(index-1);
+                    name.setText(product.getName());
+                    price.setText(amountInput(product.getPrice()));
+                    unit.setSelection(Math.max(0,units.indexOf(product.getUnit())));
+                });
+                block.addView(picker);
+            }
             block.addView(formGroup("Товар",name));
             LinearLayout numbers=row();
             numbers.addView(formGroup("Количество",quantity),new LinearLayout.LayoutParams(0,-2,1));
             numbers.addView(formGroup("Цена, ₽",price),new LinearLayout.LayoutParams(0,-2,1));
             block.addView(numbers);
+            block.addView(unit);
             subtotal=label("Сумма позиции: —",14,ACCENT,true);
             block.addView(subtotal);
         }
         Purchase.Item item(){
             return new Purchase.Item(name.getText().toString(),Purchase.quantity(quantity.getText().toString()),
-                    LedgerStore.parseAmount(price.getText().toString()));
+                    LedgerStore.parseAmount(price.getText().toString()),
+                    unit.getSelectedItemPosition()==0?"":units.get(unit.getSelectedItemPosition()));
         }
     }
     private void showPurchaseForm(String clientId){
@@ -1194,6 +1293,8 @@ public final class MainActivity extends ComponentActivity {
         form.addView(label(client.name+" · товары в долг",14,TEXT,true));
         LinearLayout rows=stack(6);
         List<PurchaseRow> items=new ArrayList<>();
+        List<CatalogRecord> catalog=catalogRows();
+        catalog.removeIf(CatalogRecord::getArchived);
         EditText discount=field("0,00",null);
         discount.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);
         LinearLayout summary=stack(2);
@@ -1223,7 +1324,7 @@ public final class MainActivity extends ComponentActivity {
         };
         Runnable add=()->{
             if(items.size()>=Purchase.MAX_ITEMS){message("Максимум 8 позиций в одной покупке.");return;}
-            PurchaseRow r=new PurchaseRow();items.add(r);rows.addView(r.block,margin(-1,-2,8));
+            PurchaseRow r=new PurchaseRow(catalog);items.add(r);rows.addView(r.block,margin(-1,-2,8));
             addButton(r.block,"Удалить позицию",false,()->{
                 if(items.size()==1){message("Оставьте хотя бы одну позицию.");return;}
                 items.remove(r);rows.removeView(r.block);update.run();
@@ -1232,6 +1333,7 @@ public final class MainActivity extends ComponentActivity {
             r.name.addTextChangedListener(watcher(v->update.run()));
             r.quantity.addTextChangedListener(watcher(v->update.run()));
             r.price.addTextChangedListener(watcher(v->update.run()));
+            onSelection(r.unit,index->update.run());
             update.run();
         };
         addButton(form,"+ Добавить товар",false,add,1);
