@@ -213,7 +213,8 @@ internal fun ClientDetailContent(model: DetailData, filter: String, initialLimit
                 Column(Modifier.fillMaxWidth().background(panel, RoundedCornerShape(10.dp)).padding(14.dp),
                     verticalArrangement = Arrangement.spacedBy(5.dp)) {
                     Text("Остаток долга", color = dim, fontSize = 14.sp)
-                    Text(rubles(model.status.balance), color = ink, fontSize = if (largeText) 32.sp else 28.sp, fontWeight = FontWeight.Bold)
+                    Text(rubles(model.status.balance), color = ink, fontSize = if (largeText) 36.sp else 32.sp, fontWeight = FontWeight.SemiBold,
+                        style = androidx.compose.ui.text.TextStyle(fontFeatureSettings = "tnum"))
                     model.notices.forEach { Text(it.text, color = it.color, fontSize = if (largeText) 15.sp else 13.sp) }
                 }
             }
@@ -221,14 +222,16 @@ internal fun ClientDetailContent(model: DetailData, filter: String, initialLimit
                 if (model.archived) {
                     Text("Клиент в архиве. История сохранена.", color = dim)
                     Button(onClick = actions.restore, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Вернуть из архива") }
+                } else if (model.status.balance == 0L) {
+                    Button(onClick = actions.debt, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("+ Долг") }
                 } else if (stacked) {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Button(onClick = actions.debt, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("+ Долг") }
                         Button(onClick = actions.payment, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Оплата") }
+                        OutlinedButton(onClick = actions.debt, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("+ Долг") }
                     }
                 } else {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = actions.debt, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("+ Долг") }
+                        OutlinedButton(onClick = actions.debt, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("+ Долг") }
                         Button(onClick = actions.payment, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("Оплата") }
                     }
                 }
