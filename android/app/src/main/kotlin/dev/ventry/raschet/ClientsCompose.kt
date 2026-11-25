@@ -49,6 +49,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import dev.ventry.raschet.presentation.BookScreenData
 import java.util.Locale
@@ -85,12 +86,12 @@ internal fun LedgerMaterialTheme(content: @Composable () -> Unit) {
             surfaceVariant = selectedBackground, errorContainer = Color(0xff542d2d),
             onError = Color(0xff421b1b), onErrorContainer = Color(0xffffdada)
         ), typography = Typography(
-            bodyLarge = TextStyle(fontSize = 16.sp, lineHeight = 20.sp),
-            bodyMedium = TextStyle(fontSize = 14.sp, lineHeight = 19.sp),
-            bodySmall = TextStyle(fontSize = 12.sp, lineHeight = 16.sp),
-            labelLarge = TextStyle(fontSize = 14.sp, lineHeight = 18.sp, fontWeight = FontWeight.Medium),
-            labelMedium = TextStyle(fontSize = 12.sp, lineHeight = 16.sp, fontWeight = FontWeight.Medium),
-            labelSmall = TextStyle(fontSize = 11.sp, lineHeight = 14.sp)
+            bodyLarge = TextStyle(fontSize = 16.sp, lineHeight = 1.25.em),
+            bodyMedium = TextStyle(fontSize = 14.sp, lineHeight = 1.35.em),
+            bodySmall = TextStyle(fontSize = 12.sp, lineHeight = 1.33.em),
+            labelLarge = TextStyle(fontSize = 14.sp, lineHeight = 1.3.em, fontWeight = FontWeight.Medium),
+            labelMedium = TextStyle(fontSize = 12.sp, lineHeight = 1.33.em, fontWeight = FontWeight.Medium),
+            labelSmall = TextStyle(fontSize = 11.sp, lineHeight = 1.27.em)
         ), shapes = Shapes(extraSmall = RoundedCornerShape(6.dp), small = RoundedCornerShape(8.dp),
             medium = RoundedCornerShape(10.dp), large = RoundedCornerShape(14.dp), extraLarge = RoundedCornerShape(18.dp)),
         content = content
