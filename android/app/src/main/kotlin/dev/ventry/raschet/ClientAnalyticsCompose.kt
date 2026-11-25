@@ -24,7 +24,7 @@ import java.util.function.BiConsumer
 internal fun ClientAnalyticsContent(result: AnalyticsResult, onHistory: BiConsumer<LocalDate, LocalDate>) {
     val data = result.period
     val customer = result.customer
-    val name = result.names[result.request.customerId]
+    val name = result.request.customerId?.let { result.names[it] }
     if (customer == null || name == null) {
         Column(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Клиент не найден", color = ledgerText, fontSize = 22.sp)
