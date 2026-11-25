@@ -23,7 +23,7 @@ import java.util.function.Consumer
 import dev.ventry.raschet.domain.AnalyticsExport
 
 @Composable
-internal fun ClientAnalyticsContent(result: AnalyticsResult, onHistory: BiConsumer<LocalDate, LocalDate>, onExport: Consumer<AnalyticsExport.Spec>) {
+internal fun ClientAnalyticsContent(result: AnalyticsResult, onHistory: BiConsumer<LocalDate, LocalDate>, onExport: Consumer<AnalyticsExport.Spec>, section: AnalyticsSection = AnalyticsSection.SUMMARY) {
     val data = result.period
     val customer = result.customer
     val name = result.request.customerId?.let { result.names[it] }
@@ -44,6 +44,7 @@ internal fun ClientAnalyticsContent(result: AnalyticsResult, onHistory: BiConsum
             Text(name, color = ledgerText, fontSize = 26.sp, fontWeight = FontWeight.SemiBold)
             Text(analyticsRange(data.range.from, data.range.to), color = ledgerMuted, fontSize = 13.sp)
         }
+        if (section == AnalyticsSection.SUMMARY) {
         item("current") {
             Column(Modifier.fillMaxWidth().background(ledgerPanel, RoundedCornerShape(12.dp)).padding(14.dp)) {
                 Text("Остаток долга на сегодня", color = ledgerMuted, fontSize = 13.sp)
@@ -66,6 +67,14 @@ internal fun ClientAnalyticsContent(result: AnalyticsResult, onHistory: BiConsum
                 Text("Суммы и количество без записей, отменённых к концу периода.", color = ledgerMuted, fontSize = 12.sp)
             }
         }
+        item("chart") {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                AnalyticsHeading("Динамика долга клиента")
+                AnalyticsChart(result.series)
+            }
+        }
+        }
+        if (section == AnalyticsSection.DETAILS) {
         item("movement") {
             Column {
                 AnalyticsHeading("Движение задолженности")
@@ -88,12 +97,6 @@ internal fun ClientAnalyticsContent(result: AnalyticsResult, onHistory: BiConsum
                 Text("Даты за всю историю до " + analyticsDate.format(data.range.to), color = ledgerMuted, fontSize = 12.sp)
             }
         }
-        item("chart") {
-            Column {
-                AnalyticsHeading("Динамика долга клиента")
-                AnalyticsChart(result.series)
-            }
-        }
         val previous = result.previousCustomer
         val previousPeriod = result.previous
         if (previous != null && previousPeriod != null) item("comparison") {
@@ -107,10 +110,13 @@ internal fun ClientAnalyticsContent(result: AnalyticsResult, onHistory: BiConsum
                 AnalyticsValue("Записей оплаты ранее", previous.effective.paymentCount.toString())
             }
         }
+        }
+        if (section == AnalyticsSection.REPORTS) {
         item("export") { AnalyticsExportActions(result, onExport) }
         item("history") {
             OutlinedButton(onClick = { onHistory.accept(data.range.from, data.range.to) },
                 modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Операции клиента за период") }
+        }
         }
     }
 }
