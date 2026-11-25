@@ -236,7 +236,9 @@ test('payment journal is separate from unpaid debt and shortcuts only prefill th
 test('repeat debt shortcuts prefill without posting and quick debt has optional detail fields',()=>{
   const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
   const recent=read('android/app/src/main/java/dev/ventry/raschet/RecentDebts.java');
-  assert.ok(ui.includes('repeat.setOnClickListener(v->showEntryForm(person.id,"debt"))'));
+  const book=read('android/app/src/main/kotlin/dev/ventry/raschet/BookCompose.kt');
+  assert.ok(book.includes('actions.debtClient(person.id)'));
+  assert.ok(ui.includes('id->showEntryForm(id,"debt")'));
   assert.ok(ui.includes('()->amount.setText(amountInput(cents))'));
   assert.ok(ui.includes('addButton(matches,"Недавние клиенты"'));
   assert.match(ui,/new ClientCommand\.Debt\(draftId,selected\[0\],n,ph,cents,day\[0\],\s*due\.getText\(\)\.toString\(\),note\.getText\(\)\.toString\(\)\.trim\(\)/);
@@ -338,7 +340,10 @@ test('backdated receipts validate historical balances and reopen the actual rece
  const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
  const store=read('android/app/src/main/java/dev/ventry/raschet/LedgerStore.java');
  const model=read('android/app/src/main/java/dev/ventry/raschet/DatedPayments.java');
- assert.ok(ui.includes('"+ Оплата за этот день"'));
+ const book=read('android/app/src/main/kotlin/dev/ventry/raschet/BookCompose.kt');
+ assert.ok(book.includes('"+ Оплата за этот день"'));
+ assert.ok(book.includes('actions.paymentDate(day.date)'));
+ assert.ok(ui.includes('day->chooseClient("payment",day)'));
  assert.ok(ui.includes('operationId[0],entryDay[0]'));
  assert.ok(store.includes('amount>DatedPayments.maximum('));
  assert.ok(model.includes('DatedLedger.maximum(entries,id,day,today,zone)'));
