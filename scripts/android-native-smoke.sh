@@ -12,7 +12,9 @@ else
   PACKAGE=dev.ventry.raschet.nativev031
   adb install -r "$APK"
   # Instrumentation tests run only with the isolated debug package.
-  gradle -p android connectedDebugAndroidTest --no-daemon
+  bash scripts/android-test-with-retry.sh -p android connectedDebugAndroidTest --no-daemon
+  # Expose capacity benchmark measurements in CI before clearing logcat.
+  adb logcat -d -s RaschetBenchmark:I '*:S' | tee android/build/raschet-benchmark.txt
   adb install -r "$APK"
 fi
 adb logcat -c
