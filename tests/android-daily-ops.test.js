@@ -48,7 +48,9 @@ test('tablet adaptation and bounded history belong to 0.5 beta',()=>{
   assert.ok(activity.includes('tabletClientsView(data)'));
   assert.ok(activity.includes('screenWidthDp>=1100'));
   assert.ok(activity.includes('shown>=historyVisibleLimit'));
-  assert.ok(activity.includes('shown>=detailVisibleLimit'));
+  const detail=read('android/app/src/main/kotlin/dev/ventry/raschet/ClientDetailCompose.kt');
+  assert.ok(detail.includes('model.rows.take(visibleLimit)'));
+  assert.ok(detail.includes('visibleLimit = minOf(100000, visibleLimit + 80)'));
   const gradle=read('android/app/build.gradle.kts');
   assert.ok(gradle.includes('versionCode = 34'));
   assert.ok(gradle.includes('versionName = "0.29.0-beta.1"'));
