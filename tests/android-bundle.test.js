@@ -71,7 +71,9 @@ test('itemized debts use an additive migration and versioned validated purchase 
   assert.ok(store.includes('last.purchase!=null&&amount!=last.amount'));
   assert.ok(purchase.includes('RoundingMode.HALF_UP'));
   assert.ok(ui.includes('new ClientCommand.ItemizedDebt(purchaseId,clientId,purchase.encode()'));
-  assert.ok(ui.includes('e.purchase.summary()'));
+  const files=read('android/app/src/main/kotlin/dev/ventry/raschet/BookFileService.kt');
+  assert.ok(files.includes('entry.purchase?.summary().orEmpty()'));
+  assert.ok(files.includes('writer.write(listOf('));
 });
 
 test('catalog data stays portable and real editing/picking is routed to the repository',()=>{
@@ -332,7 +334,10 @@ test('client drafts keep operation identity and original date across reopening',
  const draft=read('android/app/src/main/java/dev/ventry/raschet/LedgerDrafts.java');
  assert.ok(ui.includes('previous.day:initialDay'));
  assert.ok(ui.includes('new ClientCommand.Payment(operationId[0],clientId,cents'));
- assert.ok(ui.includes('new LedgerDrafts(this).clearAll()'));
+ const files=read('android/app/src/main/kotlin/dev/ventry/raschet/BookFileService.kt');
+ const restore=files.slice(files.indexOf('private fun restore('));
+ assert.ok(restore.indexOf('val count = ledger.importJson(backup)')>=0);
+ assert.ok(restore.indexOf('LedgerDrafts(app).clearAll()')>restore.indexOf('val count = ledger.importJson(backup)'));
  assert.ok(draft.includes('json.put("day",day.toString())'));
 });
 
