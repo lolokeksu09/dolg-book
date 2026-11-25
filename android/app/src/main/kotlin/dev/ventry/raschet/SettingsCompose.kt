@@ -64,19 +64,28 @@ object SettingsCompose {
 internal fun SettingsContent(state: SettingsSnapshot, actions: SettingsActions) {
     Box(Modifier.fillMaxSize().background(ledgerBg), contentAlignment = Alignment.TopCenter) {
         Column(Modifier.widthIn(max = 800.dp).fillMaxSize().verticalScroll(rememberScrollState())
-            .testTag("settings-list").padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("Настройки", color = ledgerText, fontSize = if (state.largeText) 26.sp else 22.sp,
-                fontWeight = FontWeight.Bold)
-            SettingsSection("Общие", state.largeText)
-            LedgerMetric(state.shopName, "Изменить название", action = actions.shop::run)
-            LedgerMetric("Каталог товаров", "Цены, единицы и избранное", action = actions.catalog::run)
-            SettingsToggle("Крупный текст", "Увеличить текст для удобного чтения", "Крупный текст",
-                state.largeText, state.largeText, actions.largeText::accept)
-            SettingsSection("Напоминания о долгах", state.largeText)
-            SettingsToggle("Ежедневно проверять сроки", "Локально, без SMS. Время выбирает Android.",
-                "Ежедневные напоминания", state.reminders, state.largeText, actions.reminders::accept)
-            LedgerMetric("Защита входа", if (state.privacyEnabled) "Включена" else "Выключена") {
-                actions.expand.accept("privacy")
+            .testTag("settings-list").padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("Настройки", color = ledgerText, fontSize = if (state.largeText) 30.sp else 28.sp,
+                fontWeight = FontWeight.SemiBold)
+            SettingsSection("Магазин", state.largeText)
+            SettingsPanel {
+                LedgerMetric(state.shopName, "Изменить название", action = actions.shop::run)
+                LedgerMetric("Каталог товаров", "Цены, единицы и избранное", action = actions.catalog::run)
+            }
+            SettingsSection("Удобство работы", state.largeText)
+            SettingsPanel {
+                SettingsToggle("Крупный текст", "Увеличить текст для удобного чтения", "Крупный текст",
+                    state.largeText, state.largeText, actions.largeText::accept)
+                SettingsToggle("Ежедневно проверять сроки", "Локальные напоминания о долгах",
+                    "Ежедневные напоминания", state.reminders, state.largeText, actions.reminders::accept)
+            }
+            SettingsSection("Безопасность и данные", state.largeText)
+            SettingsPanel {
+                LedgerMetric("Защита входа", if (state.privacyEnabled) "Включена" else "Выключена",
+                    if (state.privacyEnabled) ledgerAccent else ledgerMuted) { actions.expand.accept("privacy") }
+                LedgerMetric("Резервные копии", if (state.externalBackupConfirmed) "Экспорт и восстановление"
+                    else "Нет подтверждённой внешней копии",
+                    if (state.externalBackupConfirmed) ledgerMuted else ledgerAlert) { actions.expand.accept("backup") }
             }
             if (state.expanded == "privacy") {
                 SettingsPanel {
@@ -98,8 +107,6 @@ internal fun SettingsContent(state: SettingsSnapshot, actions: SettingsActions) 
                     SettingsHint("При защите входа снимки блокируются. База отдельно не шифруется.", state.largeText)
                 }
             }
-            LedgerMetric("Резервные копии", if (state.externalBackupConfirmed) "Экспорт и восстановление"
-                else "Нет подтверждённой внешней копии") { actions.expand.accept("backup") }
             if (state.expanded == "backup") {
                 Text(state.lastExportText, color = if (state.externalBackupConfirmed) ledgerMuted else ledgerAlert,
                     fontSize = if (state.largeText) 16.sp else 13.sp)
@@ -135,7 +142,7 @@ internal fun SettingsContent(state: SettingsSnapshot, actions: SettingsActions) 
 @Composable
 private fun SettingsSection(title: String, large: Boolean) {
     Text(title, color = ledgerMuted, fontSize = if (large) 16.sp else 13.sp, fontWeight = FontWeight.SemiBold,
-        modifier = Modifier.padding(top = 8.dp, bottom = 2.dp))
+        modifier = Modifier.padding(top = 12.dp, bottom = 2.dp))
 }
 
 @Composable
@@ -145,7 +152,7 @@ private fun SettingsHint(value: String, large: Boolean) {
 
 @Composable
 private fun SettingsPanel(content: @Composable () -> Unit) {
-    Column(Modifier.fillMaxWidth().background(ledgerPanel, RoundedCornerShape(10.dp)).padding(12.dp),
+    Column(Modifier.fillMaxWidth().background(ledgerPanel, RoundedCornerShape(14.dp)).padding(horizontal = 14.dp, vertical = 6.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)) { content() }
 }
 
