@@ -50,12 +50,44 @@ public class RecoveryVaultInstrumentedTest {
         data[data.length-1]^=1;
         Files.write(point.toPath(),data);
         String original=book.exportJson();
-        try{vault.readLatest();fail("Corrupt point should fail");}
-        catch(Exception expected){assertEquals(original,book.exportJson());}
+        try(java.io.Reader input=vault.openLatest()){
+            book.importJson(input);
+            fail("Corrupt authenticated EOF must roll back");
+        }catch(java.io.IOException expected){assertEquals(original,book.exportJson());}
     }
     @Test public void keepLastFour() throws Exception{
         book.addClient("Тестовый","");
         for(int i=0;i<6;i++)vault.create(book);
         assertEquals(4,vault.count());
+    }
+    @Test public void readsOriginalVrc1WithoutMigratingOrReplacingItsKey() throws Exception{
+        book.addClient("Старая книга","");
+        String snapshot=book.exportJson();
+        String alias="raschet.recovery.aes.v1";
+        java.security.KeyStore ks=java.security.KeyStore.getInstance("AndroidKeyStore");
+        ks.load(null);
+        javax.crypto.SecretKey key=(javax.crypto.SecretKey)ks.getKey(alias,null);
+        if(key==null){
+            javax.crypto.KeyGenerator generator=javax.crypto.KeyGenerator.getInstance("AES","AndroidKeyStore");
+            generator.init(new android.security.keystore.KeyGenParameterSpec.Builder(alias,
+                    android.security.keystore.KeyProperties.PURPOSE_ENCRYPT|android.security.keystore.KeyProperties.PURPOSE_DECRYPT)
+                    .setBlockModes(android.security.keystore.KeyProperties.BLOCK_MODE_GCM)
+                    .setEncryptionPaddings(android.security.keystore.KeyProperties.ENCRYPTION_PADDING_NONE)
+                    .setRandomizedEncryptionRequired(true).setKeySize(256).build());
+            key=generator.generateKey();
+        }
+        javax.crypto.Cipher cipher=javax.crypto.Cipher.getInstance("AES/GCM/NoPadding");
+        cipher.init(javax.crypto.Cipher.ENCRYPT_MODE,key);
+        assertTrue(dir.mkdirs()||dir.isDirectory());
+        File legacy=new File(dir,"recovery-legacy.vrc");
+        try(java.io.FileOutputStream output=new java.io.FileOutputStream(legacy)){
+            output.write(new byte[]{'V','R','C','1'});
+            output.write(cipher.getIV());
+            output.write(cipher.doFinal(snapshot.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        }
+        assertEquals(snapshot,vault.read(legacy));
+        File current=vault.create(book);
+        assertEquals(snapshot,vault.read(current));
+        assertEquals(snapshot,vault.read(legacy));
     }
 }
