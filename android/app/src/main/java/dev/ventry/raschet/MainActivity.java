@@ -1236,6 +1236,61 @@ public final class MainActivity extends ComponentActivity {
                         units.get(unit.getSelectedItemPosition()),LedgerStore.parseAmount(price.getText().toString()),
                         favorite.isChecked(),archive.isChecked())));
     }
+    /** Child dialog leaves the purchase form and its draft alive. */
+    private void showProductPicker(CatalogPicker catalog,java.util.function.Consumer<CatalogRecord> choose){
+        Dialog picker=new Dialog(this);
+        picker.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        LinearLayout body=stack(8);
+        body.setPadding(dp(16),dp(16),dp(16),dp(16));
+        body.setBackground(shape(PANEL,12,BORDER));
+        body.addView(label("Товары",22,TEXT,true));
+        EditText search=field("Поиск товара или категории",null);
+        search.setSingleLine(true);
+        body.addView(search);
+        CheckBox favorites=new CheckBox(this);
+        favorites.setText("Только избранные");favorites.setTextColor(TEXT);
+        body.addView(favorites);
+        TextView count=label("",12,MUTED,false);
+        body.addView(count);
+        ScrollView list=new ScrollView(this);
+        LinearLayout results=stack(4);list.addView(results);
+        body.addView(list,new LinearLayout.LayoutParams(-1,dp(248)));
+        Runnable refresh=()->{
+            results.removeAllViews();
+            CatalogPicker.Result found=catalog.search(search.getText().toString(),favorites.isChecked());
+            count.setText(found.total>CatalogPicker.LIMIT?"Показано "+CatalogPicker.LIMIT+" из "+found.total+" · уточните поиск":"Найдено: "+found.total);
+            if(found.rows.isEmpty())results.addView(label("Нет подходящих товаров.",14,MUTED,false));
+            for(CatalogRecord product:found.rows){
+                LinearLayout item=stack(3);
+                item.setPadding(dp(10),dp(9),dp(10),dp(9));
+                item.setBackground(shape(ELEVATED,8,BORDER));
+                item.addView(label(product.getName(),16,TEXT,true));
+                String meta=money(product.getPrice())+" / "+product.getUnit();
+                if(!product.getCategory().isEmpty())meta+=" · "+product.getCategory();
+                if(product.getFavorite())meta+=" · Избранное";
+                item.addView(label(meta,13,MUTED,false));
+                item.setContentDescription(product.getName()+", "+meta);
+                item.setFocusable(true);item.setClickable(true);
+                item.setOnClickListener(v->{picker.dismiss();choose.accept(product);});
+                results.addView(item);
+            }
+            list.scrollTo(0,0);
+        };
+        search.addTextChangedListener(watcher(v->refresh.run()));
+        favorites.setOnCheckedChangeListener((button,checked)->refresh.run());
+        addButton(body,"Закрыть",false,picker::dismiss,1);
+        refresh.run();
+        picker.setContentView(body);
+        Window window=picker.getWindow();
+        if(window!=null){
+            if(privacy.hideScreens())window.addFlags(WindowManager.LayoutParams.FLAG_SECURE);
+            window.setBackgroundDrawableResource(android.R.color.transparent);
+            window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE|WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);
+        }
+        picker.show();
+        if(window!=null)window.setLayout(Math.min(getResources().getDisplayMetrics().widthPixels-dp(26),dp(510)),WindowManager.LayoutParams.WRAP_CONTENT);
+    }
+
     private final class PurchaseRow {
         final EditText name,quantity,price;
         final android.widget.Spinner unit;
@@ -1243,8 +1298,8 @@ public final class MainActivity extends ComponentActivity {
         final TextView subtotal;
         View removeAction;
         final LinearLayout block;
-        PurchaseRow(List<CatalogRecord> catalog){
-            block=stack(4);
+        PurchaseRow(CatalogPicker catalog){
+            block=card();
             name=field("Название товара",null);
             quantity=field("1","1");
             price=field("0,00",null);
@@ -1255,18 +1310,13 @@ public final class MainActivity extends ComponentActivity {
             units.addAll(java.util.Arrays.asList(Product.UNITS));
             unit=selection("Единица измерения",units,0);
             if(!catalog.isEmpty()){
-                List<String> choices=new ArrayList<>();
-                choices.add("Выбрать из каталога");
-                for(CatalogRecord product:catalog)choices.add(product.getName()+" · "+money(product.getPrice())+"/"+product.getUnit());
-                android.widget.Spinner picker=selection("Выбрать из каталога",choices,0);
-                onSelection(picker,index->{
-                    if(index<=0||index>catalog.size())return;
-                    CatalogRecord product=catalog.get(index-1);
+                addButton(block,"Выбрать из каталога",false,()->showProductPicker(catalog,product->{
                     name.setText(product.getName());
                     price.setText(amountInput(product.getPrice()));
                     unit.setSelection(Math.max(0,units.indexOf(product.getUnit())));
-                });
-                block.addView(picker);
+                    quantity.requestFocus();
+                    quantity.selectAll();
+                }),1);
             }
             block.addView(formGroup("Товар",name));
             LinearLayout numbers=row();
@@ -1274,7 +1324,7 @@ public final class MainActivity extends ComponentActivity {
             numbers.addView(formGroup("Цена, ₽",price),new LinearLayout.LayoutParams(0,-2,1));
             block.addView(numbers);
             block.addView(unit);
-            subtotal=label("Сумма позиции: —",14,ACCENT,true);
+            subtotal=label("Сумма позиции: —",18,ACCENT,true);
             block.addView(subtotal);
         }
         Purchase.Item item(){
@@ -1303,6 +1353,7 @@ public final class MainActivity extends ComponentActivity {
         List<PurchaseRow> items=new ArrayList<>();
         List<CatalogRecord> catalog=catalogRows();
         catalog.removeIf(CatalogRecord::getArchived);
+        CatalogPicker catalogPicker=new CatalogPicker(catalog);
         EditText discount=field("0,00",restored==null?null:restored.discount);
         EditText due=field("Без срока",restored==null?null:restored.due);
         EditText note=field("Комментарий",restored==null?null:restored.note);
@@ -1317,7 +1368,8 @@ public final class MainActivity extends ComponentActivity {
         };
         discount.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);
         LinearLayout summary=stack(2);
-        TextView total=label("Итого к записи: —",20,ACCENT,true);
+        TextView total=label("Итого к записи: —",26,ACCENT,true);
+        total.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
         TextView details=label("Заполните товары и цены.",13,MUTED,false);
         summary.addView(total);summary.addView(details);
         // Keep the current total visible at the top of the scrollable form.
@@ -1343,7 +1395,7 @@ public final class MainActivity extends ComponentActivity {
         };
         Runnable add=()->{
             if(items.size()>=Purchase.MAX_ITEMS){message("Максимум 8 позиций в одной покупке.");return;}
-            PurchaseRow r=new PurchaseRow(catalog);items.add(r);rows.addView(r.block,margin(-1,-2,8));
+            PurchaseRow r=new PurchaseRow(catalogPicker);items.add(r);rows.addView(r.block,margin(-1,-2,8));
             addButton(r.block,"Удалить позицию",false,()->{
                 if(items.size()==1){message("Оставьте хотя бы одну позицию.");return;}
                 items.remove(r);rows.removeView(r.block);update.run();persist.run();
