@@ -39,11 +39,11 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 import java.util.function.BiConsumer
 
-private val analyticsDate = DateTimeFormatter.ofPattern("dd.MM.yyyy", Locale("ru", "RU"))
-private fun analyticsMoney(amount: Long): String = String.format(Locale("ru", "RU"),
+internal val analyticsDate = DateTimeFormatter.ofPattern("dd.MM.yyyy", Locale("ru", "RU"))
+internal fun analyticsMoney(amount: Long): String = String.format(Locale("ru", "RU"),
     "%,.2f ₽", BigDecimal.valueOf(amount, 2)).replace('\u00a0', ' ').replace('\u202f', ' ')
 
-private fun analyticsRange(from: LocalDate, to: LocalDate) =
+internal fun analyticsRange(from: LocalDate, to: LocalDate) =
     if (from == to) analyticsDate.format(from) else analyticsDate.format(from) + " — " + analyticsDate.format(to)
 
 object AnalyticsCompose {
@@ -60,9 +60,9 @@ object AnalyticsCompose {
                     Column(Modifier.fillMaxSize().background(ledgerBg)) {
                         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp),
                             verticalAlignment = Alignment.CenterVertically) {
-                            TextButton(onClick = onBack::run) { Text("← Книга") }
+                            TextButton(onClick = onBack::run) { Text(if (request.customerId == null) "← Книга" else "← Клиент") }
                             Spacer(Modifier.weight(1f))
-                            TextButton(onClick = onReport::run) { Text("Финансовый отчёт") }
+                            if (request.customerId == null) TextButton(onClick = onReport::run) { Text("Финансовый отчёт") }
                         }
                         AnalyticsPeriodsRow(request.selection.preset) { preset ->
                             if (preset == AnalyticsPeriods.Preset.CUSTOM) {
@@ -72,8 +72,9 @@ object AnalyticsCompose {
                         }
                         when (val current = state) {
                             is ReadState.Ready -> {
-                                if (current.value.request == request) AnalyticsOverview(current.value, onHistory)
-                                else AnalyticsLoading()
+                                if (current.value.request != request) AnalyticsLoading()
+                                else if (request.customerId == null) AnalyticsOverview(current.value, onHistory)
+                                else ClientAnalyticsContent(current.value, onHistory)
                             }
                             is ReadState.Failed -> Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Text("Не удалось рассчитать статистику.", color = ledgerText)
@@ -131,7 +132,7 @@ private fun AnalyticsPeriodsRow(selected: AnalyticsPeriods.Preset, choose: (Anal
 }
 
 @Composable
-private fun AnalyticsValue(label: String, value: String, color: Color = ledgerText) {
+internal fun AnalyticsValue(label: String, value: String, color: Color = ledgerText) {
     Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalAlignment = Alignment.CenterVertically) {
         Text(label, color = ledgerMuted, fontSize = 13.sp, modifier = Modifier.weight(1f))
@@ -141,7 +142,7 @@ private fun AnalyticsValue(label: String, value: String, color: Color = ledgerTe
 }
 
 @Composable
-private fun AnalyticsHeading(title: String) {
+internal fun AnalyticsHeading(title: String) {
     Text(title, color = ledgerText, fontSize = 19.sp, fontWeight = FontWeight.SemiBold)
 }
 
@@ -222,7 +223,7 @@ internal fun AnalyticsOverview(result: AnalyticsResult, onHistory: BiConsumer<Lo
 }
 
 @Composable
-private fun AnalyticsChange(label: String, current: Long, previous: Long) {
+internal fun AnalyticsChange(label: String, current: Long, previous: Long) {
     val change = AnalyticsPeriods.Change.between(current, previous)
     AnalyticsValue(label, (if (change.absolute > 0) "+" else "") + analyticsMoney(change.absolute))
     Text("Было: " + analyticsMoney(previous) + " · " +
@@ -236,12 +237,14 @@ internal fun AnalyticsChart(buckets: List<AnalyticsSeries.Bucket>) {
     var index by remember(buckets) { mutableIntStateOf(buckets.lastIndex) }
     val selected = buckets[index]
     val balances = remember(buckets) { listOf(buckets.first().opening) + buckets.map { it.closing } }
-    val low = minOf(0L, balances.minOrNull() ?: 0L).toDouble()
-    val high = maxOf(1L, balances.maxOrNull() ?: 0L).toDouble()
+    val lowAmount = minOf(0L, balances.minOrNull() ?: 0L)
+    val highAmount = maxOf(1L, balances.maxOrNull() ?: 0L)
+    val low = lowAmount.toDouble()
+    val high = highAmount.toDouble()
     val maxFlow = remember(buckets) { buckets.maxOf { maxOf(it.movement.debts, it.movement.payments, 1L) }.toDouble() }
     Column(Modifier.fillMaxWidth().background(ledgerPanel, RoundedCornerShape(10.dp)).padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("Шкала: " + analyticsMoney(low.toLong()) + " — " + analyticsMoney(high.toLong()), color = ledgerMuted, fontSize = 12.sp)
+        Text("Шкала: " + analyticsMoney(lowAmount) + " — " + analyticsMoney(highAmount), color = ledgerMuted, fontSize = 12.sp)
         Canvas(Modifier.fillMaxWidth().height(130.dp).semantics {
             contentDescription = "График остатка. Начало " + analyticsMoney(balances.first()) + ", конец " + analyticsMoney(balances.last())
         }) {
