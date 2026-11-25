@@ -8,6 +8,12 @@ test('recovery uses authenticated Android Keystore encryption and fail-closed im
   const vault=read('android/app/src/main/java/dev/ventry/raschet/RecoveryVault.java');
   const activity=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
   assert.match(vault,/AES\/GCM\/NoPadding/);
+  const frames=read('android/app/src/main/java/dev/ventry/raschet/RecoveryFrames.java');
+  assert.match(frames,/cipher\.updateAAD\(aad\(id,index,length\)\)/);
+  assert.ok(vault.includes('encrypted.finish()'));
+  assert.ok(frames.includes('frame(0)'));
+  assert.ok(vault.includes('raschet.recovery.aes.v1'));
+  assert.ok(vault.includes('raschet.recovery.aes.v2'));
   assert.match(vault,/AndroidKeyStore/);
   assert.match(vault,/setRandomizedEncryptionRequired\(true\)/);
   const service=read('android/app/src/main/kotlin/dev/ventry/raschet/BookFileService.kt');
@@ -17,7 +23,7 @@ test('recovery uses authenticated Android Keystore encryption and fail-closed im
   const snapshot=service.indexOf('vault.create(ledger)',start);
   const mutate=service.indexOf('val count = ledger.importJson(backup)',start);
   assert.ok(start>=0 && snapshot>start && mutate>snapshot);
-  assert.ok(service.includes('vault.readLatest()'));
+  assert.ok(service.includes('vault.openLatest().use'));
   assert.ok(service.includes('BackupSize.openUtf8(stream).use'));
   assert.ok(activity.includes('new ClientCommand.FileTask.Import(uri,getLocalClassName())'));
   assert.ok(activity.includes('new ClientCommand.FileTask.RestorePoint(getLocalClassName())'));
