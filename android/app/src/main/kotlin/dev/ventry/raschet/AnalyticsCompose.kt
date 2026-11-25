@@ -3,6 +3,12 @@ package dev.ventry.raschet
 import android.app.DatePickerDialog
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
@@ -62,7 +68,11 @@ object AnalyticsCompose {
                 LedgerMaterialTheme {
                     val request by model.request.collectAsState()
                     val state by model.state.collectAsState()
-                    Column(Modifier.fillMaxSize().background(ledgerBg)) {
+                    var overviewSection by remember { mutableStateOf(AnalyticsSection.SUMMARY) }
+                    var personalSection by remember(request.customerId) { mutableStateOf(AnalyticsSection.SUMMARY) }
+                    val section = if (request.customerId == null) overviewSection else personalSection
+                    Box(Modifier.fillMaxSize().background(ledgerBg), contentAlignment = Alignment.TopCenter) {
+                    Column(Modifier.widthIn(max = 800.dp).fillMaxSize()) {
                         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp),
                             verticalAlignment = Alignment.CenterVertically) {
                             TextButton(onClick = onBack::run) { Text(if (request.customerId == null) "← Книга" else if (fromOverview) "← Статистика" else "← Клиент") }
@@ -75,11 +85,15 @@ object AnalyticsCompose {
                                 pickRange(owner, data.today, initial) { model.select(AnalyticsPeriods.Selection(preset, it)) }
                             } else model.select(AnalyticsPeriods.Selection(preset))
                         }
+                        AnalyticsSectionRow(section, request.customerId != null) { chosen ->
+                            if (request.customerId == null) overviewSection = chosen else personalSection = chosen
+                        }
+                        HorizontalDivider(color = ledgerBorder.copy(alpha = .5f))
                         when (val current = state) {
                             is ReadState.Ready -> {
                                 if (current.value.request != request) AnalyticsLoading()
-                                else if (request.customerId == null) AnalyticsOverview(current.value, onHistory, onCustomer, onExport)
-                                else ClientAnalyticsContent(current.value, onHistory, onExport)
+                                else if (request.customerId == null) key(section) { AnalyticsOverview(current.value, onHistory, onCustomer, onExport, section) }
+                                else key(section) { ClientAnalyticsContent(current.value, onHistory, onExport, section) }
                             }
                             is ReadState.Failed -> Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Text("Не удалось рассчитать статистику.", color = ledgerText)
@@ -88,6 +102,7 @@ object AnalyticsCompose {
                             }
                             else -> AnalyticsLoading()
                         }
+                    }
                     }
                 }
             }
@@ -127,22 +142,52 @@ private fun AnalyticsPeriodsRow(selected: AnalyticsPeriods.Preset, choose: (Anal
         AnalyticsPeriods.Preset.MONTH to "Месяц", AnalyticsPeriods.Preset.QUARTER to "Квартал",
         AnalyticsPeriods.Preset.YEAR to "Год", AnalyticsPeriods.Preset.ALL to "Всё время",
         AnalyticsPeriods.Preset.CUSTOM to "Период")
-    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 18.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        labels.forEach { (preset, label) ->
-            FilterChip(selected = selected == preset, onClick = { choose(preset) },
-                label = { Text(label) }, modifier = Modifier.heightIn(min = 48.dp))
+    Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 4.dp)) {
+        val primary = labels.take(3)
+        val secondary = labels.drop(3)
+        val compact = LocalDensity.current.fontScale > 1.2f
+        if (compact) {
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                labels.forEach { (preset, label) ->
+                    FilterChip(selected = selected == preset, onClick = { choose(preset) }, label = { Text(label) },
+                        modifier = Modifier.heightIn(min = 48.dp))
+                }
+            }
+        } else {
+            listOf(primary, secondary).forEach { group ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    group.forEach { (preset, label) ->
+                        val active = selected == preset
+                        Box(Modifier.weight(1f).heightIn(min = 48.dp)
+                            .background(if (active) ledgerAccent else ledgerPanel, RoundedCornerShape(6.dp))
+                            .clickable { choose(preset) }.semantics { this.selected = active; role = Role.Button }
+                            .padding(horizontal = 3.dp, vertical = 8.dp), contentAlignment = Alignment.Center) {
+                            Text(label, color = if (active) Color(LedgerTheme.INK) else ledgerMuted,
+                                fontSize = 12.sp, textAlign = TextAlign.Center,
+                                fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal)
+                        }
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
+            }
         }
     }
 }
 
 @Composable
 internal fun AnalyticsValue(label: String, value: String, color: Color = ledgerText) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalAlignment = Alignment.CenterVertically) {
-        Text(label, color = ledgerMuted, fontSize = 13.sp, modifier = Modifier.weight(1f))
-        Text(value, color = color, fontWeight = FontWeight.Medium, textAlign = TextAlign.End,
-            modifier = Modifier.weight(1f), style = TextStyle(fontFeatureSettings = "tnum"), fontSize = 15.sp)
+    BoxWithConstraints(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+        val stacked = maxWidth < 300.dp || LocalDensity.current.fontScale > 1.2f
+        if (stacked) Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(label, color = ledgerMuted, fontSize = 13.sp)
+            Text(value, color = color, fontWeight = FontWeight.Medium,
+                style = TextStyle(fontFeatureSettings = "tnum"), fontSize = 16.sp)
+        } else Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            Text(label, color = ledgerMuted, fontSize = 13.sp, modifier = Modifier.weight(1f))
+            Text(value, color = color, fontWeight = FontWeight.Medium, textAlign = TextAlign.End,
+                modifier = Modifier.weight(1f), style = TextStyle(fontFeatureSettings = "tnum"), fontSize = 15.sp)
+        }
     }
 }
 
@@ -153,11 +198,11 @@ internal fun AnalyticsHeading(title: String) {
 
 @Composable
 internal fun AnalyticsOverview(result: AnalyticsResult, onHistory: BiConsumer<LocalDate, LocalDate>,
-    onCustomer: Consumer<String>, onExport: Consumer<AnalyticsExport.Spec>) {
+    onCustomer: Consumer<String>, onExport: Consumer<AnalyticsExport.Spec>, section: AnalyticsSection = AnalyticsSection.SUMMARY) {
     val data = result.period
     var ranking by remember { mutableStateOf(AnalyticsRanking.BALANCE) }
     var rankLimit by remember(data, ranking) { mutableIntStateOf(20) }
-    val ranked = remember(data, ranking) { data.customers.filter { it.id in result.names && ranking.includes(it, data.range) }
+    val ranked = remember(data, ranking, section) { if (section != AnalyticsSection.DETAILS) emptyList() else data.customers.filter { it.id in result.names && ranking.includes(it, data.range) }
         .sortedWith(compareByDescending<AnalyticsProjection.Customer> { ranking.value(it) }.thenBy { result.names[it.id] }.thenBy { it.id }) }
     LazyColumn(Modifier.fillMaxSize().testTag("analytics-list"), contentPadding = PaddingValues(18.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -165,6 +210,7 @@ internal fun AnalyticsOverview(result: AnalyticsResult, onHistory: BiConsumer<Lo
             Text("Статистика", color = ledgerText, fontSize = 26.sp, fontWeight = FontWeight.SemiBold)
             Text(analyticsRange(data.range.from, data.range.to), color = ledgerMuted, fontSize = 13.sp)
         }
+        if (section == AnalyticsSection.SUMMARY) {
         item("today") {
             Column(Modifier.fillMaxWidth().background(ledgerPanel, RoundedCornerShape(12.dp)).padding(14.dp)) {
                 Text("Общая задолженность на сегодня", color = ledgerMuted, fontSize = 13.sp)
@@ -174,6 +220,12 @@ internal fun AnalyticsOverview(result: AnalyticsResult, onHistory: BiConsumer<Lo
                 AnalyticsValue("Должников", data.currentDebtors.toString())
                 AnalyticsValue("Просрочено", analyticsMoney(data.current.overdue), ledgerAlert)
                 AnalyticsValue("Должников с просрочкой", data.overdueDebtors.toString())
+            }
+        }
+        item("chart") {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                AnalyticsHeading("Динамика задолженности")
+                AnalyticsChart(result.series)
             }
         }
         item("period") {
@@ -210,10 +262,6 @@ internal fun AnalyticsOverview(result: AnalyticsResult, onHistory: BiConsumer<Lo
                 Text("Без записей, отменённых к концу периода.", color = ledgerMuted, fontSize = 12.sp)
             }
         }
-        item("chart") {
-            AnalyticsHeading("Динамика задолженности")
-            AnalyticsChart(result.series)
-        }
         result.previous?.let { previous ->
             item("comparison") {
                 Column {
@@ -225,6 +273,8 @@ internal fun AnalyticsOverview(result: AnalyticsResult, onHistory: BiConsumer<Lo
                 }
             }
         }
+        }
+        if (section == AnalyticsSection.DETAILS) {
         item("ranking-title") {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 AnalyticsHeading("Рейтинг клиентов")
@@ -264,10 +314,13 @@ internal fun AnalyticsOverview(result: AnalyticsResult, onHistory: BiConsumer<Lo
         if (ranked.size > rankLimit) item("more-ranked") {
             TextButton(onClick = { rankLimit += 20 }, modifier = Modifier.fillMaxWidth()) { Text("Показать ещё клиентов") }
         }
+        }
+        if (section == AnalyticsSection.REPORTS) {
         item("export") { AnalyticsExportActions(result, onExport) }
         item("history") {
             OutlinedButton(onClick = { onHistory.accept(data.range.from, data.range.to) },
                 modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Операции периода") }
+        }
         }
     }
 }
@@ -295,7 +348,9 @@ internal fun AnalyticsChart(buckets: List<AnalyticsSeries.Bucket>) {
     Column(Modifier.fillMaxWidth().background(ledgerPanel, RoundedCornerShape(10.dp)).padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Шкала: " + analyticsMoney(lowAmount) + " — " + analyticsMoney(highAmount), color = ledgerMuted, fontSize = 12.sp)
-        Canvas(Modifier.fillMaxWidth().height(130.dp).semantics {
+        Canvas(Modifier.fillMaxWidth().height(156.dp).pointerInput(buckets) {
+            detectTapGestures { tap -> index = (tap.x / size.width.coerceAtLeast(1) * buckets.size).toInt().coerceIn(0, buckets.lastIndex) }
+        }.semantics {
             contentDescription = "График остатка. Начало " + analyticsMoney(balances.first()) + ", конец " + analyticsMoney(balances.last())
         }) {
             val step = size.width / buckets.size
@@ -313,8 +368,14 @@ internal fun AnalyticsChart(buckets: List<AnalyticsSeries.Bucket>) {
             drawLine(ledgerMuted, Offset(marker, 0f), Offset(marker, size.height), 1.dp.toPx())
             drawCircle(ledgerAccent, 4.dp.toPx(), Offset(marker, y(selected.closing)))
         }
-        Text("Долги / оплаты по интервалам", color = ledgerMuted, fontSize = 12.sp)
-        Canvas(Modifier.fillMaxWidth().height(64.dp).semantics {
+        Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            Text("■ Долги", color = ledgerAlert, fontSize = 12.sp)
+            Text("■ Оплаты", color = ledgerAccent, fontSize = 12.sp)
+        }
+        Text("Нажмите на график, чтобы выбрать интервал", color = ledgerMuted, fontSize = 12.sp)
+        Canvas(Modifier.fillMaxWidth().height(82.dp).pointerInput(buckets) {
+            detectTapGestures { tap -> index = (tap.x / size.width.coerceAtLeast(1) * buckets.size).toInt().coerceIn(0, buckets.lastIndex) }
+        }.semantics {
             contentDescription = "Столбцы долгов и оплат; точные значения доступны под графиком"
         }) {
             val step = size.width / buckets.size
@@ -331,14 +392,20 @@ internal fun AnalyticsChart(buckets: List<AnalyticsSeries.Bucket>) {
             Text(analyticsDate.format(buckets.last().to), color = ledgerMuted, fontSize = 11.sp)
         }
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = { index-- }, enabled = index > 0) { Text("‹") }
+            TextButton(onClick = { index-- }, enabled = index > 0,
+                modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = "Предыдущий интервал" }) { Text("‹") }
             Text(analyticsRange(selected.from, selected.to), color = ledgerText,
                 modifier = Modifier.weight(1f), textAlign = TextAlign.Center, fontSize = 13.sp)
-            TextButton(onClick = { index++ }, enabled = index < buckets.lastIndex) { Text("›") }
+            TextButton(onClick = { index++ }, enabled = index < buckets.lastIndex,
+                modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = "Следующий интервал" }) { Text("›") }
         }
         AnalyticsValue("Остаток", analyticsMoney(selected.closing))
         AnalyticsValue("Долги", analyticsMoney(selected.movement.debts), ledgerAlert)
         AnalyticsValue("Оплаты", analyticsMoney(selected.movement.payments), ledgerAccent)
+        if (selected.movement.debtReversals != 0L || selected.movement.paymentReversals != 0L) {
+            AnalyticsValue("Отменено долгов", analyticsMoney(selected.movement.debtReversals))
+            AnalyticsValue("Отменено оплат", analyticsMoney(selected.movement.paymentReversals))
+        }
     }
 }
 
@@ -385,5 +452,29 @@ internal fun AnalyticsExportActions(result: AnalyticsResult, onExport: Consumer<
             text = { Text("Имя и финансовые показатели будут записаны в незашифрованный файл. Выберите безопасное место хранения.") },
             confirmButton = { TextButton(onClick = { confirm = null; export(pdf) }) { Text("Продолжить") } },
             dismissButton = { TextButton(onClick = { confirm = null }) { Text("Отмена") } })
+    }
+}
+
+internal enum class AnalyticsSection { SUMMARY, DETAILS, REPORTS }
+
+@Composable
+private fun AnalyticsSectionRow(section: AnalyticsSection, personal: Boolean, choose: (AnalyticsSection) -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        AnalyticsSection.entries.forEach { option ->
+            val active = section == option
+            val label = when (option) {
+                AnalyticsSection.SUMMARY -> "Обзор"
+                AnalyticsSection.DETAILS -> if (personal) "Детали" else "Клиенты"
+                AnalyticsSection.REPORTS -> "Экспорт"
+            }
+            Column(Modifier.weight(1f).clickable { choose(option) }
+                .semantics { selected = active; role = Role.Tab }, horizontalAlignment = Alignment.CenterHorizontally) {
+                Box(Modifier.fillMaxWidth().heightIn(min = 48.dp), contentAlignment = Alignment.Center) {
+                    Text(label, color = if (active) ledgerText else ledgerMuted, fontSize = 14.sp,
+                        fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal, textAlign = TextAlign.Center)
+                }
+                Box(Modifier.fillMaxWidth().height(2.dp).background(if (active) ledgerAccent else Color.Transparent))
+            }
+        }
     }
 }
