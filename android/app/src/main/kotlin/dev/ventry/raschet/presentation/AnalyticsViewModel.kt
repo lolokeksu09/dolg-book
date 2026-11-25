@@ -73,6 +73,7 @@ class AnalyticsViewModel : ViewModel() {
     val state = reader.state
 
     /** Pass null on a write/privacy invalidation, then bind the next committed snapshot. */
+    @JvmOverloads
     fun bindBook(value: BookScreenData?, timeZone: ZoneId = ZoneId.systemDefault()) {
         if (book === value && zone == timeZone) return
         book = value
