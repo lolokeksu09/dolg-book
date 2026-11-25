@@ -279,3 +279,12 @@ Baseline a9f3a7e: all five workflows passed (APK, release candidate, Kotlin/Rust
 - Calendar is an optional view on the main book; existing date list remains the default for compatibility. Selecting a date displays only that day's entries, automatically expanded, with the existing client, operation and dated write actions. Empty days offer the appropriate dated write action; future dates can be inspected but not used for new dated writes in calendar mode.
 - Activity state retains the selected date and view mode across navigation and rotation; successful debt/payment receipts select their committed date. Applying or clearing filters resets the date selection to the relevant projection. No storage schema change.
 - Added Compose instrumentation for Monday-first leap-year and six-week layouts, date selection, month navigation, accessible totals, selected-day client isolation and dated write routing. Exact-head Android CI and rendered layout checks remain required. No release or main merge.
+
+
+### Product readiness — date-aware debtor workflow
+
+Baseline fbcd206: all five workflows passed; emulator 45599694731 completed 73 instrumented tests. LARGE_BOOK_PASS: 100,000 rows / 1,000 clients, JSON 13,817,817 bytes, projection 504 ms, export 2724 ms, import 16421 ms, recovery creation 2885 ms (single emulator run; not device guarantees).
+
+- Payment form uses one per-client history snapshot for current balance, recent amounts, promise progress and dated maximum. Half/full shortcuts use DatedPayments.maximum for the selected day, disable at zero, and distinguish today's full balance from historical maximum. Historical projection warns if an entered amount exceeds that day's maximum. Current promise shortcuts are hidden on historical days. The writer still independently validates the actual transaction; preview cannot authorize an overpayment.
+- Client detail opened from the journal returns to the originating book, not the generic client directory. Activity saved state tracks the origin and existing calendar selection; a write in the detail does not overwrite the selected journal date. Existing client/collection navigation remains available.
+- Added Compose header callback test and native smoke assertion for the system Back route. Historical maximum already has ledger instrumentation coverage; the newly changed payment shortcut UI has not yet been exercised on a historical date. New exact-head CI and visual verification remain required. No schema change, merge or release.
