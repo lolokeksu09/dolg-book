@@ -55,8 +55,9 @@ internal fun LedgerMetric(title: String, value: String, color: Color = ledgerMut
 internal fun LedgerTotal(title: String, amount: Long, detail: String? = null) {
     Column(Modifier.fillMaxWidth().background(ledgerPanel, RoundedCornerShape(10.dp)).padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(title, color = ledgerMuted, fontSize = 14.sp)
-        Text(ledgerMoney(amount), color = ledgerText, fontWeight = FontWeight.Bold, fontSize = 28.sp)
+        Text(title, color = ledgerMuted, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+        Text(ledgerMoney(amount), color = ledgerText, fontWeight = FontWeight.SemiBold, fontSize = 32.sp,
+            style = androidx.compose.ui.text.TextStyle(fontFeatureSettings = "tnum"))
         if (detail != null) Text(detail, color = ledgerMuted, fontSize = 13.sp)
     }
 }
