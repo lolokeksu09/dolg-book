@@ -228,6 +228,7 @@ internal fun AnalyticsOverview(result: AnalyticsResult, onHistory: BiConsumer<Lo
                 AnalyticsHeading("Действительные операции за период")
                 AnalyticsMetricPair("Выдано в долг", analyticsMoney(data.effective.debts), "${data.effective.debtCount} записей",
                     "Получено оплат", analyticsMoney(data.effective.payments), "${data.effective.paymentCount} записей")
+                Text("Без записей, отменённых к концу периода.", color = ledgerMuted, fontSize = 12.sp)
             }
         }
         item("chart") {
@@ -254,11 +255,7 @@ internal fun AnalyticsOverview(result: AnalyticsResult, onHistory: BiConsumer<Lo
         }
         item("effective") {
             Column {
-                AnalyticsHeading("Действительные операции")
-                AnalyticsValue("Долги · сумма", analyticsMoney(data.effective.debts))
-                AnalyticsValue("Записей долга", data.effective.debtCount.toString())
-                AnalyticsValue("Оплаты · сумма", analyticsMoney(data.effective.payments))
-                AnalyticsValue("Записей оплаты", data.effective.paymentCount.toString())
+                AnalyticsHeading("Активность клиентов")
                 val mean = if (data.effective.debtCount == 0) null else BigDecimal.valueOf(data.effective.debts)
                     .divide(BigDecimal.valueOf(data.effective.debtCount.toLong()), 0, java.math.RoundingMode.HALF_UP).longValueExact()
                 AnalyticsValue("Средняя запись долга", mean?.let(::analyticsMoney) ?: "Нет данных")
@@ -294,12 +291,13 @@ internal fun AnalyticsOverview(result: AnalyticsResult, onHistory: BiConsumer<Lo
                 Text(if (ranking == AnalyticsRanking.BALANCE || ranking == AnalyticsRanking.OVERDUE) "На сегодня" else if (ranking == AnalyticsRanking.SETTLED) "Положительный остаток на начало, нулевой на конец" else if (ranking == AnalyticsRanking.NEW) "Первый действительный долг в выбранном периоде" else "За выбранный период · действительные операции",
                     color = ledgerMuted, fontSize = 12.sp)
                 if (ranked.isEmpty()) Text("Нет клиентов с таким показателем.", color = ledgerMuted)
+                else Text("Клиентов: " + ranked.size, color = ledgerMuted, fontSize = 12.sp)
             }
         }
         items(ranked.take(rankLimit), key = { "rank-" + it.id }) { customer ->
             val amount = ranking.value(customer)
             val label = if (ranking == AnalyticsRanking.FREQUENCY) "$amount записей" else analyticsMoney(amount)
-            Column(Modifier.fillMaxWidth().clickable { onCustomer.accept(customer.id) }.padding(vertical = 6.dp),
+            Column(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { onCustomer.accept(customer.id) }.padding(vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(result.names.getValue(customer.id), color = ledgerText, modifier = Modifier.weight(1f), fontWeight = FontWeight.Medium)
@@ -446,6 +444,7 @@ internal fun AnalyticsExportActions(result: AnalyticsResult, onExport: Consumer<
     }
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         AnalyticsHeading("Экспорт статистики")
+        Text(analyticsRange(period.from, period.to), color = ledgerText, fontSize = 14.sp)
         Text(if (result.request.customerId == null) "Только сводные показатели, без имён и телефонов."
             else "Отчёт содержит имя клиента и его финансовые показатели. Файл не зашифрован.",
             color = ledgerMuted, fontSize = 12.sp)
