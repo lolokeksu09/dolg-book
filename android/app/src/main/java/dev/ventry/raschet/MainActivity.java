@@ -718,108 +718,29 @@ public final class MainActivity extends ComponentActivity {
                 this::showOperation,this::showPurchaseDetails);
     }
     private View settingsView() {
-        LinearLayout view=screen("Настройки","");
-        section(view,"Общие","");
-        actionRow(view,"✎",shopName,"Изменить название",()->showShopName());
-        view.addView(textSizeSetting(),margin(-1,-2,8));
-        section(view,"Напоминания о долгах","");
-        view.addView(reminderSetting(),margin(-1,-2,14));
-        actionRow(view,"⌑","Защита входа",privacy.enabled()?"Включена":"Выключена",()->toggleSettings("privacy"));
-        if(settingsExpanded.equals("privacy")){
-        LinearLayout privacyCard=card();
-        privacyCard.addView(label(privacy.enabled()?"Вход защищён кодом устройства":"Защита входа выключена",16,TEXT,true));
-        privacyCard.addView(label("Подтверждение кодом Android при открытии и после минуты вне приложения.",13,MUTED,false));
-        addButton(privacyCard,privacy.enabled()?"Отключить защиту входа":"Защитить вход",false,
-                ()->authenticate(privacy.enabled()?BookPrivacy.DISABLE:BookPrivacy.ENABLE),1);
-        if(privacy.enabled())addButton(privacyCard,"Заблокировать книгу",false,()->{
-            unlocked=false;render();authenticate(BookPrivacy.OPEN);
-        },1);
-        else addButton(privacyCard,privacy.hideScreens()?"Разрешить снимки экрана":"Скрывать снимки и недавние",false,()->{
-            privacy.setHideScreens(!privacy.hideScreens());applyPrivacyFlag();render();
-        },1);
-        privacyCard.addView(label("При защите входа снимки блокируются. База отдельно не шифруется.",12,MUTED,false));
-        view.addView(privacyCard,margin(-1,-2,6));
-        }
-        actionRow(view,"↓","Резервные копии",getPreferences(MODE_PRIVATE).getLong("last_json_export",0L)==0L?"Нет подтверждённой внешней копии":"Экспорт и восстановление",()->toggleSettings("backup"));
-        if(settingsExpanded.equals("backup")){
         long lastExport=getPreferences(MODE_PRIVATE).getLong("last_json_export",0L);
         String lastExportText=lastExport==0L
-                ? "JSON-копия ещё не сохранена через это приложение."
-                : "Последний подтверждённый экспорт: "+dayFormat.format(
+                ?"JSON-копия ещё не сохранена через это приложение."
+                :"Последний подтверждённый экспорт: "+dayFormat.format(
                     Instant.ofEpochMilli(lastExport).atZone(ZoneId.systemDefault()).toLocalDate());
-        view.addView(label(lastExportText,13,lastExport==0L?ALERT:MUTED,false),margin(-1,-2,12));
-        LinearLayout vaultCard=card();
-        vaultCard.addView(label("Защищённые точки восстановления",16,TEXT,true));
-        int count=vault.count();
-        String status=count==0
-                ? "Пока нет точек. Создайте первую, прежде чем менять книгу."
-                : "Сохранено точек: "+count+" · последняя: "+dayFormat.format(
-                    Instant.ofEpochMilli(vault.latestTime())
-                            .atZone(ZoneId.systemDefault()).toLocalDate());
-        vaultCard.addView(label(status,13,MUTED,false));
-        if(recoveryPrefs().contains("last_error"))
-            vaultCard.addView(label("Автозащита не смогла создать последнюю копию. Сохраните JSON вручную.",13,RED,false));
-        vaultCard.addView(label("Зашифрованы на этом устройстве. После удаления приложения или сброса устройства восстановить их нельзя.",12,ALERT,false));
-        addButton(vaultCard,"Создать защищённую точку",false,
-                this::createRecoveryPoint,1);
-        if(vault.hasPoints())
-            addButton(vaultCard,"Восстановить защищённую точку",false,
-                    this::restoreRecoveryPoint,1);
-        view.addView(vaultCard,margin(-1,-2,10));
-        view.addView(recoveryAutoSetting(),margin(-1,-2,12));
-        actionRow(view,"↓","Скачать JSON-копию","Для переноса на другое устройство",()->exportBook(false));
-        actionRow(view,"≡","Экспортировать CSV","Таблица операций",()->exportBook(true));
-        actionRow(view,"↑","Восстановить из JSON","Полная замена данных после подтверждения",()->pickImport());
-        LinearLayout warning=card();
-        warning.addView(label("Важно о резервных копиях",15,ALERT,true));
-        warning.addView(label("При удалении приложения локальная книга будет потеряна. JSON-копия содержит имена, телефоны и суммы без шифрования.",13,MUTED,false),margin(-1,-2,7));
-        view.addView(warning,margin(-1,-2,6));
-        }
-        return scroll(view);
+        int count=settingsExpanded.equals("backup")?vault.count():0;
+        String recoveryStatus=count==0
+                ?"Пока нет точек. Создайте первую, прежде чем менять книгу."
+                :"Сохранено точек: "+count+" · последняя: "+dayFormat.format(
+                    Instant.ofEpochMilli(vault.latestTime()).atZone(ZoneId.systemDefault()).toLocalDate());
+        SettingsSnapshot state=new SettingsSnapshot(shopName,largeText,DebtReminderService.enabled(this),
+                privacy.enabled(),privacy.hideScreens(),settingsExpanded,lastExport!=0L,lastExportText,
+                recoveryStatus,count>0,recoveryPrefs().contains("last_error"),recoveryPrefs().getBoolean("enabled",false));
+        SettingsActions actions=new SettingsActions(this::showShopName,this::setLargeText,this::setReminders,
+                this::toggleSettings,()->authenticate(privacy.enabled()?BookPrivacy.DISABLE:BookPrivacy.ENABLE),
+                ()->{unlocked=false;render();authenticate(BookPrivacy.OPEN);},
+                ()->{if(!privacy.enabled()){privacy.setHideScreens(!privacy.hideScreens());applyPrivacyFlag();render();}},
+                this::createRecoveryPoint,this::restoreRecoveryPoint,this::setAutoRecovery,
+                ()->exportBook(false),()->exportBook(true),this::pickImport);
+        return SettingsCompose.create(this,state,actions);
     }
     private void toggleSettings(String section){
         settingsExpanded=settingsExpanded.equals(section)?"":section;render();
-    }
-    private LinearLayout entryCard(LedgerStore.Entry e,String clientName,boolean canceled) {
-        return entryCard(e,clientName,canceled,true);
-    }
-    private LinearLayout entryCard(LedgerStore.Entry e,String clientName,boolean canceled,boolean includeDate) {
-        return entryCard(e,clientName,canceled,includeDate,null);
-    }
-    private LinearLayout entryCard(LedgerStore.Entry e,String clientName,boolean canceled,boolean includeDate,Long remaining) {
-        LinearLayout card=row();
-        card.setGravity(Gravity.CENTER_VERTICAL);
-        card.setBackground(shape(BG,8,0));
-        card.setPadding(dp(4),dp(7),dp(4),dp(7));card.setMinimumHeight(dp(48));
-        int color=e.type.equals("payment")?ACCENT:e.type.equals("reversal")?ALERT:TEXT;
-        TextView marker=label(e.type.equals("debt")?"+":e.type.equals("payment")?"−":"↶",18,canceled?MUTED:color,true);
-        marker.setGravity(Gravity.CENTER);marker.setBackground(shape(PANEL,6,0));
-        LinearLayout.LayoutParams mp=new LinearLayout.LayoutParams(dp(26),dp(26));mp.rightMargin=dp(8);card.addView(marker,mp);
-        LinearLayout left=stack(2);
-        String kind=e.type.equals("debt")?"Долг":e.type.equals("payment")?"Оплата":"Отмена";
-        if(clientName!=null)left.addView(label(clientName,15,TEXT,true));
-        left.addView(label(kind+(canceled?" · отменено":"")+(clientName==null||!includeDate?"":" · "+formatDate(e.date)),clientName==null?15:12,canceled?MUTED:color,clientName==null));
-        if(clientName==null&&includeDate)left.addView(label(formatDate(e.date),12,MUTED,false));
-        if(remaining!=null&&!canceled)left.addView(label(remaining==0?"Погашено":"Осталось: "+money(remaining),12,remaining==0?MUTED:ALERT,false));
-        if(!e.note.isEmpty())left.addView(label(e.note,12,MUTED,false));
-        if(!e.due.isEmpty())left.addView(label("Вернуть до "+e.due,11,ALERT,false));
-        if(e.purchase!=null){
-            TextView details=label("Состав покупки · "+e.purchase.items.size()+" поз.",13,ACCENT,true);
-            details.setMinHeight(dp(48));details.setGravity(Gravity.CENTER_VERTICAL);
-            details.setFocusable(true);details.setClickable(true);
-            details.setOnClickListener(v->showPurchaseDetails(e));left.addView(details);
-        }
-        LinearLayout.LayoutParams leftParams=new LinearLayout.LayoutParams(0,-2,1);
-        leftParams.rightMargin=dp(8);card.addView(left,leftParams);
-        TextView sum=label((e.type.equals("payment")?"−":e.type.equals("debt")?"+":"↶ ")+money(e.amount),16,canceled?MUTED:color,true);
-        if(canceled)sum.setPaintFlags(sum.getPaintFlags()|android.graphics.Paint.STRIKE_THRU_TEXT_FLAG);
-        sum.setGravity(Gravity.END|Gravity.CENTER_VERTICAL);
-        card.addView(sum);
-        card.setBackground(ripple(shape(BG,8,0)));card.setFocusable(true);
-        card.setOnClickListener(v->showOperation(e.id));
-        sum.setContentDescription("Запись · "+money(e.amount));
-        sum.setFocusable(true);sum.setOnClickListener(v->showOperation(e.id));
-        return card;
     }
     private LinearLayout emptyState(int iconRes,String title,String subtitle,
                                     String actionLabel,Runnable action) {
@@ -855,36 +776,15 @@ public final class MainActivity extends ComponentActivity {
         return box;
     }
 
-    private LinearLayout reminderSetting() {
-        LinearLayout row=row();
-        row.setPadding(dp(10),dp(6),dp(10),dp(6));
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setBackground(shape(BG,8,0));
-        LinearLayout details=stack(5);
-        details.addView(label("Ежедневно проверять сроки",15,TEXT,true));
-        details.addView(label("Локально, без SMS. Время выбирает Android.",12,MUTED,false));
-        row.addView(details,new LinearLayout.LayoutParams(0,-2,1));
-        Switch toggle=new Switch(this);
-        toggle.setContentDescription("Ежедневные напоминания");
-        toggle.setChecked(DebtReminderService.enabled(this));
-        toggle.setOnCheckedChangeListener((button,checked)->{
-            if(checked&&!DebtReminderService.hasPermission(this)){
-                toggle.setChecked(false);
-                if(Build.VERSION.SDK_INT>=33)
-                    requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},
-                            NOTIFICATION_PERMISSION_REQUEST);
-                return;
-            }
-            if(!DebtReminderService.setEnabled(this,checked)){
-                toggle.setOnCheckedChangeListener(null);
-                toggle.setChecked(!checked);
-                message("Не удалось изменить расписание напоминаний.");
-            }else {
-                message(checked?"Ежедневная проверка сроков включена.":"Напоминания отключены.");
-            }
-        });
-        row.addView(toggle,new LinearLayout.LayoutParams(-2,dp(52)));
-        return row;
+    private void setReminders(boolean checked){
+        if(checked&&!DebtReminderService.hasPermission(this)){
+            if(Build.VERSION.SDK_INT>=33)requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},
+                    NOTIFICATION_PERMISSION_REQUEST);
+            return;
+        }
+        if(!DebtReminderService.setEnabled(this,checked))message("Не удалось изменить расписание напоминаний.");
+        else message(checked?"Ежедневная проверка сроков включена.":"Напоминания отключены.");
+        render();
     }
     @Override public void onRequestPermissionsResult(int request,String[] permissions,int[] result) {
         super.onRequestPermissionsResult(request,permissions,result);
@@ -921,51 +821,19 @@ public final class MainActivity extends ComponentActivity {
             return true;
         });
     }
-    private LinearLayout recoveryAutoSetting() {
-        LinearLayout row=row();
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(dp(10),dp(6),dp(10),dp(6));
-        row.setBackground(shape(BG,8,0));
-        LinearLayout detail=stack(4);
-        detail.addView(label("Автозащита после изменений",15,TEXT,true));
-        detail.addView(label("Создаёт локальную зашифрованную точку после сохранения операции. Сохраняются последние четыре.",12,MUTED,false));
-        row.addView(detail,new LinearLayout.LayoutParams(0,-2,1));
-        Switch toggle=new Switch(this);
-        toggle.setChecked(recoveryPrefs().getBoolean("enabled",false));
-        toggle.setContentDescription("Автозащита книги");
-        toggle.setOnCheckedChangeListener((button,checked)->{
-            recoveryPrefs().edit().putBoolean("enabled",checked).apply();
-            if(checked)enqueueRecovery();
-            message(checked?"Локальная автозащита включена.":"Локальная автозащита отключена.");
-        });
-        row.addView(toggle,new LinearLayout.LayoutParams(-2,dp(52)));
-        return row;
+    private void setAutoRecovery(boolean checked){
+        recoveryPrefs().edit().putBoolean("enabled",checked).apply();
+        if(checked)enqueueRecovery();
+        message(checked?"Локальная автозащита включена.":"Локальная автозащита отключена.");
+        render();
     }
     private void enqueueRecovery() {RecoveryScheduler.enqueue(getApplicationContext());}
-    private LinearLayout textSizeSetting() {
-        LinearLayout row=row();
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(dp(10),dp(6),dp(10),dp(6));
-        row.setBackground(shape(BG,8,0));
-        LinearLayout details=stack(5);
-        details.addView(label("Крупный текст",16,TEXT,true));
-        details.addView(label("Увеличить текст для удобного чтения",12,MUTED,false));
-        row.addView(details,new LinearLayout.LayoutParams(0,-2,1));
-        Switch toggle=new Switch(this);
-        toggle.setShowText(false);
-        toggle.setChecked(largeText);
-        toggle.setContentDescription("Крупный текст");
-        toggle.setOnCheckedChangeListener((buttonView,checked)->{
-            if(largeText!=checked){
-                largeText=checked;
-                getPreferences(MODE_PRIVATE).edit().putBoolean("large",checked).apply();
-                render();
-            }
-        });
-        row.addView(toggle,new LinearLayout.LayoutParams(-2,dp(50)));
-        row.setContentDescription("Крупный текст");
-        row.setOnClickListener(v->toggle.setChecked(!toggle.isChecked()));
-        return row;
+    private void setLargeText(boolean checked){
+        if(largeText!=checked){
+            largeText=checked;
+            getPreferences(MODE_PRIVATE).edit().putBoolean("large",checked).apply();
+            render();
+        }
     }
 
     private void applyPrivacyFlag(){
@@ -1011,7 +879,7 @@ public final class MainActivity extends ComponentActivity {
         if(privacy!=null&&!authInFlight)stoppedAt=android.os.SystemClock.elapsedRealtime();
         reloadOnStart=true;
         bookViewModel.clear();
-        if(page!=null&&needsBookSnapshot())page.removeAllViews();
+        if(page!=null)page.removeAllViews();
         super.onStop();
     }
     private void showQuickDebt(){showQuickDebt(false);}
