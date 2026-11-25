@@ -1533,7 +1533,8 @@ public final class MainActivity extends ComponentActivity {
         LedgerStore.Client c=null;
         for(LedgerStore.Client person:ledger.clients())if(person.id.equals(clientId))c=person;
         if(c==null){message("Клиент не найден.");return;}
-        final long available=LedgerStore.balance(ledger.entriesForClient(clientId),clientId);
+        final List<LedgerStore.Entry> clientEntries=ledger.entriesForClient(clientId);
+        final long available=LedgerStore.balance(clientEntries,clientId);
         final boolean fromBook=tab.equals("Главная");
         final boolean fromCollections=tab.equals("Возврат");
         if(directory.archived(clientId,available)){message("Сначала верните клиента из архива.");return;}
@@ -1549,24 +1550,39 @@ public final class MainActivity extends ComponentActivity {
         if(savedDraft)
             content.addView(label("Незавершённый черновик восстановлен. Проверьте сумму перед записью.",12,ACCENT,false));
         EditText amount=field("0,00",preset);amount.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        amount.setTextSize(largeText?28:25);amount.setMinHeight(dp(60));
         content.addView(formGroup("Сумма, ₽",amount));
+        LocalDate[] entryDay={savedDraft?previous.day:initialDay};
+        final boolean payment=type.equals("payment");
+        long[] historicalMaximum={payment?DatedPayments.maximum(clientEntries,clientId,entryDay[0],LocalDate.now(),ZoneId.systemDefault()):available};
         final LimitNotice notice=type.equals("debt")?new LimitNotice(content):null;
         if(notice!=null){
-            addRecentAmount(content,amount,RecentDebts.lastAmounts(ledger.entriesForClient(clientId)).getOrDefault(clientId,0L));
+            addRecentAmount(content,amount,RecentDebts.lastAmounts(clientEntries).getOrDefault(clientId,0L));
             Runnable check=()->notice.update(clientId,available,previewAmount(amount));
             amount.addTextChangedListener(watcher(v->check.run()));check.run();
         }
-        if(type.equals("payment")){
-            LinearLayout amounts=row();
-            addButton(amounts,"Половина",false,()->amount.setText(amountInput(Math.max(1L,available/2))),1);
-            addButton(amounts,"Весь остаток",false,()->amount.setText(amountInput(available)),1);
+        LinearLayout amounts=row();
+        TextView dateLimit=label("",12,MUTED,false);
+        dateLimit.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
+        final TextView[] fullButton={null};
+        final LinearLayout promiseActions=stack(0);
+        if(payment){
+            addButton(amounts,"Половина",false,()->{
+                long maximum=historicalMaximum[0];
+                if(maximum>0)amount.setText(amountInput(Math.max(1L,maximum/2)));
+            },1);
+            addButton(amounts,"Весь остаток",false,()->{
+                if(historicalMaximum[0]>0)amount.setText(amountInput(historicalMaximum[0]));
+            },1);
+            fullButton[0]=(TextView)amounts.getChildAt(1);
             content.addView(amounts,margin(-1,dp(controlHeight()),0));
             ClientDirectory.FollowUp promise=directory.followUp(clientId);
             if(promise!=null&&promise.amount>0){
-                PaymentPromises.Progress progress=PaymentPromises.calculate(ledger.entriesForClient(clientId),clientId,promise,LocalDate.now(),ZoneId.systemDefault());
+                PaymentPromises.Progress progress=PaymentPromises.calculate(clientEntries,clientId,promise,LocalDate.now(),ZoneId.systemDefault());
                 long outstanding=Math.min(available,Math.max(0L,promise.amount-progress.paid));
-                if(progress.valid&&outstanding>0)addButton(content,"По обещанию: "+money(outstanding),false,()->amount.setText(amountInput(outstanding)),1);
+                if(progress.valid&&outstanding>0)addButton(promiseActions,"По обещанию: "+money(outstanding),false,()->amount.setText(amountInput(outstanding)),1);
             }
+            content.addView(promiseActions);
         }
         TextView projected=label("Остаток после записи: —",16,ACCENT,true);
         projected.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
@@ -1576,26 +1592,30 @@ public final class MainActivity extends ComponentActivity {
                 long cents=LedgerStore.parseAmount(amount.getText().toString());
                 long next=type.equals("payment")?available-cents:available+cents;
                 if(next<0){projected.setText("Оплата превышает остаток");projected.setTextColor(RED);}
+                else if(payment&&cents>historicalMaximum[0]){projected.setText("Оплата превышает доступную сумму на эту дату");projected.setTextColor(RED);}
                 else if(next>LedgerStore.MAX_AMOUNT){projected.setText("Превышен максимальный остаток");projected.setTextColor(RED);}
                 else{projected.setText("Остаток после записи: "+money(next));projected.setTextColor(ACCENT);}
             }catch(Exception e){projected.setText("Остаток после записи: —");projected.setTextColor(MUTED);}
         };
         amount.addTextChangedListener(watcher(v->updateProjection.run()));
         updateProjection.run();
-        LocalDate[] entryDay={savedDraft?previous.day:initialDay};
         TextView entryDate=debtDateField(entryDay);
         content.addView(formGroup(type.equals("debt")?"Дата записи":"Дата оплаты",entryDate));
-        if(type.equals("payment")){
-            TextView dateLimit=label("",12,MUTED,false);content.addView(dateLimit);
-            long[] historicalMaximum={available};
+        if(payment){
+            content.addView(dateLimit);
             Runnable colorCheck=()->dateLimit.setTextColor(historicalMaximum[0]==0||previewAmount(amount)>historicalMaximum[0]?RED:MUTED);
             Runnable dateCheck=()->{
                 LocalDate today=LocalDate.now();
-                if(entryDay[0].equals(today)){dateLimit.setVisibility(View.GONE);return;}
-                historicalMaximum[0]=DatedPayments.maximum(ledger.entriesForClient(clientId),clientId,entryDay[0],today,ZoneId.systemDefault());
-                dateLimit.setVisibility(View.VISIBLE);
+                boolean current=entryDay[0].equals(today);
+                historicalMaximum[0]=DatedPayments.maximum(clientEntries,clientId,entryDay[0],today,ZoneId.systemDefault());
+                String caption=current?"Весь остаток":"Всё за дату";
+                fullButton[0].setText(caption);fullButton[0].setContentDescription(caption);
+                for(int i=0;i<amounts.getChildCount();i++)amounts.getChildAt(i).setEnabled(historicalMaximum[0]>0);
+                // Promises are current-state shortcuts, not historical amounts.
+                promiseActions.setVisibility(current?View.VISIBLE:View.GONE);
+                dateLimit.setVisibility(current?View.GONE:View.VISIBLE);
                 dateLimit.setText("На эту дату можно принять до "+money(historicalMaximum[0])+". Проверьте дату фактической оплаты.");
-                colorCheck.run();
+                colorCheck.run();updateProjection.run();
             };
             entryDate.addTextChangedListener(watcher(v->dateCheck.run()));
             amount.addTextChangedListener(watcher(v->colorCheck.run()));dateCheck.run();
