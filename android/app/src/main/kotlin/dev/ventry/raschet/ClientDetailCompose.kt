@@ -36,6 +36,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -196,7 +197,7 @@ internal fun ClientDetailContent(model: DetailData, filter: String, initialLimit
     val client = model.status.client
     BoxWithConstraints(Modifier.fillMaxSize().background(bg), contentAlignment = Alignment.TopCenter) {
         val stacked = largeText || LocalDensity.current.fontScale > 1.2f || maxWidth < 340.dp
-        LazyColumn(Modifier.widthIn(max = 800.dp).fillMaxSize(),
+        LazyColumn(Modifier.widthIn(max = 800.dp).fillMaxSize().testTag("client-detail-list"),
             contentPadding = PaddingValues(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             item("context") {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
