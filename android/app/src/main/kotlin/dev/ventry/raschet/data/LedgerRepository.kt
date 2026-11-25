@@ -16,6 +16,8 @@ interface LedgerRepository {
     fun saveClient(command: ClientCommand)
     fun saveDebt(command: ClientCommand.Debt, context: Context): WriteReceipt
     fun savePayment(command: ClientCommand.Payment): WriteReceipt
+    fun correct(command: ClientCommand.Correction): WriteReceipt
+    fun reverse(command: ClientCommand.Reversal): WriteReceipt
 }
 
 /** Borrows the existing activity-owned store; does not open or close another connection. */
@@ -31,4 +33,16 @@ class SqliteLedgerRepository(private val store: LedgerStore) : LedgerRepository 
     }
     override fun saveDebt(command: ClientCommand.Debt, context: Context): WriteReceipt = store.recordCheckedDebt(command, context)
     override fun savePayment(command: ClientCommand.Payment): WriteReceipt = store.recordCheckedPayment(command)
+
+    override fun correct(command: ClientCommand.Correction): WriteReceipt {
+        require(command.expectedId.isNotBlank()) { "Не выбрана операция для исправления." }
+        store.correctSelected(command.clientId, command.expectedId, command.amount, command.due, command.note, command.reason)
+        return WriteReceipt(WriteDestination.DETAIL, "correction", command.clientId, null, 0, false)
+    }
+
+    override fun reverse(command: ClientCommand.Reversal): WriteReceipt {
+        require(command.expectedId.isNotBlank()) { "Не выбрана операция для отмены." }
+        store.reverseSelected(command.clientId, command.expectedId, command.reason)
+        return WriteReceipt(WriteDestination.KEEP, "reversal", command.clientId, null, 0, false)
+    }
 }
