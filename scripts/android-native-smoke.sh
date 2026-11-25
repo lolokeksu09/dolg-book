@@ -402,7 +402,7 @@ sleep 0.4
 dump_ui
 grep -Fq '800,00' android/build/native-ui.xml
 
-# Simplified book: catalog no longer exists, manual itemized debt remains optional.
+# The catalog belongs to settings, not home; manual itemized debt remains optional.
 dump_ui
 if grep -Fq 'Каталог товаров' android/build/native-ui.xml; then
   echo 'Unexpected catalog on home'; exit 1
@@ -417,7 +417,7 @@ tap_text 'Долг по товарам'
 sleep 0.4
 dump_ui
 if grep -Fq 'Выбрать из каталога' android/build/native-ui.xml; then
-  echo 'Unexpected catalog picker'; exit 1
+  echo 'Unexpected catalog picker in a clean empty catalog'; exit 1
 fi
 tap_text 'Название товара'
 adb shell input text QA-Apple
