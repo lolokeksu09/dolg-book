@@ -23,13 +23,15 @@ object ClientWriteService {
                 }
                 is ClientCommand.Debt -> repository.saveDebt(command, application)
                 is ClientCommand.Payment -> repository.savePayment(command)
+                is ClientCommand.Correction -> repository.correct(command)
+                is ClientCommand.Reversal -> repository.reverse(command)
             }
         }
         // Post-commit housekeeping must never turn a committed operation into a retryable failure.
         try {
             when (command) {
                 is ClientCommand.Create -> clearQuick(application, command.id)
-                is ClientCommand.Edit -> Unit
+                is ClientCommand.Edit, is ClientCommand.Correction, is ClientCommand.Reversal -> Unit
                 is ClientCommand.Debt -> {
                     if (command.quick) clearQuick(application, command.id)
                     else clearOperation(application, checkNotNull(command.existingId), "debt", command.id)
