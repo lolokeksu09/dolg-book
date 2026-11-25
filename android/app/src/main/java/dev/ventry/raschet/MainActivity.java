@@ -945,8 +945,7 @@ public final class MainActivity extends ComponentActivity {
         EditText amount=field("0,00",previous==null?null:previous.amount);amount.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);
         name.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_NEXT);
         amount.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_DONE);
-        amount.setTextSize(largeText?28:25);
-        amount.setMinHeight(dp(60));
+        styleMoneyField(amount);
         form.addView(formGroup("Имя покупателя",name));
         LinearLayout matches=stack(2);form.addView(matches);
         form.addView(formGroup(fromClients?"Сумма долга, ₽ (необязательно)":"Сумма долга, ₽",amount));
@@ -1552,7 +1551,12 @@ public final class MainActivity extends ComponentActivity {
         if(directory.archived(clientId,available)){message("Сначала верните клиента из архива.");return;}
         if(type.equals("payment")&&available<=0){message("Нет долга для оплаты.");return;}
         LinearLayout content=stack(7);
-        content.addView(label(c.name+" · остаток "+money(available),13,MUTED,false));
+        LinearLayout identity=stack(4);
+        identity.setPadding(dp(12),dp(10),dp(12),dp(10));
+        identity.setBackground(shape(ELEVATED,10,0));
+        identity.addView(label(c.name,17,TEXT,true));
+        identity.addView(label("Текущий остаток: "+money(available),13,MUTED,false));
+        content.addView(identity);
         LedgerDrafts drafts=new LedgerDrafts(this);
         LedgerDrafts.Draft previous=drafts.get(clientId,type);
         if(previous!=null&&ledger.hasEntryId(previous.id)){drafts.clear(clientId,type);previous=null;}
@@ -1562,7 +1566,7 @@ public final class MainActivity extends ComponentActivity {
         if(savedDraft)
             content.addView(label("Незавершённый черновик восстановлен. Проверьте сумму перед записью.",12,ACCENT,false));
         EditText amount=field("0,00",preset);amount.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);
-        amount.setTextSize(largeText?28:25);amount.setMinHeight(dp(60));
+        styleMoneyField(amount);
         content.addView(formGroup("Сумма, ₽",amount));
         LocalDate[] entryDay={savedDraft?previous.day:initialDay};
         final boolean payment=type.equals("payment");
@@ -1598,7 +1602,11 @@ public final class MainActivity extends ComponentActivity {
         }
         TextView projected=label("Остаток после записи: —",16,ACCENT,true);
         projected.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
-        content.addView(projected);
+        LinearLayout projectionPanel=stack(0);
+        projectionPanel.setPadding(dp(12),dp(10),dp(12),dp(10));
+        projectionPanel.setBackground(shape(ELEVATED,8,0));
+        projectionPanel.addView(projected);
+        content.addView(projectionPanel);
         Runnable updateProjection=()->{
             try{
                 long cents=LedgerStore.parseAmount(amount.getText().toString());
@@ -1843,10 +1851,12 @@ public final class MainActivity extends ComponentActivity {
         if(bookViewModel.hasPendingWrite())return;
         Dialog dialog=new Dialog(this);
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
-        LinearLayout box=stack(7);
-        box.setPadding(dp(14),dp(14),dp(14),dp(14));
-        box.setBackground(shape(PANEL,12,BORDER));
-        box.addView(label(title,20,TEXT,true));
+        LinearLayout box=stack(10);
+        box.setPadding(dp(18),dp(16),dp(18),dp(16));
+        box.setBackground(shape(PANEL,16,BORDER));
+        TextView heading=label(title,22,TEXT,true);
+        if(android.os.Build.VERSION.SDK_INT>=28)heading.setAccessibilityHeading(true);
+        box.addView(heading);
         addListDivider(box);
         ScrollView scroll=new ScrollView(this){
             @Override protected void onMeasure(int widthSpec,int heightSpec){
@@ -1864,6 +1874,7 @@ public final class MainActivity extends ComponentActivity {
         box.addView(scroll,new LinearLayout.LayoutParams(-1,-2));
         TextView error=label("",12,RED,false);
         error.setVisibility(View.GONE);
+        error.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
         box.addView(error);
         LinearLayout buttons=row();
         addButton(buttons,"Закрыть",false,dialog::dismiss,1);
@@ -1889,6 +1900,7 @@ public final class MainActivity extends ComponentActivity {
             if(privacy.hideScreens())window.addFlags(WindowManager.LayoutParams.FLAG_SECURE);
             window.setBackgroundDrawableResource(android.R.color.transparent);
             window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+            window.setDimAmount(.62f);
             window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
             window.setLayout(Math.min(getResources().getDisplayMetrics().widthPixels-dp(26),dp(510)),
                     WindowManager.LayoutParams.WRAP_CONTENT);
@@ -2078,14 +2090,23 @@ public final class MainActivity extends ComponentActivity {
     private LinearLayout formGroup(String title,View child) {
         LinearLayout group=stack(4);
         group.addView(label(title,13,MUTED,true));
-        group.addView(child,new LinearLayout.LayoutParams(-1,dp(controlHeight())));
+        group.addView(child,new LinearLayout.LayoutParams(-1,Math.max(dp(controlHeight()),child.getMinimumHeight())));
         return group;
+    }
+    private void styleMoneyField(EditText edit){
+        edit.setTextSize(largeText?32:29);
+        edit.setMinimumHeight(dp(64));
+        edit.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));
+        edit.setFontFeatureSettings("kern, tnum");
+        edit.setGravity(Gravity.CENTER_VERTICAL|Gravity.START);
+        edit.setPadding(dp(14),dp(6),dp(14),dp(6));
     }
     private EditText field(String hint,String value) {
         EditText edit=new EditText(this);
         edit.setSingleLine(true);
         edit.setTextSize(largeText?17:15);
         edit.setTextColor(TEXT);edit.setHintTextColor(MUTED);
+        edit.setFontFeatureSettings("kern, tnum");
         edit.setHint(hint);if(value!=null)edit.setText(value);
         edit.setPadding(dp(11),0,dp(11),0);edit.setMinimumHeight(dp(48));
         android.graphics.drawable.StateListDrawable focusBackground=new android.graphics.drawable.StateListDrawable();
