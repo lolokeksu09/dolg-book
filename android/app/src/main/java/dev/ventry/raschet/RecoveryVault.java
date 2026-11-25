@@ -24,6 +24,7 @@ public final class RecoveryVault {
     private static final String ALIAS="raschet.recovery.aes.v1";
     private static final byte[] MAGIC={'V','R','C','1'};
     private static final int IV_SIZE=12, MAX_BYTES=BackupSize.MAX_BYTES;
+    private static final Object FILE_LOCK=new Object();
     private final File dir;
 
     public RecoveryVault(Context context) {
@@ -31,10 +32,13 @@ public final class RecoveryVault {
     }
     RecoveryVault(File root){dir=root;}
 
-    public synchronized File create(LedgerStore ledger) throws Exception {
-        return createJson(ledger.exportJson());
+    public File create(LedgerStore ledger) throws Exception {
+        synchronized(FILE_LOCK){return createJsonLocked(ledger.exportJson());}
     }
-    synchronized File createJson(String json) throws Exception {
+    File createJson(String json) throws Exception {
+        synchronized(FILE_LOCK){return createJsonLocked(json);}
+    }
+    private File createJsonLocked(String json) throws Exception {
         if(json==null)throw new IllegalArgumentException("Пустая копия.");
         byte[] source=json.getBytes(StandardCharsets.UTF_8);
         BackupSize.requireSupported(source.length);
@@ -68,12 +72,17 @@ public final class RecoveryVault {
         List<File> points=points();
         return points.isEmpty()?0L:points.get(0).lastModified();
     }
-    public synchronized String readLatest() throws Exception {
-        List<File> points=points();
-        if(points.isEmpty())throw new IOException("Нет защищённых точек.");
-        return read(points.get(0));
+    public String readLatest() throws Exception {
+        synchronized(FILE_LOCK){
+            List<File> points=points();
+            if(points.isEmpty())throw new IOException("Нет защищённых точек.");
+            return readLocked(points.get(0));
+        }
     }
-    synchronized String read(File file) throws Exception {
+    String read(File file) throws Exception {
+        synchronized(FILE_LOCK){return readLocked(file);}
+    }
+    private String readLocked(File file) throws Exception {
         if(!file.getParentFile().equals(dir))throw new SecurityException("Недоступная точка.");
         if(file.length()<4+IV_SIZE+16||file.length()>MAX_BYTES+4+IV_SIZE+16)
             throw new IOException("Неверный размер точки.");
