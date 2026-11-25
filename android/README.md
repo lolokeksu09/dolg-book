@@ -291,3 +291,8 @@ Shared LedgerTheme across work screens, introduction and launch. Black workspace
 ## 0.29.0-beta.1 — проверка срока при исправлении
 
 При открытии календаря для исправления долга выбранный ранее срок возврата теперь используется как начальная дата; пустое или некорректное значение безопасно возвращается к сегодняшней дате. Emulator smoke additionally opens debt/payment operation details, checks remaining and current balances, and verifies correction and reversal projections without committing test changes. No schema, JSON, or financial transaction semantics changed.
+
+
+## Ventry product identity and data boundary (development)
+
+The native app uses the Ventry forest, sand and moss palette. Catalog management is available from Settings; itemized debts support active catalog products and units (including kg with three decimal places). Catalog edits do not change existing purchase snapshots. Both portable JSON import and encrypted local recovery accept up to 10 MiB of UTF-8 JSON. Exports are compact; if a larger JSON is saved for rescue, the app warns that it cannot be imported and does not mark it as a restorable copy. Keep the original app and database. JSON remains v1–v4 and does not contain all local settings or drafts. This is not a signed release or a complete backup migration.
