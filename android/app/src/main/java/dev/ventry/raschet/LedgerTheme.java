@@ -1,10 +1,10 @@
 package dev.ventry.raschet;
 
-/** Ventry forest/sand/moss/gold palette, adapted for a dark native ledger. */
+/** Ventry Ledger — neutral near-black surfaces, warm silver actions, amber warnings. Brand mark remains unchanged. */
 final class LedgerTheme {
-    static final int BG=0xff061d16, PANEL=0xff09271e, ELEVATED=0xff15372c;
-    static final int BORDER=0xff536b5e, TEXT=0xfff4f0df, MUTED=0xffc7d3c9;
-    static final int ACCENT=0xffd5dfc9, INK=0xff102e25, ALERT=0xffd3bc90, RED=0xffffa6a6;
-    static final int SELECTED=0xff25483a;
+    static final int BG=0xff101113, PANEL=0xff191a1d, ELEVATED=0xff24262a;
+    static final int BORDER=0xff45474d, TEXT=0xfff2f1ee, MUTED=0xffb0b2b8;
+    static final int ACCENT=0xffe3d5bd, INK=0xff191715, ALERT=0xffe9b66f, RED=0xffffa5a5;
+    static final int SELECTED=0xff343237;
     private LedgerTheme() {}
 }
