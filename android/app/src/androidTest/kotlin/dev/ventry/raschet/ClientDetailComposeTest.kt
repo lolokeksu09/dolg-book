@@ -88,4 +88,21 @@ class ClientDetailComposeTest {
         assertEquals(0, payments.get())
     }
 
+
+    @Test fun detailOpenedFromBookOffersExplicitReturnAction() {
+        val client = LedgerStore.Client("journal", "Клиент книги", "")
+        val status = CollectionsInsights.CustomerStatus(client, 10000L, 0L, 0L, null)
+        val model = DetailData(status, false, emptyList(), emptyList(), emptyList(), 0)
+        val back = AtomicInteger()
+        val actions = DetailActions({ back.incrementAndGet() }, {}, {}, {}, {}, {}, {}, {}, {})
+        compose.setContent {
+            LedgerMaterialTheme {
+                ClientDetailContent(model, ClientStatement.ALL, 80, false, false, actions, fromBook = true)
+            }
+        }
+        compose.onNodeWithText("←  Книга").performClick()
+        assertEquals(1, back.get())
+        compose.onNodeWithText("←  Все клиенты").assertDoesNotExist()
+    }
+
 }
