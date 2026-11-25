@@ -92,7 +92,7 @@ internal data class BookActions(
     val openClient: (String) -> Unit, val operation: (String) -> Unit,
     val payClient: (String) -> Unit, val debtClient: (String) -> Unit,
     val debtDate: (LocalDate) -> Unit, val paymentDate: (LocalDate) -> Unit,
-    val report: () -> Unit, val backup: () -> Unit
+    val report: () -> Unit, val backup: () -> Unit, val analytics: (() -> Unit)? = null
 )
 
 object BookCompose {
@@ -109,12 +109,13 @@ object BookCompose {
         onDebtDate: Consumer<LocalDate>, onPaymentDate: Consumer<LocalDate>,
         onReport: Runnable, onBackup: Runnable, initialCalendar: Boolean = false,
         initialCalendarDay: LocalDate? = null,
-        onCalendar: BiConsumer<Boolean, LocalDate> = BiConsumer { _, _ -> }): ComposeView {
+        onCalendar: BiConsumer<Boolean, LocalDate> = BiConsumer { _, _ -> },
+        onAnalytics: Runnable? = null): ComposeView {
         val app = owner.applicationContext
         val actions = BookActions(onDebt::run, onPayment::run, onCollections::run, onMode::accept,
             onFilters::run, onClear::run, onToggle::accept, onAutoExpanded::accept, onLimit::accept,
             onOpenClient::accept, onOperation::accept, onPayClient::accept, onDebtClient::accept,
-            onDebtDate::accept, onPaymentDate::accept, onReport::run, onBackup::run)
+            onDebtDate::accept, onPaymentDate::accept, onReport::run, onBackup::run, onAnalytics?.let { run -> { run.run() } })
         val expanded = initialExpanded.toSet()
         return ComposeView(owner).apply {
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindowOrReleasedFromPool)
@@ -212,6 +213,9 @@ internal fun BookContent(model: BookUiModel, payments: Boolean, hasFilter: Boole
                     Button(onClick = actions.debt, shape = RoundedCornerShape(10.dp), modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("+ Записать долг") }
                     OutlinedButton(onClick = actions.payment, shape = RoundedCornerShape(10.dp), modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("Принять оплату") }
                 }
+            }
+            actions.analytics?.let { open ->
+                item("analytics") { LedgerMetric("Статистика", "Динамика, должники и сравнение периодов", action = open) }
             }
             if (model.draft != null) item("draft") { LedgerMetric("Незавершённая запись", model.draft, ledgerAccent, actions.debt) }
             item("modes") {
