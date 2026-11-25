@@ -239,6 +239,10 @@ public final class MainActivity extends ComponentActivity {
         addListDivider(root);
 
         LinearLayout body=row();
+        // Weighted Compose hosts need bounded height even in the first measure pass.
+        // Baseline alignment would speculatively measure a zero-width weighted child
+        // with UNSPECIFIED width and height before distributing the available space.
+        body.setBaselineAligned(false);
         if(tablet) {
             navigation=stack(8);
             navigation.setPadding(dp(8),dp(12),dp(8),dp(8));
@@ -462,6 +466,7 @@ public final class MainActivity extends ComponentActivity {
     }
     private View tabletClientsView(BookScreenData data) {
         LinearLayout columns=row();
+        columns.setBaselineAligned(false);
         columns.setBackgroundColor(BG);
         View list=clientsView(data);
         columns.addView(list,new LinearLayout.LayoutParams(0,-1,38f));
