@@ -370,7 +370,7 @@ sleep 0.4
 fill_form_input 0 ArchiveBuyer
 tap_text 'Сохранить'
 sleep 0.5
-tap_text 'ArchiveBuyer'
+tap_text 'ArchiveBuyer' client
 sleep 0.4
 tap_text 'Ещё действия'
 sleep 0.3
@@ -383,7 +383,7 @@ sleep 0.5
 dump_ui
 grep -Fq 'ArchiveBuyer' android/build/native-ui.xml
 adb exec-out screencap -p > android/build/native-client-archive.png
-tap_text 'ArchiveBuyer'
+tap_text 'ArchiveBuyer' client
 sleep 0.4
 tap_text 'Вернуть из архива'
 sleep 0.4
@@ -463,7 +463,7 @@ tap_text "$day"
 sleep 0.3
 dump_ui
 grep -Fq 'QuickBuyer' android/build/native-ui.xml
-tap_text 'QuickBuyer'
+tap_text 'QuickBuyer' client
 sleep 0.4
 dump_ui
 grep -Fq 'Остаток долга' android/build/native-ui.xml
@@ -484,7 +484,7 @@ sleep 0.5
 dump_ui
 grep -Fq 'DirectoryBuyer' android/build/native-ui.xml
 grep -Fq '222,00' android/build/native-ui.xml
-tap_text 'DirectoryBuyer'
+tap_text 'DirectoryBuyer' client
 sleep 0.4
 tap_text '+ Долг'
 sleep 0.4
@@ -568,7 +568,7 @@ sleep 0.5
 dump_ui
 grep -Fq 'Долговая книга' android/build/native-ui.xml
 grep -Fq 'DirectoryBuyer' android/build/native-ui.xml
-tap_text 'DirectoryBuyer'
+tap_text 'DirectoryBuyer' client
 sleep 0.4
 dump_ui
 grep -Fq 'Остаток долга' android/build/native-ui.xml
@@ -601,7 +601,7 @@ tap_text 'Книга'
 # Client-specific debt limit: denial first, explicit confirmation posts once.
 tap_text 'Клиенты'
 sleep 0.4
-tap_text 'DirectoryBuyer'
+tap_text 'DirectoryBuyer' client
 sleep 0.4
 tap_text 'Ещё действия'
 sleep 0.4
