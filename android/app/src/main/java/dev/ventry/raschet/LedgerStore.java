@@ -98,6 +98,16 @@ public final class LedgerStore extends SQLiteOpenHelper {
             db.setTransactionSuccessful();
         }finally{db.endTransaction();}
     }
+    public synchronized List<dev.ventry.raschet.data.CatalogRecord> catalogRecords(){
+        List<dev.ventry.raschet.data.CatalogRecord> result=new ArrayList<>();
+        for(Product p:products())result.add(new dev.ventry.raschet.data.CatalogRecord(
+                p.id,p.name,p.category,p.unit,p.price,p.favorite,p.archived));
+        return java.util.Collections.unmodifiableList(result);
+    }
+    public synchronized void saveCatalogRecord(dev.ventry.raschet.data.CatalogRecord record){
+        saveProduct(new Product(record.getId(),record.getName(),record.getCategory(),record.getUnit(),
+                record.getPrice(),record.getFavorite(),record.getArchived()));
+    }
     private static ContentValues productValues(Product p){
         ContentValues row=new ContentValues();
         row.put("id",p.id);row.put("name",p.name);row.put("category",p.category);
@@ -283,6 +293,35 @@ public final class LedgerStore extends SQLiteOpenHelper {
     public synchronized void addPurchase(String clientId,Purchase purchase,String due,String note){
         if(purchase==null)throw new IllegalArgumentException("Добавьте товары.");
         addEntry(clientId,"debt",purchase.total,due,note,purchase);
+    }
+    /** Revalidate the immutable purchase and exact credit approval inside one transaction. */
+    public synchronized dev.ventry.raschet.data.WriteReceipt recordCheckedPurchase(
+            dev.ventry.raschet.data.ClientCommand.ItemizedDebt command, Context context){
+        UUID.fromString(command.getId());
+        Purchase purchase=Purchase.decode(command.getPurchaseJson());
+        if(purchase==null)throw new IllegalArgumentException("Добавьте товары.");
+        SQLiteDatabase db=getWritableDatabase();
+        db.beginTransaction();
+        try{
+            if(hasEntryId(command.getId())||hasClientId(command.getId()))
+                throw new IllegalArgumentException("Эта покупка уже сохранена. Откройте историю.");
+            String client=command.getClientId();
+            ClientDirectory directory=new ClientDirectory(context);
+            long balance=balance(entries(),client),limit=directory.debtLimit(client);
+            if(directory.archived(client,balance))
+                throw new IllegalArgumentException("Сначала верните клиента из архива.");
+            boolean confirmed=dev.ventry.raschet.domain.DebtApproval.matches(
+                    command.getApproval(),client,balance,limit,purchase.total);
+            if(!confirmed&&!command.getApproval().isEmpty()&&DebtLimits.requiresConfirmation(limit,balance,purchase.total))
+                throw new IllegalArgumentException("Остаток или лимит изменился. Откройте форму заново и подтвердите превышение.");
+            DebtLimits.requireConsent(limit,balance,purchase.total,confirmed);
+            insertEntry(db,client,"debt",purchase.total,command.getDue(),command.getNote(),purchase,
+                    Instant.now().toString(),command.getId());
+            dev.ventry.raschet.data.WriteReceipt receipt=new dev.ventry.raschet.data.WriteReceipt(
+                    dev.ventry.raschet.data.WriteDestination.DETAIL,"purchase",client,null,0,false);
+            db.setTransactionSuccessful();
+            return receipt;
+        }finally{db.endTransaction();}
     }
     /** Existing-client draft submission uses an immutable operation ID, just like quick debt. */
     synchronized void addDraftPayment(String clientId,long amount,String note,String entryId){
