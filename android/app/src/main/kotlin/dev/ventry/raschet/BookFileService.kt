@@ -10,11 +10,13 @@ import dev.ventry.raschet.data.WriteReceipt
 import java.io.IOException
 import java.io.OutputStream
 import java.io.OutputStreamWriter
+import java.io.Reader
+import java.io.StringReader
 import java.time.ZoneId
 
 /** Runs under the same serialized IO boundary as financial writes. No Activity or View is retained. */
 internal object BookFileService {
-    fun execute(app: Application, task: FileTask, ledger: LedgerStore): WriteReceipt {
+    fun execute(app: Application, task: FileTask, ledger: LedgerStore, vault: RecoveryVault = RecoveryVault(app)): WriteReceipt {
         try {
             return when (task) {
                 is FileTask.Export -> {
@@ -74,17 +76,18 @@ internal object BookFileService {
                     receipt("Выписка PDF сохранена.")
                 }
                 is FileTask.Import -> {
-                    val backup = app.contentResolver.openInputStream(Uri.parse(task.uri))?.use {
-                        BackupSize.readUtf8(it)
-                    } ?: throw IOException("Не удалось прочитать файл.")
-                    restore(app, ledger, backup, task.preferencesName)
+                    val stream = app.contentResolver.openInputStream(Uri.parse(task.uri))
+                        ?: throw IOException("Не удалось прочитать файл.")
+                    BackupSize.openUtf8(stream).use { backup ->
+                        restore(app, ledger, backup, task.preferencesName, vault)
+                    }
                 }
                 is FileTask.RestorePoint -> {
-                    val backup = RecoveryVault(app).readLatest()
-                    restore(app, ledger, backup, task.preferencesName)
+                    val backup = vault.readLatest()
+                    StringReader(backup).use { restore(app, ledger, it, task.preferencesName, vault) }
                 }
                 FileTask.CreatePoint -> {
-                    RecoveryVault(app).create(ledger)
+                    vault.create(ledger)
                     receipt("Защищённая точка создана.")
                 }
             }
@@ -97,9 +100,9 @@ internal object BookFileService {
         }
     }
 
-    private fun restore(app: Application, ledger: LedgerStore, backup: String, preferencesName: String): WriteReceipt {
+    private fun restore(app: Application, ledger: LedgerStore, backup: Reader, preferencesName: String, vault: RecoveryVault): WriteReceipt {
         // Preserve the pre-restore state before any replacement; abort if encryption or storage fails.
-        RecoveryVault(app).create(ledger)
+        vault.create(ledger)
         val count = ledger.importJson(backup)
         // The transaction has committed. Housekeeping failure must not report a retryable restore failure.
         var warning = ""
