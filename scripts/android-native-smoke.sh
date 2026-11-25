@@ -459,7 +459,16 @@ tap_text 'Книга'
 tap_text '+ Записать долг'
 sleep 0.5
 fill_form_input 0 QuickBuyer
-fill_form_input 2 321
+fill_form_input 1 321
+dump_ui
+grep -Fq 'Сумма новой записи: 321,00' android/build/native-ui.xml
+grep -Fq 'Добавить телефон' android/build/native-ui.xml
+tap_text 'Добавить телефон'
+sleep 0.3
+dump_ui
+grep -Fq 'Телефон (необязательно)' android/build/native-ui.xml
+tap_text 'Скрыть телефон'
+sleep 0.2
 tap_text 'Сохранить'
 sleep 0.6
 dump_ui
@@ -491,7 +500,7 @@ sleep 0.4
 dump_ui
 grep -Fq 'Дата записи' android/build/native-ui.xml
 fill_form_input 0 DirectoryBuyer
-fill_form_input 2 222
+fill_form_input 1 222
 tap_text 'Сохранить'
 sleep 0.5
 dump_ui
@@ -646,7 +655,7 @@ tap_text 'Книга'
 tap_text '+ Записать долг'
 sleep 0.4
 fill_form_input 0 DraftBuyer
-fill_form_input 2 123
+fill_form_input 1 123
 tap_text 'Закрыть'
 sleep 0.4
 tap_text '+ Записать долг'
