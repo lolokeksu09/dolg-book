@@ -112,8 +112,10 @@ test('compact book keeps essential controls and hides redundant empty-state filt
   assert.ok(compose.includes('CollectionsInsights.visible(model.scoped, filter, amountFirst, recentFirst, query)'));
   assert.ok(clients.includes('this::showClientFilters'));
   assert.ok(!clients.includes('filterGrid'));
-  assert.ok(ui.includes('if(settingsExpanded.equals("privacy"))'));
-  assert.ok(ui.includes('if(settingsExpanded.equals("backup"))'));
+  const settings=read('android/app/src/main/kotlin/dev/ventry/raschet/SettingsCompose.kt');
+  assert.ok(settings.includes('if (state.expanded == "privacy")'));
+  assert.ok(settings.includes('if (state.expanded == "backup")'));
+  assert.ok(ui.includes('settingsExpanded=settingsExpanded.equals(section)?"":section;render();'));
   assert.ok(ui.includes('out.putString("settings_expanded",settingsExpanded)'));
 });
 
