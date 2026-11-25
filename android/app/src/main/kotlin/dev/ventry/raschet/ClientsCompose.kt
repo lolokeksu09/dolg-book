@@ -24,6 +24,8 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
+import androidx.compose.material3.Typography
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -82,6 +84,13 @@ internal fun LedgerMaterialTheme(content: @Composable () -> Unit) {
             tertiaryContainer = panel, onTertiaryContainer = text,
             surfaceVariant = selectedBackground, errorContainer = Color(0xff542d2d),
             onError = Color(0xff421b1b), onErrorContainer = Color(0xffffdada)
+        ), typography = Typography(
+            bodyLarge = TextStyle(fontSize = 16.sp, lineHeight = 20.sp),
+            bodyMedium = TextStyle(fontSize = 14.sp, lineHeight = 19.sp),
+            bodySmall = TextStyle(fontSize = 12.sp, lineHeight = 16.sp),
+            labelLarge = TextStyle(fontSize = 14.sp, lineHeight = 18.sp, fontWeight = FontWeight.Medium),
+            labelMedium = TextStyle(fontSize = 12.sp, lineHeight = 16.sp, fontWeight = FontWeight.Medium),
+            labelSmall = TextStyle(fontSize = 11.sp, lineHeight = 14.sp)
         ), shapes = Shapes(extraSmall = RoundedCornerShape(6.dp), small = RoundedCornerShape(8.dp),
             medium = RoundedCornerShape(10.dp), large = RoundedCornerShape(14.dp), extraLarge = RoundedCornerShape(18.dp)),
         content = content
