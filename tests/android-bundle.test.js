@@ -154,10 +154,13 @@ test('counter-first UI keeps both financial actions, compact search and viewport
 });
 
 
-test('AMOLED ledger uses shared semantic palette and real metric rows',()=>{
+test('Ventry ledger uses shared semantic palette and real metric rows',()=>{
   const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
   const theme=read('android/app/src/main/java/dev/ventry/raschet/LedgerTheme.java');
-  assert.ok(theme.includes('BG=0xff000000'));
+  assert.ok(theme.includes('BG=0xff061d16'));
+   assert.ok(theme.includes('PANEL=0xff09271e'));
+   assert.ok(theme.includes('TEXT=0xfff4f0df'));
+   assert.ok(theme.includes('ACCENT=0xffd5dfc9'));
   for(const screen of ['MainActivity','IntroActivity','SplashActivity']) assert.ok(read('android/app/src/main/java/dev/ventry/raschet/'+screen+'.java').includes('LedgerTheme.BG'));
   const book=read('android/app/src/main/kotlin/dev/ventry/raschet/BookCompose.kt');
   const collections=read('android/app/src/main/kotlin/dev/ventry/raschet/CollectionsCompose.kt');
