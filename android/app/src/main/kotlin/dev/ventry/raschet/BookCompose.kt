@@ -241,12 +241,14 @@ internal fun BookContent(model: BookUiModel, payments: Boolean, hasFilter: Boole
                             fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                         if (hasFilter) Text(filterSummary, color = ledgerMuted, fontSize = 12.sp)
                     }
-                    TextButton(onClick = {
-                        if (calendar) { calendar = false; monthGrid = false; onCalendar(false, selectedDay) }
-                        else { selectDate(selectedDay); monthGrid = true }
-                    },
+                    if (calendar) TextButton(onClick = {
+                        calendar = false; monthGrid = false; onCalendar(false, selectedDay)
+                    }, modifier = Modifier.heightIn(min = 48.dp), contentPadding = PaddingValues(horizontal = 6.dp)) {
+                        Text("Список дат")
+                    }
+                    else TextButton(onClick = { selectDate(selectedDay); monthGrid = true },
                         modifier = Modifier.heightIn(min = 48.dp), contentPadding = PaddingValues(horizontal = 6.dp)) {
-                        Text(if (calendar) "Список дат" else "Календарь")
+                        Text("Календарь")
                     }
                 }
             }
@@ -277,8 +279,12 @@ internal fun BookContent(model: BookUiModel, payments: Boolean, hasFilter: Boole
                 }
                 item("selected-calendar-date") {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text(selectedDay.format(DateTimeFormatter.ofPattern("d MMMM, EEEE", Locale("ru", "RU"))),
-                            color = ledgerText, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                        Column(Modifier.weight(1f)) {
+                            Text(selectedDay.format(DateTimeFormatter.ofPattern("d MMMM, EEEE", Locale("ru", "RU"))),
+                                color = ledgerText, fontWeight = FontWeight.SemiBold)
+                            val day = byDate[selectedDay]
+                            Text("Записей: " + (day?.entries?.size ?: 0), color = ledgerMuted, fontSize = 12.sp)
+                        }
                         if (selectedDay != model.today) TextButton(onClick = { selectDate(model.today); monthGrid = false }) { Text("Сегодня") }
                     }
                 }
@@ -318,13 +324,15 @@ internal fun BookContent(model: BookUiModel, payments: Boolean, hasFilter: Boole
                     ).semantics { selected = open; contentDescription = description }.padding(vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Column(Modifier.weight(1f)) {
-                            Text(ledgerDayFormat.format(day.date), color = ledgerText, fontWeight = FontWeight.Bold)
-                            Text("Записей: " + day.entries.size, color = ledgerMuted, fontSize = 12.sp)
+                            Text(if (calendar) (if (payments) "Получено за день" else "Записано за день") else ledgerDayFormat.format(day.date),
+                                color = if (calendar) ledgerMuted else ledgerText, fontWeight = FontWeight.Medium)
+                            if (!calendar) Text("Записей: " + day.entries.size, color = ledgerMuted, fontSize = 12.sp)
                         }
                         Column(horizontalAlignment = Alignment.End) {
-                            Text(ledgerMoney(day.recorded), color = ledgerText, fontWeight = FontWeight.Bold)
+                            Text(ledgerMoney(day.recorded), color = ledgerText, fontWeight = FontWeight.Medium,
+                                style = androidx.compose.ui.text.TextStyle(fontFeatureSettings = "tnum"))
                             Text(if (payments) "Получено" else "Осталось " + ledgerMoney(day.remaining),
-                                color = if (payments || day.remaining == 0L) ledgerAccent else ledgerMuted, fontSize = 12.sp)
+                                color = if (payments || day.remaining == 0L) ledgerAccent else ledgerAlert, fontSize = 12.sp)
                         }
                         if (!calendar) Text(if (open) "⌃" else "⌄", color = ledgerMuted, fontSize = 20.sp)
                     }
@@ -361,25 +369,27 @@ private fun BookEntryRow(day: BookDays.Day, e: LedgerStore.Entry, person: Ledger
     payments: Boolean, actions: BookActions) {
     val canceled = e.id in day.canceled
     val unpaid = day.unpaid.getOrDefault(e.id, 0L)
-    Column(Modifier.fillMaxWidth().padding(start = 8.dp)) {
+    Column(Modifier.fillMaxWidth().padding(start = 4.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Column(Modifier.weight(1f).heightIn(min = 48.dp).clickable { actions.openClient(person.id) }.padding(vertical = 8.dp)) {
-                Text(person.name, color = ledgerText, fontWeight = FontWeight.SemiBold)
+                Text(person.name, color = ledgerText, fontWeight = FontWeight.Medium, fontSize = 16.sp)
                 Text(if (canceled) "Отменено" else if (payments) "Оплата" else if (unpaid == 0L) "Погашено"
                     else if (unpaid < e.amount) "Осталось " + ledgerMoney(unpaid) else "Не погашено",
-                    color = if (!canceled && (payments || unpaid == 0L)) ledgerAccent else ledgerMuted, fontSize = 12.sp)
+                    color = if (canceled) ledgerMuted else if (payments || unpaid == 0L) ledgerAccent else ledgerAlert, fontSize = 12.sp)
                 if (!canceled && e.note.isNotEmpty()) Text(e.note, color = ledgerMuted, fontSize = 12.sp)
             }
             Text(ledgerMoney(e.amount), color = if (canceled) ledgerMuted else if (payments) ledgerAccent else ledgerText,
-                fontWeight = FontWeight.Bold, textDecoration = if (canceled) TextDecoration.LineThrough else null,
+                fontWeight = FontWeight.Medium, fontSize = 16.sp,
+                style = androidx.compose.ui.text.TextStyle(fontFeatureSettings = "tnum"),
+                textDecoration = if (canceled) TextDecoration.LineThrough else null,
                 modifier = Modifier.heightIn(min = 48.dp).clickable { actions.operation(e.id) }
                     .semantics { contentDescription = "Запись · " + person.name + " · " + ledgerMoney(e.amount) }.padding(vertical = 12.dp))
         }
-        if (!payments && !canceled) Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            if (unpaid > 0) OutlinedButton(onClick = { actions.payClient(person.id) },
-                modifier = Modifier.weight(1f).heightIn(min = 48.dp).semantics { contentDescription = "Оплата · " + person.name }) { Text("Оплата") }
-            OutlinedButton(onClick = { actions.debtClient(person.id) },
-                modifier = Modifier.weight(1f).heightIn(min = 48.dp).semantics { contentDescription = "Новый долг · " + person.name }) { Text("+ Долг") }
+        if (!payments && !canceled) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            if (unpaid > 0) TextButton(onClick = { actions.payClient(person.id) },
+                modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = "Оплата · " + person.name }) { Text("Оплата") }
+            TextButton(onClick = { actions.debtClient(person.id) },
+                modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = "Новый долг · " + person.name }) { Text("+ Долг") }
         }
         HorizontalDivider(color = ledgerBorder)
     }
