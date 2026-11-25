@@ -312,8 +312,8 @@ public final class MainActivity extends ComponentActivity {
         return tablet&&getResources().getConfiguration().screenWidthDp>=1100&&tab.equals("Клиенты");
     }
     private boolean needsBookSnapshot(){
-        return tabletClientScreen()||(selectedClient==null&&
-                (tab.equals("Главная")||tab.equals("Клиенты")||tab.equals("Возврат")));
+        return tabletClientScreen()||selectedClient!=null||
+                tab.equals("Главная")||tab.equals("Клиенты")||tab.equals("Возврат");
     }
     private void onBookState(ReadState<?> state){
         if(!unlocked||isFinishing()||isDestroyed()||bookViewModel.hasPendingWrite()||!needsBookSnapshot()
@@ -338,7 +338,7 @@ public final class MainActivity extends ComponentActivity {
         page.removeAllViews();
         try {
             View contents=tabletClientScreen()?tabletClientsView(data):
-                    selectedClient!=null?detailView(selectedClient):
+                    selectedClient!=null?detailView(selectedClient,data):
                     tab.equals("Главная")?homeView(data):
                     tab.equals("Клиенты")?clientsView(data):
                     tab.equals("История")?historyView():
@@ -677,7 +677,7 @@ public final class MainActivity extends ComponentActivity {
                 scroll(emptyState(R.drawable.ic_nav_people,
                         "Выберите клиента",
                         "Слева список клиентов и фильтры. Здесь появятся остаток, операции и быстрые действия.",
-                        null,null)):detailView(selectedClient);
+                        null,null)):detailView(selectedClient,data);
         columns.addView(detail,new LinearLayout.LayoutParams(0,-1,62f));
         return columns;
     }
@@ -710,90 +710,24 @@ public final class MainActivity extends ComponentActivity {
         filterMenuAction(menu,"Сортировка: последние операции",clientsRecentFirst,()->{clientsAmountFirst=false;clientsRecentFirst=true;clientVisibleLimit=60;render();});
         showDialog("Фильтры клиентов",menu,null);
     }
-    private View detailView(String id) {
-        LedgerStore.Client client=null;
-        for(LedgerStore.Client c:ledger.clients())if(c.id.equals(id))client=c;
-        if(client==null){
+    private View detailView(String id,BookScreenData data) {
+        CollectionsInsights.CustomerStatus found=null;
+        for(CollectionsInsights.CustomerStatus status:data.getStatuses())
+            if(status.client.id.equals(id)){found=status;break;}
+        if(found==null){
             selectedClient=null;
             return scroll(emptyState(R.drawable.ic_nav_people,"Клиент не найден",
                     "Запись могла измениться после восстановления книги.",
                     "К списку клиентов",()->{tab="Клиенты";render();}));
         }
-        final LedgerStore.Client current=client;
+        final CollectionsInsights.CustomerStatus status=found;
         if(!id.equals(detailFilterClient)){detailFilterClient=id;detailFilter=ClientStatement.ALL;detailVisibleLimit=80;}
-        List<LedgerStore.Entry> all=ledger.entries();
-        ClientStatement statement=ClientStatement.build(all,id,ZoneId.systemDefault());
-        long amount=LedgerStore.balance(all,id);
-        LinearLayout view=screen(current.name,current.phone.isEmpty()?"Карточка клиента":current.phone);
-        TextView back=label(returnToCollections?"←  Возврат долгов":"←  Все клиенты",14,ACCENT,true);
-        back.setMinHeight(dp(48));back.setPadding(0,0,0,dp(2));back.setOnClickListener(v->{selectedClient=null;tab=returnToCollections?"Возврат":"Клиенты";returnToCollections=false;render();});
-        LinearLayout context=row();context.setGravity(Gravity.CENTER_VERTICAL);
-        context.addView(back,new LinearLayout.LayoutParams(0,dp(controlHeight()),1));
-        view.addView(context,0);
-        LinearLayout total=balancePanel("Остаток долга",amount);
-        long overdue=LedgerStore.overdue(all,id,LocalDate.now());
-        CollectionsInsights.CustomerStatus status=null;
-        for(CollectionsInsights.CustomerStatus item:CollectionsInsights.analyze(
-                ledger.clients(),all,LocalDate.now())){
-            if(item.client.id.equals(id)){status=item;break;}
-        }
-        if(overdue>0)total.addView(label("Просрочено: "+money(overdue),13,RED,true));
-        else total.addView(label(amount==0?"Долга нет":"Нет просрочки",13,MUTED,false));
-        if(status!=null&&status.upcoming>0)
-            total.addView(label("Ближайший срок: "+status.nextDue+" · за 7 дней: "+money(status.upcoming),
-                    13,MUTED,false));
-        long limit=directory.debtLimit(id);
-        if(limit>0)total.addView(label(limitSummary(limit,amount),13,amount>=limit?ALERT:MUTED,false));
-        ClientDirectory.FollowUp follow=directory.followUp(id);
-        if(follow!=null&&follow.amount>0)appendPromise(total,follow,PaymentPromises.calculate(all,id,follow,LocalDate.now(),ZoneId.systemDefault()));
-        else if(amount>0&&follow!=null)total.addView(label("Связаться: "+bookDateFormat.format(follow.date)+(follow.note.isEmpty()?"":" · "+follow.note),13,follow.date.isAfter(LocalDate.now())?MUTED:ALERT,false));
-        view.addView(total,margin(-1,-2,12));
-        boolean archived=directory.archived(id,amount);
-        if(archived)view.addView(label("Клиент в архиве. История сохранена.",14,MUTED,true));
-        if(!archived){
-            boolean stackedActions=largeText||getResources().getConfiguration().fontScale>1.2f;
-            LinearLayout actions=stackedActions?stack(6):row();
-            addButton(actions,"+ Долг",true,()->showEntryForm(id,"debt"),1);
-            addButton(actions,"Оплата",true,()->showEntryForm(id,"payment"),1);
-            view.addView(actions,margin(-1,dp(stackedActions?2*controlHeight()+6:controlHeight()),5));
-        }else{
-            addButton(view,"Вернуть из архива",true,()->changeClientArchive(id,true),1);
-        }
-        TextView moreActions=label("Ещё действия",14,ACCENT,true);
-        moreActions.setGravity(Gravity.CENTER);
-        moreActions.setMinHeight(dp(48));moreActions.setPadding(dp(8),0,dp(8),0);
-        moreActions.setBackground(ripple(shape(BG,8,0)));
-        moreActions.setContentDescription("Ещё действия");
-        moreActions.setFocusable(true);
-        moreActions.setOnClickListener(v->showClientActions(current,amount,overdue,archived));
-        context.addView(moreActions,new LinearLayout.LayoutParams(-2,dp(controlHeight())));
-        if(!archived){
-            LedgerDrafts drafts=new LedgerDrafts(this);
-            for(String type:new String[]{"debt","payment"}){
-                LedgerDrafts.Draft draft=drafts.get(id,type);
-                if(draft==null||statement.ids.contains(draft.id)||("payment".equals(type)&&amount<=0))continue;
-                metricRow(view,"Черновик "+("debt".equals(type)?"долга":"оплаты"),draft.amount.trim().isEmpty()?"Продолжить":draft.amount+" ₽",ACCENT,()->showEntryForm(id,type));
-            }
-        }
-        List<LedgerStore.Entry> visible=statement.select(detailFilter);
-        metricRow(view,"История клиента",detailFilter+" · "+visible.size(),detailFilter.equals(ClientStatement.ALL)?MUTED:ACCENT,this::showDetailFilters);
-        int shown=0;
-        LocalDate lastDay=null;
-        for(LedgerStore.Entry e:visible){
-            if(shown>=detailVisibleLimit)break;
-            LocalDate date=PeriodReport.dateOf(e,ZoneId.systemDefault());
-            if(!date.equals(lastDay)){
-                TextView day=label(bookDateFormat.format(date),12,MUTED,true);
-                day.setPadding(dp(6),dp(5),dp(6),dp(5));day.setBackground(shape(PANEL,4,0));
-                view.addView(day,margin(-1,-2,2));lastDay=date;
-            }
-            view.addView(entryCard(e,null,statement.canceled.contains(e.id),false,statement.remaining.get(e.id)));addListDivider(view);shown++;
-        }
-        if(shown==0)view.addView(label(statement.entries.isEmpty()?"Пока нет операций.":"Нет операций по выбранному фильтру.",14,MUTED,false));
-        if(visible.size()>detailVisibleLimit)addButton(view,"Показать ещё операции",false,()->{
-            detailVisibleLimit=Math.min(detailVisibleLimit+80,100000);render();
-        },1);
-        return scroll(view);
+        return ClientDetailCompose.create(this,data,id,detailFilter,detailVisibleLimit,largeText,returnToCollections,
+                ()->{selectedClient=null;tab=returnToCollections?"Возврат":"Клиенты";returnToCollections=false;render();},
+                archived->showClientActions(status.client,status.balance,status.overdue,archived),
+                ()->showEntryForm(id,"debt"),()->showEntryForm(id,"payment"),
+                ()->changeClientArchive(id,true),this::showDetailFilters,
+                this::showOperation,this::showPurchaseDetails,limit->detailVisibleLimit=limit);
     }
     private void showDetailFilters(){
         LinearLayout menu=stack(2);
