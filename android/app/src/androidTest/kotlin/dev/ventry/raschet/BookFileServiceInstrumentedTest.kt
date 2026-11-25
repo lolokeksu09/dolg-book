@@ -45,7 +45,9 @@ class BookFileServiceInstrumentedTest {
                 BookFileService.execute(app, FileTask.Report(uri(report), day, day), book)
                 assertTrue(report.readText().contains("123,45"))
                 BookFileService.execute(app, FileTask.Pdf(uri(pdf), client.id, "Ventry QA"), book)
-                assertEquals("%PDF", pdf.inputStream().use { String(it.readNBytes(4), Charsets.US_ASCII) })
+                val signature = ByteArray(4)
+                java.io.DataInputStream(pdf.inputStream()).use { it.readFully(signature) }
+                assertEquals("%PDF", String(signature, Charsets.US_ASCII))
                 val invalid = File(dir, "invalid.json").apply { writeBytes(byteArrayOf(0xc3.toByte(), 0x28)) }
                 try {
                     BookFileService.execute(app, FileTask.Import(uri(invalid), preferences), book)
