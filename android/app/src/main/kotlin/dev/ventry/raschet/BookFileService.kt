@@ -54,11 +54,10 @@ internal object BookFileService {
                     receipt("Отчёт CSV сохранён.")
                 }
                 is FileTask.Pdf -> {
-                    val snapshot = ledger.readSnapshot()
-                    val client = snapshot.clients.firstOrNull { it.id == task.clientId }
+                    val client = ledger.clients().firstOrNull { it.id == task.clientId }
                         ?: throw IllegalArgumentException("Клиент не найден.")
                     output(app, task.uri) {
-                        CustomerStatementPdf.write(it, task.shop, client, snapshot.entries.filter { row -> row.clientId == task.clientId })
+                        CustomerStatementPdf.write(it, task.shop, client, ledger.entriesForClient(task.clientId))
                     }
                     receipt("Выписка PDF сохранена.")
                 }
