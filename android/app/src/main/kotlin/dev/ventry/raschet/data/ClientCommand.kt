@@ -8,6 +8,7 @@ sealed interface ClientCommand {
     sealed interface FileTask : ClientCommand {
         data class Export(val uri: String, val csv: Boolean, val preferencesName: String) : FileTask
         data class Report(val uri: String, val from: LocalDate, val to: LocalDate) : FileTask
+        data class Analytics(val uri: String, val spec: dev.ventry.raschet.domain.AnalyticsExport.Spec) : FileTask
         data class Pdf(val uri: String, val clientId: String, val shop: String) : FileTask
         data class Import(val uri: String, val preferencesName: String) : FileTask
         data class RestorePoint(val preferencesName: String) : FileTask

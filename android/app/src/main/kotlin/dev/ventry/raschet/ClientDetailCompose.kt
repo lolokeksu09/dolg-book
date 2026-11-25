@@ -86,7 +86,7 @@ internal data class DetailActions(
     val back: () -> Unit, val more: (Boolean) -> Unit, val debt: () -> Unit,
     val payment: () -> Unit, val restore: () -> Unit, val filter: () -> Unit,
     val open: (String) -> Unit, val purchase: (LedgerStore.Entry) -> Unit,
-    val limit: (Int) -> Unit
+    val limit: (Int) -> Unit, val analytics: (() -> Unit)? = null
 )
 
 /** Financial projection shares the exact existing statement, promise and allocation rules. */
@@ -147,10 +147,11 @@ object ClientDetailCompose {
         initialLimit: Int, largeText: Boolean, fromCollections: Boolean, onBack: Runnable,
         onMore: Consumer<Boolean>, onDebt: Runnable, onPayment: Runnable, onRestore: Runnable,
         onFilter: Runnable, onOpen: Consumer<String>, onPurchase: Consumer<LedgerStore.Entry>,
-        onLimit: IntConsumer, fromBook: Boolean = false): ComposeView {
+        onLimit: IntConsumer, fromBook: Boolean = false, onAnalytics: Runnable? = null): ComposeView {
         val app = owner.applicationContext
         val actions = DetailActions(onBack::run, onMore::accept, onDebt::run, onPayment::run,
-            onRestore::run, onFilter::run, onOpen::accept, onPurchase::accept, onLimit::accept)
+            onRestore::run, onFilter::run, onOpen::accept, onPurchase::accept, onLimit::accept,
+            onAnalytics?.let { run -> { run.run() } })
         return ComposeView(owner).apply {
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindowOrReleasedFromPool)
             setContent {
@@ -250,6 +251,9 @@ internal fun ClientDetailContent(model: DetailData, filter: String, initialLimit
                         Button(onClick = actions.payment, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("Оплата") }
                     }
                 }
+            }
+            actions.analytics?.let { open ->
+                item("analytics") { LedgerMetric("Статистика клиента", "Долги, оплаты и динамика по периодам", action = open) }
             }
             items(model.drafts, key = { "draft-" + it.kind }) { draft ->
                 Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(onClick = if (draft.kind == "debt") actions.debt else actions.payment)

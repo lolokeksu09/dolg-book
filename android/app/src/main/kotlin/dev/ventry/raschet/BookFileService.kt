@@ -12,6 +12,10 @@ import java.io.OutputStream
 import java.io.OutputStreamWriter
 import java.io.Reader
 import java.time.ZoneId
+import java.time.LocalDate
+import dev.ventry.raschet.domain.AnalyticsExport
+import dev.ventry.raschet.domain.AnalyticsProjection
+import dev.ventry.raschet.domain.AnalyticsSeries
 
 /** Runs under the same serialized IO boundary as financial writes. No Activity or View is retained. */
 internal object BookFileService {
@@ -65,6 +69,30 @@ internal object BookFileService {
                         ZoneId.systemDefault()).csv().toByteArray(Charsets.UTF_8)
                     output(app, task.uri) { it.write(bytes) }
                     receipt("Отчёт CSV сохранён.")
+                }
+                is FileTask.Analytics -> {
+                    val spec = task.spec
+                    val snapshot = ledger.readSnapshot()
+                    val today = LocalDate.now()
+                    val zone = ZoneId.systemDefault()
+                    val names = snapshot.clients.associate { it.id to it.name }
+                    val name = spec.customerId?.let { requireNotNull(names[it]) { "Клиент не найден." } }
+                    val period = AnalyticsProjection.build(snapshot.entries, names.keys,
+                        AnalyticsProjection.Range(spec.from, spec.to), today, zone, spec.customerId)
+                    val previous = spec.previousFrom?.let {
+                        AnalyticsProjection.build(snapshot.entries, names.keys,
+                            AnalyticsProjection.Range(it, requireNotNull(spec.previousTo)), today, zone, spec.customerId)
+                    }
+                    val customer = period.customers.firstOrNull { it.id == spec.customerId }
+                    val series = if (spec.customerId == null) AnalyticsSeries.build(period.range, period.opening, period.daily)
+                        else AnalyticsSeries.build(period.range, requireNotNull(customer).opening, period.focusedDaily)
+                    val lines = AnalyticsExport.lines(period, previous, spec.customerId, name, series)
+                    if (spec.pdf) output(app, task.uri) { AnalyticsPdf.write(it, lines) }
+                    else {
+                        val bytes = AnalyticsExport.csv(lines).toByteArray(Charsets.UTF_8)
+                        output(app, task.uri) { it.write(bytes) }
+                    }
+                    receipt(if (spec.pdf) "Статистика PDF сохранена." else "Статистика CSV сохранена.")
                 }
                 is FileTask.Pdf -> {
                     val client = ledger.clients().firstOrNull { it.id == task.clientId }

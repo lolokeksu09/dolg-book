@@ -14,7 +14,7 @@ object ReportProjection {
         val closing: Long get() = Math.addExact(opening, totals.net)
     }
 
-    private enum class Kind { DEBT, PAYMENT, DEBT_REVERSAL, PAYMENT_REVERSAL }
+    internal enum class Kind { DEBT, PAYMENT, DEBT_REVERSAL, PAYMENT_REVERSAL }
 
     private class Accumulator {
         var debts = 0L
@@ -34,7 +34,7 @@ object ReportProjection {
         fun freeze() = Totals(debts, payments, debtReversals, paymentReversals, count)
     }
 
-    private fun kind(entry: DatedLedgerRecord, earlier: Map<String, DatedLedgerRecord>): Kind = when (entry.operation) {
+    internal fun kind(entry: DatedLedgerRecord, earlier: Map<String, DatedLedgerRecord>): Kind = when (entry.operation) {
         "debt" -> Kind.DEBT
         "payment" -> Kind.PAYMENT
         "reversal" -> {

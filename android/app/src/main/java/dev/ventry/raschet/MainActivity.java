@@ -3,6 +3,8 @@ package dev.ventry.raschet;
 import androidx.activity.ComponentActivity;
 import androidx.lifecycle.ViewModelProvider;
 import dev.ventry.raschet.presentation.BookViewModel;
+import dev.ventry.raschet.presentation.AnalyticsViewModel;
+import dev.ventry.raschet.domain.AnalyticsExport;
 import dev.ventry.raschet.presentation.BookScreenData;
 import dev.ventry.raschet.presentation.ReadState;
 import dev.ventry.raschet.presentation.WriteState;
@@ -62,7 +64,7 @@ public final class MainActivity extends ComponentActivity {
     private static final int BG=LedgerTheme.BG, PANEL=LedgerTheme.PANEL, ELEVATED=LedgerTheme.ELEVATED;
     private static final int BORDER=LedgerTheme.BORDER, TEXT=LedgerTheme.TEXT, MUTED=LedgerTheme.MUTED;
     private static final int ACCENT=LedgerTheme.ACCENT, INK=LedgerTheme.INK, ALERT=LedgerTheme.ALERT, RED=LedgerTheme.RED;
-    private static final int REQUEST_IMPORT=101, REQUEST_EXPORT=102, REQUEST_PDF=103, REQUEST_REPORT=105;
+    private static final int REQUEST_IMPORT=101, REQUEST_EXPORT=102, REQUEST_PDF=103, REQUEST_REPORT=105, REQUEST_ANALYTICS=106;
     private static final String RECOVERY_PREFS="raschet_local_recovery";
     private static final int NOTIFICATION_PERMISSION_REQUEST=104;
     public static final String EXTRA_FIRST_START = "dev.ventry.raschet.FIRST_START";
@@ -71,6 +73,10 @@ public final class MainActivity extends ComponentActivity {
     private final DateTimeFormatter dayFormat=DateTimeFormatter.ofPattern("d MMM yyyy",new Locale("ru","RU"));
     private LedgerStore ledger;
     private BookViewModel bookViewModel;
+    private AnalyticsViewModel analyticsViewModel;
+    private String analyticsClientId=null, analyticsReturnTab="Клиенты";
+    private boolean historyFromAnalytics;
+    private AnalyticsExport.Spec pendingAnalytics;
     private boolean reloadOnStart,firstStartPending;
     private Dialog pendingClientDialog;
     private TextView pendingClientError;
@@ -121,6 +127,7 @@ public final class MainActivity extends ComponentActivity {
         getWindow().getDecorView().setSystemUiVisibility(0);
         ledger=new LedgerStore(this);
         bookViewModel=new ViewModelProvider(this).get(BookViewModel.class);
+        analyticsViewModel=new ViewModelProvider(this).get(AnalyticsViewModel.class);
         vault=new RecoveryVault(this);
         directory=new ClientDirectory(this);
         privacy=new BookPrivacy(this);
@@ -143,6 +150,15 @@ public final class MainActivity extends ComponentActivity {
             collectionLimit=state.getInt("collection_limit",60);returnToCollections=state.getBoolean("return_to_collections",false);
             returnToBook=state.getBoolean("return_to_book",false);
             historyQuery=state.getString("history_query","");historyClientId=state.getString("history_client_id");
+            analyticsClientId=state.getString("analytics_client_id");analyticsReturnTab=state.getString("analytics_return_tab","Клиенты");
+            historyFromAnalytics=state.getBoolean("history_from_analytics",false);
+            analyticsViewModel.focus(analyticsClientId);
+            analyticsViewModel.restoreFilters(state.getString("analytics_preset"),readDate(state,"analytics_range_from"),readDate(state,"analytics_range_to"),
+                    state.getString("analytics_overview_section"),state.getString("analytics_personal_section"),state.getString("analytics_ranking"));
+            LocalDate analyticsFrom=readDate(state,"pending_analytics_from"), analyticsTo=readDate(state,"pending_analytics_to");
+            if(analyticsFrom!=null&&analyticsTo!=null)pendingAnalytics=new AnalyticsExport.Spec(analyticsFrom,analyticsTo,
+                    readDate(state,"pending_analytics_prev_from"),readDate(state,"pending_analytics_prev_to"),
+                    state.getString("pending_analytics_client"),state.getBoolean("pending_analytics_pdf",false));
             detailVisibleLimit=state.getInt("detail_visible_limit",80);
             detailFilter=state.getString("detail_filter",ClientStatement.ALL);detailFilterClient=state.getString("detail_filter_client");
             bookDayLimit=state.getInt("book_day_limit",30);
@@ -186,6 +202,19 @@ public final class MainActivity extends ComponentActivity {
         out.putInt("collection_limit",collectionLimit);out.putBoolean("return_to_collections",returnToCollections);
         out.putBoolean("return_to_book",returnToBook);
         out.putString("history_query",historyQuery);out.putString("history_client_id",historyClientId);
+        out.putString("analytics_client_id",analyticsClientId);out.putString("analytics_return_tab",analyticsReturnTab);
+        out.putBoolean("history_from_analytics",historyFromAnalytics);
+        var selection=analyticsViewModel.getRequest().getValue().getSelection();
+        out.putString("analytics_preset",selection.getPreset().name());
+        if(selection.getCustom()!=null){saveDate(out,"analytics_range_from",selection.getCustom().getFrom());saveDate(out,"analytics_range_to",selection.getCustom().getTo());}
+        out.putString("analytics_overview_section",analyticsViewModel.getOverviewSection().getValue().name());
+        out.putString("analytics_personal_section",analyticsViewModel.getPersonalSection().getValue().name());
+        out.putString("analytics_ranking",analyticsViewModel.getRanking().getValue());
+        if(pendingAnalytics!=null){
+            saveDate(out,"pending_analytics_from",pendingAnalytics.getFrom());saveDate(out,"pending_analytics_to",pendingAnalytics.getTo());
+            saveDate(out,"pending_analytics_prev_from",pendingAnalytics.getPreviousFrom());saveDate(out,"pending_analytics_prev_to",pendingAnalytics.getPreviousTo());
+            out.putString("pending_analytics_client",pendingAnalytics.getCustomerId());out.putBoolean("pending_analytics_pdf",pendingAnalytics.getPdf());
+        }
         out.putInt("detail_visible_limit",detailVisibleLimit);
         out.putString("detail_filter",detailFilter);out.putString("detail_filter_client",detailFilterClient);
         out.putInt("book_day_limit",bookDayLimit);
@@ -261,6 +290,7 @@ public final class MainActivity extends ComponentActivity {
         return root;
     }
     private void render() {
+        if(analyticsViewModel!=null&&(!unlocked||!tab.equals("Статистика")||bookViewModel.hasPendingWrite()))analyticsViewModel.bindBook(null);
         if(!unlocked){bookViewModel.clear();page.removeAllViews();root.setVisibility(View.INVISIBLE);return;}
         root.setVisibility(View.VISIBLE);
         if(!tablet){navigation.getLayoutParams().height=dp(navHeight());navigation.requestLayout();}
@@ -273,7 +303,7 @@ public final class MainActivity extends ComponentActivity {
         for(int i=0;i<TABS.length;i++){
             final String destination=TABS[i];
             String caption=destination.equals("Главная")?"Книга":destination;
-            boolean active=destination.equals(tab)||(destination.equals("Главная")&&(tab.equals("Возврат")||tab.equals("Отчёт")));
+            boolean active=destination.equals(tab)||(destination.equals("Главная")&&(tab.equals("Возврат")||tab.equals("Отчёт")||tab.equals("Статистика")));
             LinearLayout item=tablet?row():stack(2);
             item.setGravity(Gravity.CENTER);
             item.setPadding(dp(tablet?10:2),dp(tablet?6:2),dp(tablet?6:2),dp(tablet?6:2));
@@ -301,7 +331,7 @@ public final class MainActivity extends ComponentActivity {
             item.setContentDescription(caption);
             item.setSelected(active);
             item.setFocusable(true);
-            item.setOnClickListener(v->{firstStartPending=false;tab=destination;selectedClient=null;returnToCollections=false;returnToBook=false;settingsExpanded="";render();});
+            item.setOnClickListener(v->{firstStartPending=false;tab=destination;selectedClient=null;analyticsClientId=null;historyFromAnalytics=false;returnToCollections=false;returnToBook=false;settingsExpanded="";render();});
             LinearLayout.LayoutParams ip=tablet?new LinearLayout.LayoutParams(-1,dp(controlHeight())):
                     new LinearLayout.LayoutParams(0,-1,1);
             if(tablet)ip.bottomMargin=dp(6);else {ip.leftMargin=dp(2);ip.rightMargin=dp(2);}
@@ -326,7 +356,7 @@ public final class MainActivity extends ComponentActivity {
     }
     private boolean needsBookSnapshot(){
         return tabletClientScreen()||selectedClient!=null||
-                tab.equals("Главная")||tab.equals("Клиенты")||tab.equals("Возврат")||tab.equals("История")||tab.equals("Отчёт");
+                tab.equals("Главная")||tab.equals("Клиенты")||tab.equals("Возврат")||tab.equals("История")||tab.equals("Отчёт")||tab.equals("Статистика");
     }
     private void onBookState(ReadState<?> state){
         if(!unlocked||isFinishing()||isDestroyed()||bookViewModel.hasPendingWrite()||!needsBookSnapshot()
@@ -360,7 +390,8 @@ public final class MainActivity extends ComponentActivity {
                     tab.equals("Клиенты")?clientsView(data):
                     tab.equals("История")?historyView(data):
                     tab.equals("Возврат")?collectionView(data):
-                    tab.equals("Отчёт")?reportView(data):settingsView();
+                    tab.equals("Отчёт")?reportView(data):
+                    tab.equals("Статистика")?analyticsView(data):settingsView();
             page.addView(contents,new FrameLayout.LayoutParams(-1,-1));
         }catch(Exception e){
             LinearLayout error=screen("Ошибка чтения книги","Данные не были изменены.");
@@ -382,7 +413,8 @@ public final class MainActivity extends ComponentActivity {
                 this::showOperation,id->showEntryForm(id,"payment"),id->showEntryForm(id,"debt"),
                 day->showQuickDebt(false,day),day->chooseClient("payment",day),
                 ()->{tab="Отчёт";selectedClient=null;render();},()->exportBook(false),
-                bookCalendar,bookCalendarDay,(calendar,day)->{bookCalendar=calendar;bookCalendarDay=day;});
+                bookCalendar,bookCalendarDay,(calendar,day)->{bookCalendar=calendar;bookCalendarDay=day;},
+                ()->{analyticsClientId=null;historyFromAnalytics=false;analyticsViewModel.focus(null);tab="Статистика";selectedClient=null;render();});
     }
 
     private void openCollections(){
@@ -545,7 +577,8 @@ public final class MainActivity extends ComponentActivity {
                 archived->showClientActions(status.client,status.balance,status.overdue,archived),
                 ()->showEntryForm(id,"debt"),()->showEntryForm(id,"payment"),
                 ()->changeClientArchive(id,true),this::showDetailFilters,
-                this::showOperation,this::showPurchaseDetails,limit->detailVisibleLimit=limit,returnToBook);
+                this::showOperation,this::showPurchaseDetails,limit->detailVisibleLimit=limit,returnToBook,
+                ()->openClientAnalytics(id));
     }
     private void returnFromClient(){
         selectedClient=null;
@@ -717,6 +750,36 @@ public final class MainActivity extends ComponentActivity {
         DatePickerDialog picker=new DatePickerDialog(this,(v,y,m,d)->callback.accept(LocalDate.of(y,m+1,d)),
                 date.getYear(),date.getMonthValue()-1,date.getDayOfMonth());
         picker.setTitle(title);picker.show();
+    }
+    private void openClientAnalytics(String id){
+        analyticsClientId=id;analyticsReturnTab=tab;historyFromAnalytics=false;
+        selectedClient=null;tab="Статистика";render();
+    }
+    private void returnFromAnalytics(){
+        historyFromAnalytics=false;
+        String client=analyticsClientId;analyticsClientId=null;
+        if(client==null){tab="Главная";selectedClient=null;}
+        else if(analyticsReturnTab.equals("Статистика")){tab="Статистика";selectedClient=null;}
+        else{tab=analyticsReturnTab;selectedClient=client;}
+        render();
+    }
+    private View analyticsView(BookScreenData data){
+        analyticsViewModel.focus(analyticsClientId);
+        return AnalyticsCompose.create(this,data,analyticsViewModel,
+                this::returnFromAnalytics,()->{analyticsClientId=null;tab="Отчёт";render();},(from,to)->{
+                    historyFrom=from;historyTo=to;historyFilter="Все";historyQuery="";
+                    historyClientId=analyticsClientId;historyVisibleLimit=100;historyFromAnalytics=true;tab="История";render();
+                },this::openClientAnalytics,analyticsClientId!=null&&analyticsReturnTab.equals("Статистика"),this::exportAnalytics);
+    }
+    private void exportAnalytics(AnalyticsExport.Spec spec){
+        if(!unlocked||bookViewModel.hasPendingWrite())return;
+        Intent save=new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        save.addCategory(Intent.CATEGORY_OPENABLE);
+        save.setType(spec.getPdf()?"application/pdf":"text/csv");
+        save.putExtra(Intent.EXTRA_TITLE,"raschet-analytics-"+spec.getFrom()+"-"+spec.getTo()+(spec.getPdf()?".pdf":".csv"));
+        pendingAnalytics=spec;
+        try{startActivityForResult(save,REQUEST_ANALYTICS);}
+        catch(ActivityNotFoundException ex){pendingAnalytics=null;message("Выбор файла недоступен.");}
     }
     private View reportView(BookScreenData data){
         return ReportCompose.create(this,data,reportFrom,reportTo,reportDaysLimit,
@@ -900,6 +963,7 @@ public final class MainActivity extends ComponentActivity {
         if(productPickerDialog!=null)productPickerDialog.dismiss();
         if(privacy!=null&&!authInFlight)stoppedAt=android.os.SystemClock.elapsedRealtime();
         reloadOnStart=true;
+        analyticsViewModel.bindBook(null);
         bookViewModel.clear();
         if(page!=null)page.removeAllViews();
         super.onStop();
@@ -2030,6 +2094,9 @@ public final class MainActivity extends ComponentActivity {
             pendingReportFrom=null;pendingReportTo=null;
             if(ready&&from!=null&&to!=null)submitFile(new ClientCommand.FileTask.Report(
                     data.getData().toString(),from,to));
+        }else if(request==REQUEST_ANALYTICS){
+            AnalyticsExport.Spec spec=pendingAnalytics;pendingAnalytics=null;
+            if(ready&&spec!=null)submitFile(new ClientCommand.FileTask.Analytics(data.getData().toString(),spec));
         }else if(request==REQUEST_PDF){
             String id=pendingPdfClientId;
             pendingPdfClientId=null;
@@ -2041,7 +2108,7 @@ public final class MainActivity extends ComponentActivity {
             showDialog("Восстановить книгу?",form,null,()->new ClientCommand.FileTask.Import(uri,getLocalClassName()));
         }
         if(!authorized&&result==RESULT_OK&&(request==REQUEST_EXPORT||request==REQUEST_REPORT||
-                request==REQUEST_PDF||request==REQUEST_IMPORT)){
+                request==REQUEST_PDF||request==REQUEST_IMPORT||request==REQUEST_ANALYTICS)){
             message("Откройте книгу и повторите файловую операцию.");
         }
     }
@@ -2049,10 +2116,12 @@ public final class MainActivity extends ComponentActivity {
         if(!unlocked){finishAndRemoveTask();return;}
         if(bookViewModel.hasPendingWrite())return;
         if(selectedClient!=null){returnFromClient();}
+        else if(tab.equals("Статистика")){returnFromAnalytics();}
+        else if(tab.equals("История")&&historyFromAnalytics){historyFromAnalytics=false;tab="Статистика";render();}
         else if(!tab.equals("Главная")){tab="Главная";render();}
         else super.onBackPressed();
     }
-    @Override protected void onDestroy() {if(productPickerDialog!=null)productPickerDialog.dismiss();if(bookViewModel!=null)bookViewModel.clear();if(ledger!=null)ledger.close();super.onDestroy();}
+    @Override protected void onDestroy() {if(productPickerDialog!=null)productPickerDialog.dismiss();if(analyticsViewModel!=null)analyticsViewModel.bindBook(null);if(bookViewModel!=null)bookViewModel.clear();if(ledger!=null)ledger.close();super.onDestroy();}
     private void message(String m) {Toast.makeText(this,m,Toast.LENGTH_LONG).show();}
 
     private LinearLayout screen(String title,String subtitle) {
