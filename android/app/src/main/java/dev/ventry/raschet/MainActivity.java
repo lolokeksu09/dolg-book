@@ -925,6 +925,14 @@ public final class MainActivity extends ComponentActivity {
         },1);
         showDialog("Незавершённая запись",content,null);
     }
+    /** Form previews may reuse a coherent snapshot; writes always revalidate in SQLite. */
+    private BookScreenData bookForPreview(){
+        BookScreenData cached=bookViewModel.cachedBook();
+        if(cached!=null)return cached;
+        dev.ventry.raschet.data.LedgerSnapshot snapshot=ledger.readSnapshot();
+        LocalDate today=LocalDate.now();
+        return new BookScreenData(snapshot,today,CollectionsInsights.analyze(snapshot.getClients(),snapshot.getEntries(),today));
+    }
     private void showQuickDebtForm(boolean fromClients,LocalDate initialDay,QuickDebtDrafts.Draft previous){
         QuickDebtDrafts drafts=new QuickDebtDrafts(this);
         final String draftId=previous==null?java.util.UUID.randomUUID().toString():previous.id;
@@ -964,10 +972,10 @@ public final class MainActivity extends ComponentActivity {
         },1);
         form.addView(toggle);extra.setVisibility(due.length()>0||note.length()>0?View.VISIBLE:View.GONE);form.addView(extra);
         if(extra.getVisibility()==View.VISIBLE){TextView button=(TextView)toggle.getChildAt(0);button.setText("Скрыть дополнительные поля");button.setContentDescription("Скрыть дополнительные поля");}
-        List<LedgerStore.Client> customers=ledger.clients();
-        List<LedgerStore.Entry> snapshot=ledger.entries();
-        Map<String,Long> lastAmounts=RecentDebts.lastAmounts(snapshot);
-        List<CollectionsInsights.CustomerStatus> statuses=CollectionsInsights.analyze(customers,snapshot,LocalDate.now());
+        BookScreenData preview=bookForPreview();
+        List<LedgerStore.Client> customers=preview.getSnapshot().getClients();
+        Map<String,Long> lastAmounts=RecentDebts.lastAmounts(preview.getSnapshot().getEntries());
+        List<CollectionsInsights.CustomerStatus> statuses=preview.getStatuses();
         Map<String,Long> balances=new HashMap<>();
         for(CollectionsInsights.CustomerStatus status:statuses)balances.put(status.client.id,status.balance);
         String[] selected={null};
@@ -1080,11 +1088,10 @@ public final class MainActivity extends ComponentActivity {
     private void chooseClient(String type) {chooseClient(type,LocalDate.now());}
     private void chooseClient(String type,LocalDate initialDay) {
         if(type.equals("debt")){showQuickDebt();return;}
-        List<LedgerStore.Client> customers=ledger.clients();
-        if(customers.isEmpty()){message("Пока нет клиентов с долгом.");return;}
+        BookScreenData preview=bookForPreview();
+        if(preview.getSnapshot().getClients().isEmpty()){message("Пока нет клиентов с долгом.");return;}
         LinearLayout content=stack(8);
-        List<CollectionsInsights.CustomerStatus> statuses=directory.select(
-                CollectionsInsights.analyze(customers,ledger.entries(),LocalDate.now()),ClientDirectory.ACTIVE);
+        List<CollectionsInsights.CustomerStatus> statuses=directory.select(preview.getStatuses(),ClientDirectory.ACTIVE);
         EditText lookup=field("Имя или номер телефона",null);
         lookup.setSingleLine(true);
         content.addView(lookup);
