@@ -306,11 +306,15 @@ public final class MainActivity extends ComponentActivity {
         }
         page.removeAllViews();
         if(needsBookSnapshot()){
-            LinearLayout loading=screen("Загрузка книги","Читаем сохранённые записи…");
-            page.addView(scroll(loading),new FrameLayout.LayoutParams(-1,-1));
-            bookViewModel.refresh();
+            BookScreenData cached=bookViewModel.currentOrLoad();
+            if(cached!=null){
+                showReadyBook(cached);
+            }else{
+                LinearLayout loading=screen("Загрузка книги","Читаем сохранённые записи…");
+                page.addView(scroll(loading),new FrameLayout.LayoutParams(-1,-1));
+            }
         }else{
-            bookViewModel.clear();
+            // Preferences are rendered separately; preserve the foreground ledger snapshot.
             renderContent(null);
         }
     }
@@ -326,19 +330,23 @@ public final class MainActivity extends ComponentActivity {
                 ||state!=bookViewModel.getState().getValue())return;
         if(state instanceof ReadState.Ready<?> ready){
             BookScreenData data=(BookScreenData)ready.getValue();
-            if(firstStartPending){
-                firstStartPending=false;
-                if(tab.equals("Главная")&&data.getSnapshot().getClients().isEmpty()){
-                    tab="Клиенты";render();return;
-                }
-            }
-            renderContent(data);
+            if(!data.getToday().equals(LocalDate.now())){render();return;}
+            showReadyBook(data);
         }else if(state instanceof ReadState.Failed){
             page.removeAllViews();
             LinearLayout error=screen("Ошибка чтения книги","Данные не были изменены.");
             addButton(error,"Повторить",true,this::render,1);
             page.addView(scroll(error),new FrameLayout.LayoutParams(-1,-1));
         }
+    }
+    private void showReadyBook(BookScreenData data){
+        if(firstStartPending){
+            firstStartPending=false;
+            if(tab.equals("Главная")&&data.getSnapshot().getClients().isEmpty()){
+                tab="Клиенты";render();return;
+            }
+        }
+        renderContent(data);
     }
     private void renderContent(BookScreenData data){
         page.removeAllViews();
@@ -825,6 +833,7 @@ public final class MainActivity extends ComponentActivity {
         form.addView(label("Текущая книга будет заменена. Сначала автоматически создадим защищённую копию текущих записей. Для переноса между устройствами используйте внешний JSON.",14,ALERT,false));
         showDialog("Восстановить точку?",form,()->{
             vault.create(ledger); // Fail closed: do not replace if recovery point cannot be created.
+            bookViewModel.clear(); // Invalidate before replacing the authoritative book.
             ledger.importJson(snapshot);
             directory.clearAfterRestore();new QuickDebtDrafts(this).clear();new LedgerDrafts(this).clearAll();
             getPreferences(MODE_PRIVATE).edit().remove("last_json_export").apply();
@@ -1900,6 +1909,7 @@ public final class MainActivity extends ComponentActivity {
                     // Import is destructive. Keep an authenticated encrypted rollback point first.
                     // If creating this point fails, abort before touching SQLite.
                     vault.create(ledger);
+                    bookViewModel.clear(); // A restored database must never reuse the previous snapshot.
                     int[] count=ledger.importJson(backup);
                     directory.clearAfterRestore();new QuickDebtDrafts(this).clear();new LedgerDrafts(this).clearAll();
                     // A backup of the previous book is not a backup of this restored book.
