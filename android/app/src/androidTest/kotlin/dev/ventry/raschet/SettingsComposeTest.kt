@@ -26,7 +26,7 @@ class SettingsComposeTest {
         { log.set("shop") }, { log.set("large:$it") }, { log.set("reminder:$it") },
         { log.set(it) }, { log.set("auth") }, { log.set("lock") },
         { log.set("screenshots") }, { log.set("create") }, { count.incrementAndGet() },
-        { log.set("recovery:$it") }, { log.set("json") }, { log.set("csv") }, { log.set("restore-json") }
+        { log.set("recovery:$it") }, { log.set("json") }, { log.set("csv") }, { log.set("restore-json") }, { log.set("catalog") }
     )
 
     @Test fun collapsedSettingsAndPermissionControlledToggle() {
@@ -34,6 +34,8 @@ class SettingsComposeTest {
         val count = AtomicInteger()
         compose.setContent { LedgerMaterialTheme { SettingsContent(state(), actions(log, count)) } }
         compose.onNodeWithText("Создать защищённую точку").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Каталог товаров").performScrollTo().performClick()
+        assertEquals("catalog", log.get())
         compose.onNodeWithContentDescription("Крупный текст").assertIsOff().performClick()
         assertEquals("large:true", log.get())
         compose.onNodeWithContentDescription("Крупный текст").assertIsOff()

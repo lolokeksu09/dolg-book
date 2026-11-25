@@ -12,7 +12,9 @@ else
   PACKAGE=dev.ventry.raschet.nativev031
   adb install -r "$APK"
   # Instrumentation tests run only with the isolated debug package.
-  gradle -p android connectedDebugAndroidTest --no-daemon
+  bash scripts/android-test-with-retry.sh -p android connectedDebugAndroidTest --no-daemon
+  # Expose capacity benchmark measurements in CI before clearing logcat.
+  adb logcat -d -s RaschetBenchmark:I '*:S' | tee android/build/raschet-benchmark.txt
   adb install -r "$APK"
 fi
 adb logcat -c
@@ -24,10 +26,10 @@ dump_ui() {
   adb shell uiautomator dump /sdcard/raschet-ui.xml >/dev/null
   adb exec-out cat /sdcard/raschet-ui.xml > android/build/native-ui.xml
 }
-tap_text() {
-  local target="$1" match_mode="${2:-exact}" coords attempt
+find_text() {
+  local target="$1" match_mode="${2:-exact}" action="${3:-tap}" coords attempt
   # Off-screen practice actions require scrolling on compact displays.
-  for attempt in 1 2 3 4; do
+  for attempt in 1 2 3 4 5 6 7 8 9 10; do
     dump_ui
     if coords=$(python3 - "$target" "$match_mode" <<'PY'
 import re, sys, xml.etree.ElementTree as ET
@@ -42,15 +44,21 @@ for node in ET.parse("android/build/native-ui.xml").iter("node"):
 sys.exit(1)
 PY
     ); then
-      adb shell input tap $coords
+      if [[ "$action" == tap ]]; then adb shell input tap $coords; fi
       return 0
     fi
-    adb shell input swipe 540 1490 540 730 300
+    if (( attempt <= 4 )); then
+      adb shell input swipe 540 1490 540 730 300
+    else
+      adb shell input swipe 540 730 540 1490 300
+    fi
     sleep 0.35
   done
-  echo "Cannot find tap target after scrolling: $target" >&2
+  echo "Cannot find UI target after scrolling: $target" >&2
   return 1
 }
+tap_text() { find_text "$1" "${2:-exact}" tap; }
+reveal_text() { find_text "$1" "${2:-exact}" reveal; }
 # Wait for the actual onboarding screen; only recover the known unrelated launcher ANR.
 ready=false
 for attempt in 1 2 3 4 5 6; do
@@ -402,7 +410,7 @@ sleep 0.4
 dump_ui
 grep -Fq '800,00' android/build/native-ui.xml
 
-# Simplified book: catalog no longer exists, manual itemized debt remains optional.
+# The catalog belongs to settings, not home; manual itemized debt remains optional.
 dump_ui
 if grep -Fq 'Каталог товаров' android/build/native-ui.xml; then
   echo 'Unexpected catalog on home'; exit 1
@@ -417,7 +425,7 @@ tap_text 'Долг по товарам'
 sleep 0.4
 dump_ui
 if grep -Fq 'Выбрать из каталога' android/build/native-ui.xml; then
-  echo 'Unexpected catalog picker'; exit 1
+  echo 'Unexpected catalog picker in a clean empty catalog'; exit 1
 fi
 tap_text 'Название товара'
 adb shell input text QA-Apple
@@ -427,6 +435,17 @@ tap_text '0,00'
 adb shell input text 150
 adb shell input keyevent 4
 sleep 0.4
+# Closing and reopening must retain the uncommitted purchase without changing the ledger.
+tap_text 'Закрыть'
+sleep 0.4
+tap_text 'Ещё действия'
+sleep 0.3
+tap_text 'Долг по товарам'
+sleep 0.4
+dump_ui
+grep -Fq 'Черновик покупки восстановлен.' android/build/native-ui.xml
+grep -Fq 'QA-Apple' android/build/native-ui.xml
+grep -Fq 'Итого к записи: 150,00' android/build/native-ui.xml
 adb exec-out screencap -p > android/build/native-purchase-form.png
 tap_text 'Сохранить'
 sleep 0.6
@@ -446,29 +465,42 @@ tap_text 'Книга'
 tap_text '+ Записать долг'
 sleep 0.5
 fill_form_input 0 QuickBuyer
-fill_form_input 2 321
+fill_form_input 1 321
+dump_ui
+grep -Fq 'Сумма новой записи: 321,00' android/build/native-ui.xml
+grep -Fq 'Добавить телефон' android/build/native-ui.xml
+tap_text 'Добавить телефон'
+sleep 0.3
+dump_ui
+grep -Fq 'Телефон (необязательно)' android/build/native-ui.xml
+tap_text 'Скрыть телефон'
+sleep 0.2
 tap_text 'Сохранить'
 sleep 0.6
-dump_ui
-grep -Fq 'QuickBuyer' android/build/native-ui.xml
+reveal_text 'QuickBuyer'
 grep -Fq '321,00' android/build/native-ui.xml
 day=$(adb shell date +%d.%m.%y | tr -d '\r')
 tap_text "$day"
 sleep 0.3
 dump_ui
+grep -Fq 'раскрыть' android/build/native-ui.xml
 if grep -Fq 'QuickBuyer' android/build/native-ui.xml; then
   echo 'Collapsed date still exposes its entries'; exit 1
 fi
 tap_text "$day"
 sleep 0.3
-dump_ui
-grep -Fq 'QuickBuyer' android/build/native-ui.xml
+reveal_text 'QuickBuyer'
 tap_text 'QuickBuyer' client
 sleep 0.4
 dump_ui
 grep -Fq 'Остаток долга' android/build/native-ui.xml
 grep -Fq '321,00' android/build/native-ui.xml
-tap_text 'Книга'
+# System Back returns to the originating book instead of the client directory.
+adb shell input keyevent 4
+sleep 0.4
+dump_ui
+grep -Fq 'Долговая книга' android/build/native-ui.xml
+reveal_text 'QuickBuyer'
 
 # Client directory plus can create a customer and the first debt in the same form.
 tap_text 'Клиенты'
@@ -478,7 +510,7 @@ sleep 0.4
 dump_ui
 grep -Fq 'Дата записи' android/build/native-ui.xml
 fill_form_input 0 DirectoryBuyer
-fill_form_input 2 222
+fill_form_input 1 222
 tap_text 'Сохранить'
 sleep 0.5
 dump_ui
@@ -497,8 +529,7 @@ dump_ui
 grep -Fq '322,00' android/build/native-ui.xml
 tap_text 'Книга'
 sleep 0.4
-dump_ui
-grep -Fq 'DirectoryBuyer' android/build/native-ui.xml
+reveal_text 'DirectoryBuyer'
 
 # Filter by debtor; matching rows retain their full-book outstanding amount.
 tap_text 'Фильтры книги'
@@ -506,8 +537,7 @@ sleep 0.4
 fill_form_input 0 DirectoryBuyer
 tap_text 'Сохранить'
 sleep 0.5
-dump_ui
-grep -Fq 'DirectoryBuyer' android/build/native-ui.xml
+reveal_text 'DirectoryBuyer'
 grep -Fq '322,00' android/build/native-ui.xml
 if grep -Fq 'QuickBuyer' android/build/native-ui.xml; then
   echo 'Book search leaked another client'; exit 1
@@ -546,7 +576,7 @@ tap_text 'Сохранить'
 sleep 0.5
 dump_ui
 grep -Fq 'Полученные оплаты' android/build/native-ui.xml
-grep -Fq 'DirectoryBuyer' android/build/native-ui.xml
+reveal_text 'DirectoryBuyer'
 grep -Fq '322,00' android/build/native-ui.xml
 tap_text 'Долги по датам'
 sleep 0.4
@@ -567,7 +597,7 @@ tap_text 'Сохранить'
 sleep 0.5
 dump_ui
 grep -Fq 'Долговая книга' android/build/native-ui.xml
-grep -Fq 'DirectoryBuyer' android/build/native-ui.xml
+reveal_text 'DirectoryBuyer'
 tap_text 'DirectoryBuyer' client
 sleep 0.4
 dump_ui
@@ -633,7 +663,7 @@ tap_text 'Книга'
 tap_text '+ Записать долг'
 sleep 0.4
 fill_form_input 0 DraftBuyer
-fill_form_input 2 123
+fill_form_input 1 123
 tap_text 'Закрыть'
 sleep 0.4
 tap_text '+ Записать долг'

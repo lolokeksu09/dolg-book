@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.height
+import androidx.compose.material3.TextButton
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -136,20 +138,39 @@ internal fun CollectionContent(model: CollectionUiModel, initialQuery: String, i
         val stacked = largeText || maxWidth < 340.dp || LocalDensity.current.fontScale > 1.2f
         val result = visible
         LazyColumn(Modifier.widthIn(max = 800.dp).fillMaxSize().testTag("collections-list"),
-            contentPadding = PaddingValues(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            contentPadding = PaddingValues(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             item("title") {
-                Text("Возврат долгов", color = ledgerText, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                Text("Возврат долгов", color = ledgerText, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
                 Text("План работы с непогашенными долгами", color = ledgerMuted, fontSize = 13.sp)
             }
-            item("total") { LedgerTotal("К возврату всего", model.total, "Должников: " + model.work.size) }
-            item("overdue") {
-                LedgerMetric("Просрочено", ledgerMoney(model.overdue), if (model.overdue > 0) ledgerRed else ledgerMuted) {
-                    actions.filter(CollectionsInsights.LATE)
-                }
-            }
-            item("upcoming") {
-                LedgerMetric("В ближайшие 7 дней", ledgerMoney(model.upcoming), if (model.upcoming > 0) ledgerAlert else ledgerMuted) {
-                    actions.filter(CollectionsInsights.SOON)
+            item("total") {
+                Column(Modifier.fillMaxWidth().background(ledgerPanel, RoundedCornerShape(12.dp)).padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    LedgerTotal("К возврату всего", model.total, "Должников: " + model.work.size)
+                    HorizontalDivider(color = ledgerBorder.copy(alpha = .5f))
+                    if (stacked) {
+                        LedgerMetric("Просрочено", ledgerMoney(model.overdue), if (model.overdue > 0) ledgerRed else ledgerMuted) {
+                            actions.filter(CollectionsInsights.LATE)
+                        }
+                        LedgerMetric("В ближайшие 7 дней", ledgerMoney(model.upcoming), if (model.upcoming > 0) ledgerAlert else ledgerMuted) {
+                            actions.filter(CollectionsInsights.SOON)
+                        }
+                    } else Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Column(Modifier.weight(1f).heightIn(min = 64.dp).clickable { actions.filter(CollectionsInsights.LATE) }
+                            .semantics { contentDescription = "Просрочено" }.padding(vertical = 4.dp)) {
+                            Text("Просрочено", color = ledgerMuted, fontSize = 12.sp)
+                            Text(ledgerMoney(model.overdue), color = if (model.overdue > 0) ledgerRed else ledgerText,
+                                fontSize = 19.sp, fontWeight = FontWeight.Medium,
+                                style = androidx.compose.ui.text.TextStyle(fontFeatureSettings = "tnum"))
+                        }
+                        Column(Modifier.weight(1f).heightIn(min = 64.dp).clickable { actions.filter(CollectionsInsights.SOON) }
+                            .semantics { contentDescription = "В ближайшие 7 дней" }.padding(vertical = 4.dp)) {
+                            Text("В ближайшие 7 дней", color = ledgerMuted, fontSize = 12.sp)
+                            Text(ledgerMoney(model.upcoming), color = if (model.upcoming > 0) ledgerAlert else ledgerText,
+                                fontSize = 19.sp, fontWeight = FontWeight.Medium,
+                                style = androidx.compose.ui.text.TextStyle(fontFeatureSettings = "tnum"))
+                        }
+                    }
                 }
             }
             item("search") {
@@ -166,8 +187,13 @@ internal fun CollectionContent(model: CollectionUiModel, initialQuery: String, i
                             selected = urgent == value; contentDescription = label
                         }
                         val click = { if (urgent != value) { urgent = value; limit = 60; actions.urgent(value) } }
-                        if (urgent == value) Button(onClick = click, modifier = modifier) { Text(label, fontSize = 12.sp) }
-                        else OutlinedButton(onClick = click, modifier = modifier) { Text(label, fontSize = 12.sp) }
+                        Column(modifier.clickable(onClick = click), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Box(Modifier.fillMaxWidth().heightIn(min = 46.dp), contentAlignment = Alignment.Center) {
+                                Text(label, color = if (urgent == value) ledgerText else ledgerMuted, fontSize = 13.sp,
+                                    fontWeight = if (urgent == value) FontWeight.SemiBold else FontWeight.Normal)
+                            }
+                            Box(Modifier.fillMaxWidth().height(2.dp).background(if (urgent == value) ledgerAccent else ledgerBorder.copy(alpha = .45f)))
+                        }
                     }
                 }
             }
@@ -186,7 +212,8 @@ internal fun CollectionContent(model: CollectionUiModel, initialQuery: String, i
                     val shown = result.take(limit)
                     itemsIndexed(shown, key = { _, item -> "collection-" + item.status.client.id }) { index, item ->
                         if (index == 0 || shown[index - 1].priority != item.priority) {
-                            Text(CollectionWorklist.title(item.priority), fontWeight = FontWeight.Bold, color = ledgerText,
+                            Text(CollectionWorklist.title(item.priority), fontWeight = FontWeight.Medium,
+                                color = if (item.priority == CollectionWorklist.LATE) ledgerRed else ledgerText,
                                 modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
                         }
                         CollectionRow(item, model.today, stacked, actions)
@@ -212,7 +239,8 @@ private fun CollectionRow(item: CollectionWorklist.Item, today: LocalDate, stack
             .padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(person.name, color = ledgerText, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-            Text(ledgerMoney(status.balance), color = ledgerText, fontWeight = FontWeight.Bold)
+            Text(ledgerMoney(status.balance), color = ledgerText, fontWeight = FontWeight.Medium,
+                fontSize = 17.sp, style = androidx.compose.ui.text.TextStyle(fontFeatureSettings = "tnum"))
         }
         if (status.overdue > 0) Text("Просрочено: " + ledgerMoney(status.overdue), color = ledgerRed, fontSize = 12.sp)
         if (status.upcoming > 0) Text("За 7 дней: " + ledgerMoney(status.upcoming) + " · ближайший срок " + status.nextDue,
@@ -227,8 +255,9 @@ private fun CollectionRow(item: CollectionWorklist.Item, today: LocalDate, stack
             Button(onClick = { actions.pay(person.id) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Принять оплату") }
             OutlinedButton(onClick = { actions.plan(person) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(planLabel) }
         } else Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Button(onClick = { actions.pay(person.id) }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("Принять оплату") }
-            OutlinedButton(onClick = { actions.plan(person) }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text(planLabel) }
+            Button(onClick = { actions.pay(person.id) }, shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("Принять оплату") }
+            TextButton(onClick = { actions.plan(person) }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text(planLabel) }
         }
     }
     HorizontalDivider(color = ledgerBorder)

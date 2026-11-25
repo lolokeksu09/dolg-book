@@ -48,7 +48,7 @@ test('intro first presents Ventry then preserves three interactive lessons',()=>
 
 test('native navigation and empty states are accessible, with actionable call-to-action',()=>{
   const activity=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
-  assert.ok(activity.includes('private int navHeight(){return largeText?68:56;}'), 'navigation has compact and large-text heights');
+  assert.ok(activity.includes('private int navHeight(){return largeText?76:64;}'), 'navigation has compact and large-text heights');
   assert.ok(activity.includes('setSingleLine(true)'));
   assert.ok(activity.includes('setContentDescription(caption)'));
   assert.ok(activity.includes('item.setSelected(active)'));
@@ -62,7 +62,7 @@ test('native navigation and empty states are accessible, with actionable call-to
   assert.ok(history.includes('История пока пустая'));
   assert.ok(history.includes('Добавить первого клиента'));
   assert.ok(book.includes('Записать долг'));
-  assert.ok(settings.includes('Switch(checked = checked, onCheckedChange = null)'));
+  assert.match(settings, /Switch\(checked\s*=\s*checked,\s*onCheckedChange\s*=\s*null\s*[,)]/);
   assert.ok(settings.includes('role = Role.Switch'));
   assert.ok(activity.includes('return SettingsCompose.create(this,state,actions)'));
   assert.ok(activity.includes('EXTRA_FIRST_START'));

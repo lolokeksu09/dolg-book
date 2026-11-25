@@ -10,6 +10,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.TextButton
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -95,7 +98,8 @@ private fun ReportValue(title: String, amount: Long, color: Color = ledgerText) 
     Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalAlignment = Alignment.CenterVertically) {
         Text(title, color = ledgerMuted, modifier = Modifier.weight(1f), fontSize = 13.sp)
-        Text(ledgerMoney(amount), color = color, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.End,
+        Text(ledgerMoney(amount), color = color, fontWeight = FontWeight.Medium, textAlign = TextAlign.End,
+            style = androidx.compose.ui.text.TextStyle(fontFeatureSettings = "tnum"),
             modifier = Modifier.weight(1f))
     }
 }
@@ -105,9 +109,9 @@ internal fun ReportContent(report: PeriodReport, initialLimit: Int, actions: Rep
     var limit by remember { mutableIntStateOf(initialLimit) }
     Box(Modifier.fillMaxSize().background(ledgerBg), contentAlignment = Alignment.TopCenter) {
         LazyColumn(Modifier.widthIn(max = 800.dp).fillMaxSize().testTag("report-list"),
-            contentPadding = PaddingValues(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            contentPadding = PaddingValues(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             item("title") {
-                Text("Финансовый отчёт", color = ledgerText, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                Text("Финансовый отчёт", color = ledgerText, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
                 Text("Движение задолженности, не выручка и не прибыль", color = ledgerMuted, fontSize = 13.sp)
             }
             item("period") {
@@ -115,21 +119,28 @@ internal fun ReportContent(report: PeriodReport, initialLimit: Int, actions: Rep
                     action = actions.period)
             }
             item("summary") {
-                LedgerTotal("Остаток на конец", report.closing)
-                ReportValue("Остаток на начало", report.opening)
-                ReportValue("Изменение задолженности", report.totals.net())
-                Text("Операций: " + report.totals.count + " · клиентов: " + report.activeCustomers, color = ledgerMuted, fontSize = 13.sp)
+                Column(Modifier.fillMaxWidth().background(ledgerPanel, RoundedCornerShape(12.dp)).padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    LedgerTotal("Остаток на конец", report.closing)
+                    HorizontalDivider(color = ledgerBorder.copy(alpha = .5f))
+                    ReportValue("Остаток на начало", report.opening)
+                    val net = report.totals.net()
+                    ReportValue("Изменение задолженности", net, if (net > 0L) ledgerAlert else if (net < 0L) ledgerAccent else ledgerMuted)
+                    Text("Операций: " + report.totals.count + " · клиентов: " + report.activeCustomers, color = ledgerMuted, fontSize = 12.sp)
+                }
             }
             item("actions") {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Button(onClick = actions.history, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Операции периода") }
-                    OutlinedButton(onClick = actions.export, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Экспорт отчёта CSV") }
+                    Button(onClick = actions.history, shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Операции периода") }
+                    TextButton(onClick = actions.export, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Экспорт отчёта CSV") }
                 }
             }
             item("flow") {
                 Text("Движение за период", color = ledgerText, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                ReportValue("Записано долгов", report.totals.debts)
-                ReportValue("Получено оплат", report.totals.payments, ledgerAccent)
+                val scale = maxOf(report.totals.debts, report.totals.payments, 1L)
+                ReportFlow("Записано долгов", report.totals.debts, scale, ledgerAlert)
+                ReportFlow("Получено оплат", report.totals.payments, scale, ledgerAccent)
                 ReportValue("Отменено долгов", report.totals.debtReversals, ledgerAlert)
                 ReportValue("Отменено оплат", report.totals.paymentReversals, ledgerAlert)
                 Text("Отмены учитываются по дате отмены. Суммы долгов и оплат показаны до вычета отмен.",
@@ -144,14 +155,16 @@ internal fun ReportContent(report: PeriodReport, initialLimit: Int, actions: Rep
             }
             items(report.daily.entries.take(limit), key = { "day-" + it.key }) { day ->
                 val totals = day.value
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(ledgerLongDate.format(day.key), color = ledgerText, fontWeight = FontWeight.SemiBold)
-                    Text("Долги " + ledgerMoney(totals.debts) + " · оплаты " + ledgerMoney(totals.payments),
-                        color = ledgerMuted, fontSize = 13.sp)
-                    Text("Отмены долгов " + ledgerMoney(totals.debtReversals) + " · отмены оплат " + ledgerMoney(totals.paymentReversals),
-                        color = ledgerMuted, fontSize = 13.sp)
-                    Text("Изменение: " + ledgerMoney(totals.net()), color = ledgerAccent, fontWeight = FontWeight.Bold)
-                    HorizontalDivider(color = ledgerBorder)
+                Column(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(ledgerLongDate.format(day.key), color = ledgerText, fontWeight = FontWeight.Medium)
+                    ReportValue("Долги", totals.debts)
+                    ReportValue("Оплаты", totals.payments, ledgerAccent)
+                    if (totals.debtReversals != 0L || totals.paymentReversals != 0L) {
+                        ReportValue("Отмены долгов", totals.debtReversals, ledgerAlert)
+                        ReportValue("Отмены оплат", totals.paymentReversals, ledgerAlert)
+                    }
+                    ReportValue("Изменение", totals.net(), if (totals.net() > 0L) ledgerAlert else ledgerAccent)
+                    HorizontalDivider(color = ledgerBorder.copy(alpha = .5f))
                 }
             }
             if (report.daily.size > limit) item("more") {
@@ -159,6 +172,19 @@ internal fun ReportContent(report: PeriodReport, initialLimit: Int, actions: Rep
                     Text("Показать ещё дни")
                 }
             }
+        }
+    }
+}
+
+
+/** Comparable gross amounts on one common scale; reversals remain separately disclosed. */
+@Composable
+private fun ReportFlow(title: String, amount: Long, scale: Long, color: Color) {
+    Column(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        ReportValue(title, amount, color)
+        Box(Modifier.fillMaxWidth().height(5.dp).background(ledgerPanel, RoundedCornerShape(3.dp))) {
+            val fraction = (amount.toDouble() / scale.toDouble()).coerceIn(0.0, 1.0).toFloat()
+            if (fraction > 0f) Box(Modifier.fillMaxWidth(fraction).height(5.dp).background(color, RoundedCornerShape(3.dp)))
         }
     }
 }

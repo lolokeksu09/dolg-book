@@ -183,3 +183,108 @@ Maintain existing preview/release isolation. No merge or delivery until exact-he
 - `SettingsCompose.kt` replaces the active settings screen with Material 3 controls and the existing shared AMOLED palette. Immutable SettingsSnapshot, explicit SettingsActions callbacks, text size, shop name, local notification scheduling, privacy, screenshot controls, collapsed backup/privacy sections, protected restore points, automatic recovery, external JSON/CSV exports and import warnings preserved. Switches are controlled by committed Activity preference/service state and do not optimistically turn on before notification permission or service success. Actual credential authentication, FLAG_SECURE, recovery storage, file picker, fail-closed restore backup and existing confirmation dialogs remain unchanged. Restore point availability conditional on existing point count. No new encryption claim; database remains separately unencrypted as disclosed before. Settings metadata reads and backup/import handlers remain on the existing legacy execution path.
 - MainActivity now hosts SettingsCompose, removes old settings renderer, obsolete Java entry-card overloads and three Java switch-row helpers (net 132 lines removed in 8472bfa). Clears the composed page on stop, retains existing start refresh and lock behavior. All seven principal screens now have active Compose implementations; the Activity navigation shell, system/financial dialogs, onboarding and other remaining Java code are not migrated yet. No schema/backup/signing/app ID/version change.
 - Verification at `c332fe3`: 16/16 source-wiring checks PASS (active host, controlled switches, permission/authentication, lock/screenshot gate, recovery availability/warning, fail-closed restore, exports, persisted text/auto recovery, disposal, removed renderers and test wiring). At `848141b`: four affected source-test bodies (36 assertions) PASS using exact GitHub files in isolated V8, equivalent assertion functions; not full Node runner. `SettingsComposeTest.kt` adds four Android instrumentation cases for collapsed sections, permission-controlled toggles, protected authentication/lock, hidden absent restore point and explicit restore callbacks. Android SDK/Gradle/adb unavailable locally; tests and latest APK/visual runtime unverified. Next gate: exact-head CI, fix observed compile/UI issues, then navigation/dialog migration and release acceptance. No merge or user data mutation.
+
+
+## Product readiness — Ventry design and data integrity (slice 1)
+
+Owner request 2026-11-25: address product audit and align the native app with Ventry. Base a3db44ae5906de89157702927ea1757f3e15c326. Design source: Ventry main 00a3073a4e5f64aa2eec885b599a3da2b98412dc, site/styles.css. Dark forest/sand/moss/gold adaptation retains the product's dark mode direction, not its pure black background. No website deployment. Package IDs, SQLite schema, signatures and financial algorithms unchanged.
+
+- DI-01 PARTIAL: shared 10 MiB UTF-8 limit for import/recovery; compact coherent transactional export. Oversized JSON remains exportable as rescue but is not marked restorable. Streaming and 100k-row roundtrip remain open; full valid books are not guaranteed to fit.
+- UX-01 PARTIAL: Ventry palette for Views and Compose, native theme accent, Material shapes and totals; wider tablet navigation and direct day selection in book filters. Full calendar screen, Golos font, complete Compose forms and visual/device QA remain open.
+- COM-01 PARTIAL: catalog screen accessible from settings, search, add/edit, favorite/archive, unit/price selection and active products in itemized debt forms. Catalog writes use the existing IO command flow; reads still synchronous. Original JSON v4 catalog and duplicate rules retained. Purchase drafts and advanced quick selection remain open.
+- DI-02 OPEN: atomic full backup of local metadata/drafts, protected portable copy; legacy JSON stays v1–v4.
+- ARCH-01 OPEN: remaining synchronous I/O, Java shell/dialogs, large-book performance.
+- REL-01 OPEN: exact-head CI, signed upgrade and physical device acceptance.
+
+Added BackupSizeTest and catalog routing UI test, updated prior removed-catalog assertions to reflect the newly authorized functionality, retained manual purchase smoke. Local Android build/emulator unavailable; CI required, no merge or release until exact-head gates pass.
+
+
+### Product readiness — performance slice
+
+Baseline PR #17 d5dce2d: all five PR workflows passed (Android APK 45562002857, Kotlin/Rust 45562002844, emulator 45562002967, Rust preview 45562002937, unsigned release 45562002856). Signed release not verified.
+
+- Indexed client history uses the existing entries_client_seq index; all reversals and insertion order are retained. Global row caps use SQLite COUNT, and journal rank reads distinct timestamps without allocating purchase rows or running FIFO projections. Client-specific legacy forms and PDF now read only the selected client's history.
+- Automatic recovery queue coalesces pending requests to the latest snapshot: one running + one pending; a request arriving during a snapshot schedules another pass. Up to four completed recovery points retained; intermediate rapid edits may share one point. Manual recovery unchanged. No durability across process death added.
+- Added IndexedLedgerInstrumentedTest for full-book/scoped balance, dated guards, rank, reversal and correction parity; LatestRecoveryQueueTest for burst and failure handling. No schema or financial calculation change. New HEAD CI and representative latency/memory benchmarks pending. Main remains unchanged; no release.
+
+
+### Product readiness — foreground snapshot and history performance
+
+Previous HEAD 27c6f03: all five PR workflows successful (APK 45566729233, release candidate 45566729241, Rust preview 45566729433, emulator 45566729309, Kotlin/Rust contract 45566729148). Signed upgrade not established.
+
+- A navigation request now joins an already-running read or reuses a ready snapshot for the current local day. Settings no longer discard it. The existing writer clears the snapshot before a command; both restoration paths explicitly clear it before replacement; onStop, relock and onDestroy still clear private state. Date rollover causes a new read on the next render. UI metadata and drafts remain read separately on each projection.
+- Quick debt and payment chooser use the coherent in-memory snapshot and calculated customer statuses where available. Fallback uses a coherent synchronous read; financial commits still revalidate against SQLite.
+- History buckets by local day in reverse order, retains reverse insertion order within a day, parses dates once per eligible row during selection, and memoizes contact matching for non-empty queries. Read-only archive/favorite membership no longer copies preference sets.
+- LatestReadContract covers 20 pending and 20 ready navigation requests, new-date reload, invalidation and stale response rejection. Local Kotlin 1.9.0/JVM with bundled coroutines: exact blobs 0bb21d02b756459852c8d8800e4e0a02303d7d2b and 8a3918d17434e6435133de79ac950de5da5f9ab9 verified by git hash-object; LATEST_READ_CONTRACT_PASS. HistoryReportComposeTest adds local-day ties, backdated entries, phone and note filters; Android test pending exact-head CI.
+- Remaining performance work: measured large-book latencies and peak RAM, background import/export/PDF, reducing full-book projection allocations, and further Compose migration. No schema change, financial rule change, main merge or release.
+
+
+### Product readiness — background file operations
+
+Previous HEAD 1fbb593: APK, Kotlin/Rust, JNI preview and release candidate completed successfully when checked; emulator was still running. New changes require exact-head CI.
+
+- Typed ClientCommand.FileTask commands carry immutable SAF URI strings and parameters. The existing single-flight writer runs BookFileService on Dispatchers.IO under the read/write mutex. Activity now handles only picker results, explicit restore confirmation and the result UI; rotation retains the ViewModel operation. No concurrent financial commands during file tasks.
+- JSON export, per-row buffered CSV output, report CSV, customer PDF, manual encrypted point creation, JSON reading and both restore paths moved off the main thread. CSV still takes a coherent in-memory snapshot; JSON still materializes its payload. PDF totals calculated once per statement and oversized individual rows fail instead of generating empty pages.
+- Shared 10 MiB bounded reader rejects malformed UTF-8 and oversized input before replacing data. Restore takes an authenticated rollback copy before SQLite import; cleanup after commit cannot falsely report the restore as uncommitted. Metadata is still not included in the v1–v4 backup. RecoveryVault serializes file reads/writes and key generation across instances; restore from protected point selects latest at confirmation. If the privacy gate expired while the picker was open, retry after unlocking.
+- Local JVM harness on exact BackupSize.java blob a40efceb5f07b7873c77a3dd8d0418f39f11a441 (git hash-object confirmed): UTF8_ROUNDTRIP_PASS, INVALID_UTF8_REJECTED, EXACT_10_MIB_PASS, OVERSIZED_REJECTED. Added BackupSizeTest and isolated BookFileServiceInstrumentedTest for file outputs and rejected imports; updated source contract to trace rollback ordering through the worker. Android tests and latency/RAM measurement pending. No schema change, main merge or release.
+
+
+
+### Product readiness — streaming snapshots and full-capacity QA
+
+Previous HEAD a592538: Android APK 45572799961 and release candidate 45572799925 failed in Node source-contract tests (49 passed, 2 failed). Both stale assertions looked for purchase CSV serialization and draft cleanup in MainActivity after those responsibilities moved to BookFileService. Updated assertions still require purchase content in CSV and draft clearing after a committed import; no financial assertion removed. Kotlin/Rust contract 45572799994 and JNI preview 45572799818 passed; emulator 45572799837 was still running at inspection.
+
+- LedgerStore.writeJson writes individual client/entry/product JSON objects from SQLite cursors under a coherent read transaction; purchase decoding and v2–v4 version selection preserved. JSON key order changes (version last); existing import is key-based. exportJson compatibility wrapper shares this serializer. Portable export counts actual UTF-8 bytes without a full byte array, and oversized portable copies remain explicitly marked non-restorable.
+- Local recovery writes the same serialized data through bounded AES-GCM update/finalization into an encrypted temporary file, syncs and atomically renames only after successful authentication-tag generation. Existing VRC1 reads and retention remain. Oversize fails without replacing prior points. Full JSON import/decryption remains in-memory; the 10 MiB restore limit still prevents full-capacity recovery for sufficiently large books.
+- LargeBookInstrumentedTest seeds an isolated synthetic database of 1,000 clients and 100,000 rows with expected 3,500 kopecks balance per client, verifies the real indexed history and streaming JSON row counts, records seed/snapshot/projection/read/export durations via RaschetBenchmark, and checks oversized encrypted snapshot rejection preserves the earlier point and removes temporary files. Seed uses bulk SQL, not production entry submission. No peak RAM or device performance result claimed until emulator/device execution.
+- Exact new revision must pass Node, Android, Kotlin/Rust, JNI, emulator and candidate gates. No schema, financial calculation, main merge or release changes.
+
+
+### Product readiness — incremental transactional import
+
+Previous HEAD cbbf111: all five workflows passed (APK 45574175185, candidate 45574174965, Kotlin/Rust 45574174926, JNI preview 45574174968 after retry of Maven Central HTTP 429, emulator 45574174910). Emulator log records 64 tests started and finished. Individual benchmark timings were not retrieved.
+
+- LedgerStore.importJson(Reader) uses Android JsonReader, one-object-at-a-time parsing, connection-local SQLite temporary staging and a single transaction for full validation and replacement. No complete JSON object tree or List<Entry> is retained; client/catalog metadata and financial validation history remain in memory. Field order is arbitrary, including version last. The string overload shares this path. Duplicate keys, trailing content, non-integer numeric tokens and invalid financial history are rejected; canonical v1-v4 backups remain supported. This deliberately tightens parsing compared with permissive JSONObject coercion.
+- External SAF imports use BackupSize.openUtf8, strict UTF-8 decoding and an incremental byte limit. No full input string. Recovery snapshot is created before parsing/restoring; malformed input can therefore create an additional valid rollback point but cannot replace the committed ledger. Existing authenticated VRC1 restore still decrypts into memory.
+- Added isolated rollback/retry tests (reordered root, invalid final payment, truncated/duplicate/trailing JSON), and extended LargeBookInstrumentedTest to import 100,000 rows into a separate QA database with count and balance assertions and import timing. The QA Reader overload deliberately bypasses the current public file-size boundary; this does NOT mean full-capacity portable restore is supported yet.
+- Exact JVM source blob 1d65761c6edb9dc76d20e04f166b4e9df00d9495 verified by git hash-object, compiled with javac --release 17 and exercised: UTF8_PASS, EXACT_LIMIT_PASS, OVERSIZE_REJECTED, MALFORMED_REJECTED. New Android instrumentation/CI remains to be verified.
+- Retain the 10 MiB portable and protected-copy limit until a reviewed bounded authenticated recovery format supports larger rollback snapshots. Do not raise the cap alone or disable fail-closed recovery. No main merge, schema migration or release.
+
+
+### Product readiness — VRC2 authenticated streaming recovery
+
+Previous HEAD caec9e7: APK 45582607666, release candidate 45582607595 and Kotlin/Rust 45582607269 passed. JNI 45582607831 failed before instrumentation because Maven Central returned HTTP 429; emulator 45582607198 was running at inspection. New commits require new CI.
+
+- New VRC2: magic + random 128-bit recovery identifier + ordered records (length, random 96-bit provider-generated IV, AES-256-GCM ciphertext and 128-bit tag). AAD binds format, recovery identifier, record index and plaintext length. Data records are at most 64 KiB, followed by a mandatory authenticated zero-length terminal record and physical EOF. Separate Keystore alias raschet.recovery.aes.v2 retains v1 compatibility and avoids key reuse across formats. Old VRC1 retains its 10 MiB reader limit; no legacy key regeneration on read.
+- Writes use an encrypted temporary file, finish, fsync, rename and then prune; no plaintext temp file. VRC2 restore passes a bounded authenticated Reader to the atomic importer, with terminal verification before commit. Existing points remain readable; new VRC2 points are not readable by old APKs, so downgrading is not a supported recovery path.
+- Shared streamed portable/VRC2 limit now 256 MiB. This is a chosen resource ceiling, not an unlimited guarantee for every theoretically possible 100k-entry JSON. ImportJsonGuard bounds tokens to 8192 characters, array row containers to 65536 characters and structural depth to 32; canonical fields fit these bounds. SQLite staging and validation-history memory still scale with record count; disk space and Android Keystore performance must be measured. Existing backup still mandatory before restoring.
+- Added JVM frame and JSON-guard tests plus Android VRC1 compatibility, corrupt terminal rollback and 100k-row portable/protected roundtrip tests. Local exact-source verification: RecoveryFrames.java 63eb5f1d35f78d8402e9f108c9c55782ea521b78, BackupSize.java dc1db7187db247e3bf59ad20aa7b6a52550f8c1d, ImportJsonGuard.java e2bb21707d4af073ce9cf5d3270bb4ea53724d45; all git hash-object matched. javac --release 17; java -Xmx96m standalone harness: VRC2_ROUNDTRIP_PASS (7 sizes including 12 MiB), VRC2_REJECTION_PASS (8 cases), BYTE_BOUNDARY_PASS (256 MiB and +1 byte), JSON_GUARD_PASS (escaped content and 3 rejections). This is JVM provider evidence, not Android Keystore or full-book RAM proof.
+- No schema change, production data change, main merge or APK release. Exact-head Android build, Keystore tests, restore roundtrip and independent review of new recovery format are release gates.
+
+
+### Product readiness — purchase draft continuity
+
+Baseline 0cc050e: all five workflows successful, emulator 45588556638 ran 66 tests. Actual LARGE_BOOK_PASS on API 35 x86_64 emulator: 100,000 rows / 1,000 clients, JSON 13,817,817 bytes; fixture seed 7482 ms, snapshot/projection 748 ms, indexed read 0 ms (timer resolution), export 4532 ms, portable import 27211 ms, encrypted recovery creation 4595 ms. These are one-run emulator results, not physical-device latency or peak RAM measurements. Both portable and protected full-size restore assertions passed.
+
+- PurchaseDrafts persists incomplete raw item rows (name, quantity, price, unit), discount, due date and note per client with stable UUID. Existing operation draft preference store means restore clears purchase drafts too. Opening a committed draft discards it by operation identity. Form hydration suppresses partial overwrites; catalog prices remain captured in the draft rather than dynamically repriced.
+- ClientWriteService clears only the matching purchase draft after the database operation commits. Failed validation retains the draft. Existing financial validation and purchase limits unchanged. Explicit discard starts a fresh purchase; drafts do not themselves create debt.
+- Added isolated draft storage instrumentation and extended the real emulator UI smoke to close/reopen the purchase before saving, checking restored item and total. New exact-head CI remains required. Purchase date still follows existing purchase submission behavior; portable metadata/drafts backup remains a separate task. No release or main merge.
+
+
+### Product readiness — calendar-first debt journal option
+
+Baseline a9f3a7e: all five workflows passed (APK, release candidate, Kotlin/Rust contract, JNI preview and emulator smoke). The debt journal remains the primary product; catalog selection is optional.
+
+- BookCalendar adds a Monday-first month grid, navigation, record counts and accessible descriptions with original/remaining debt or received payment amounts from existing BookDays projections. It does not calculate financial balances independently.
+- Calendar is an optional view on the main book; existing date list remains the default for compatibility. Selecting a date displays only that day's entries, automatically expanded, with the existing client, operation and dated write actions. Empty days offer the appropriate dated write action; future dates can be inspected but not used for new dated writes in calendar mode.
+- Activity state retains the selected date and view mode across navigation and rotation; successful debt/payment receipts select their committed date. Applying or clearing filters resets the date selection to the relevant projection. No storage schema change.
+- Added Compose instrumentation for Monday-first leap-year and six-week layouts, date selection, month navigation, accessible totals, selected-day client isolation and dated write routing. Exact-head Android CI and rendered layout checks remain required. No release or main merge.
+
+
+### Product readiness — date-aware debtor workflow
+
+Baseline fbcd206: all five workflows passed; emulator 45599694731 completed 73 instrumented tests. LARGE_BOOK_PASS: 100,000 rows / 1,000 clients, JSON 13,817,817 bytes, projection 504 ms, export 2724 ms, import 16421 ms, recovery creation 2885 ms (single emulator run; not device guarantees).
+
+- Payment form uses one per-client history snapshot for current balance, recent amounts, promise progress and dated maximum. Half/full shortcuts use DatedPayments.maximum for the selected day, disable at zero, and distinguish today's full balance from historical maximum. Historical projection warns if an entered amount exceeds that day's maximum. Current promise shortcuts are hidden on historical days. The writer still independently validates the actual transaction; preview cannot authorize an overpayment.
+- Client detail opened from the journal returns to the originating book, not the generic client directory. Activity saved state tracks the origin and existing calendar selection; a write in the detail does not overwrite the selected journal date. Existing client/collection navigation remains available.
+- Added Compose header callback test and native smoke assertion for the system Back route. Historical maximum already has ledger instrumentation coverage; the newly changed payment shortcut UI has not yet been exercised on a historical date. New exact-head CI and visual verification remain required. No schema change, merge or release.

@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -141,11 +142,12 @@ internal fun detailProjection(
 
 object ClientDetailCompose {
     @JvmStatic
+    @JvmOverloads
     fun create(owner: ComponentActivity, data: BookScreenData, id: String, filter: String,
         initialLimit: Int, largeText: Boolean, fromCollections: Boolean, onBack: Runnable,
         onMore: Consumer<Boolean>, onDebt: Runnable, onPayment: Runnable, onRestore: Runnable,
         onFilter: Runnable, onOpen: Consumer<String>, onPurchase: Consumer<LedgerStore.Entry>,
-        onLimit: IntConsumer): ComposeView {
+        onLimit: IntConsumer, fromBook: Boolean = false): ComposeView {
         val app = owner.applicationContext
         val actions = DetailActions(onBack::run, onMore::accept, onDebt::run, onPayment::run,
             onRestore::run, onFilter::run, onOpen::accept, onPurchase::accept, onLimit::accept)
@@ -173,7 +175,7 @@ object ClientDetailCompose {
                     }
                     val current = model
                     when {
-                        current != null -> ClientDetailContent(current, filter, initialLimit, largeText, fromCollections, actions)
+                        current != null -> ClientDetailContent(current, filter, initialLimit, largeText, fromCollections, actions, fromBook)
                         missing || failed -> Column(Modifier.fillMaxSize().background(bg).padding(16.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text(if (missing) "Клиент не найден" else "Ошибка чтения клиента", color = ink)
@@ -192,28 +194,42 @@ object ClientDetailCompose {
 
 @Composable
 internal fun ClientDetailContent(model: DetailData, filter: String, initialLimit: Int,
-    largeText: Boolean, fromCollections: Boolean, actions: DetailActions) {
+    largeText: Boolean, fromCollections: Boolean, actions: DetailActions, fromBook: Boolean = false) {
     var visibleLimit by remember { mutableIntStateOf(initialLimit) }
     val client = model.status.client
     BoxWithConstraints(Modifier.fillMaxSize().background(bg), contentAlignment = Alignment.TopCenter) {
         val stacked = largeText || LocalDensity.current.fontScale > 1.2f || maxWidth < 340.dp
         LazyColumn(Modifier.widthIn(max = 800.dp).fillMaxSize().testTag("client-detail-list"),
-            contentPadding = PaddingValues(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            contentPadding = PaddingValues(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             item("context") {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Text(if (fromCollections) "←  Возврат долгов" else "←  Все клиенты",
+                    Text(if (fromBook) "←  Книга" else if (fromCollections) "←  Возврат долгов" else "←  Все клиенты",
                         color = green, modifier = Modifier.weight(1f).heightIn(min = 48.dp).clickable(onClick = actions.back).padding(vertical = 12.dp))
                     Text("Ещё действия", color = green, modifier = Modifier.heightIn(min = 48.dp)
                         .clickable { actions.more(model.archived) }.padding(12.dp))
                 }
-                Text(client.name, color = ink, fontSize = if (largeText) 24.sp else 22.sp, fontWeight = FontWeight.Bold)
-                Text(client.phone.ifEmpty { "Карточка клиента" }, color = dim, fontSize = 14.sp)
+                Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Box(Modifier.size(48.dp).background(Color(LedgerTheme.ELEVATED), RoundedCornerShape(12.dp)),
+                        contentAlignment = Alignment.Center) {
+                        Text(client.name.trim().take(1).uppercase(Locale("ru", "RU")), color = green,
+                            fontSize = 24.sp, lineHeight = 30.sp, fontWeight = FontWeight.Medium)
+                    }
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(client.name, color = ink, fontSize = if (largeText) 26.sp else 24.sp,
+                            lineHeight = if (largeText) 32.sp else 30.sp, fontWeight = FontWeight.SemiBold)
+                        Text(client.phone.ifEmpty { "Телефон не указан" }, color = dim, fontSize = 13.sp)
+                    }
+                }
             }
             item("balance") {
-                Column(Modifier.fillMaxWidth().background(panel, RoundedCornerShape(10.dp)).padding(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                Column(Modifier.fillMaxWidth().background(panel, RoundedCornerShape(12.dp)).padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Остаток долга", color = dim, fontSize = 14.sp)
-                    Text(rubles(model.status.balance), color = ink, fontSize = if (largeText) 32.sp else 28.sp, fontWeight = FontWeight.Bold)
+                    Text(rubles(model.status.balance), color = ink, fontSize = if (largeText) 36.sp else 32.sp, fontWeight = FontWeight.SemiBold,
+                        style = androidx.compose.ui.text.TextStyle(fontFeatureSettings = "tnum",
+                            lineHeight = if (largeText) 44.sp else 40.sp))
+                    if (model.notices.isNotEmpty()) HorizontalDivider(color = line.copy(alpha = .5f))
                     model.notices.forEach { Text(it.text, color = it.color, fontSize = if (largeText) 15.sp else 13.sp) }
                 }
             }
@@ -221,14 +237,16 @@ internal fun ClientDetailContent(model: DetailData, filter: String, initialLimit
                 if (model.archived) {
                     Text("Клиент в архиве. История сохранена.", color = dim)
                     Button(onClick = actions.restore, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Вернуть из архива") }
+                } else if (model.status.balance == 0L) {
+                    Button(onClick = actions.debt, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("+ Долг") }
                 } else if (stacked) {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Button(onClick = actions.debt, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("+ Долг") }
                         Button(onClick = actions.payment, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Оплата") }
+                        OutlinedButton(onClick = actions.debt, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("+ Долг") }
                     }
                 } else {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = actions.debt, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("+ Долг") }
+                        OutlinedButton(onClick = actions.debt, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("+ Долг") }
                         Button(onClick = actions.payment, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("Оплата") }
                     }
                 }
@@ -255,8 +273,8 @@ internal fun ClientDetailContent(model: DetailData, filter: String, initialLimit
             val shown = model.rows.take(visibleLimit)
             itemsIndexed(shown, key = { _, row -> "entry-" + row.entry.id }) { index, row ->
                 if (index == 0 || shown[index - 1].date != row.date) {
-                    Text(dateFormat.format(row.date), color = dim, fontSize = 12.sp, fontWeight = FontWeight.Bold,
-                        modifier = Modifier.fillMaxWidth().background(panel, RoundedCornerShape(4.dp)).padding(6.dp))
+                    Text(dateFormat.format(row.date), color = dim, fontSize = 12.sp, fontWeight = FontWeight.Medium,
+                        modifier = Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 4.dp))
                 }
                 DetailOperationRow(row, largeText, { actions.open(row.entry.id) }, { actions.purchase(row.entry) })
             }
@@ -277,10 +295,15 @@ internal fun DetailOperationRow(row: DetailEntry, largeText: Boolean, open: () -
     Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(onClick = open)
         .semantics { contentDescription = "Запись · " + rubles(e.amount) }.padding(vertical = 7.dp, horizontal = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(marker, color = color, fontSize = 18.sp)
+        Box(Modifier.size(36.dp).background(
+            if (row.canceled) panel else Color(LedgerTheme.ELEVATED), RoundedCornerShape(10.dp)),
+            contentAlignment = Alignment.Center) {
+            Text(marker.trim(), color = color, fontSize = 20.sp, lineHeight = 24.sp, fontWeight = FontWeight.Medium)
+        }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            if (clientName != null) Text(clientName, color = ink, fontWeight = FontWeight.Bold)
-            Text(kind + if (row.canceled) " · отменено" else "", color = color, fontWeight = FontWeight.SemiBold)
+            if (clientName != null) Text(clientName, color = ink, fontWeight = FontWeight.Medium)
+            Text(kind + if (row.canceled) " · отменено" else "", color = if (clientName == null) color else dim,
+                fontSize = if (clientName == null) 15.sp else 12.sp, fontWeight = FontWeight.Medium)
             if (row.remaining != null && !row.canceled) Text(
                 if (row.remaining == 0L) "Погашено" else "Осталось: " + rubles(row.remaining),
                 color = if (row.remaining == 0L) dim else amber, fontSize = 12.sp)
@@ -289,8 +312,9 @@ internal fun DetailOperationRow(row: DetailEntry, largeText: Boolean, open: () -
             if (e.purchase != null) Text("Состав покупки · " + e.purchase.items.size + " поз.", color = green,
                 modifier = Modifier.heightIn(min = 48.dp).clickable(onClick = purchase).padding(vertical = 10.dp))
         }
-        Text(marker + rubles(e.amount), color = color, fontWeight = FontWeight.Bold,
+        Text(marker + rubles(e.amount), color = color, fontWeight = FontWeight.Medium,
             fontSize = if (largeText) 18.sp else 16.sp,
+            style = androidx.compose.ui.text.TextStyle(fontFeatureSettings = "tnum", lineHeight = 22.sp),
             textDecoration = if (row.canceled) TextDecoration.LineThrough else null)
     }
     HorizontalDivider(color = line)

@@ -13,6 +13,7 @@ object ClientWriteService {
         val receipt = LedgerStore(application).use { store ->
             val repository = SqliteLedgerRepository(store)
             when (command) {
+                is ClientCommand.FileTask -> return BookFileService.execute(application, command, store)
                 is ClientCommand.Create -> {
                     repository.saveClient(command)
                     WriteReceipt(WriteDestination.CLIENTS, "client", command.id, null, 0, false)
@@ -20,6 +21,10 @@ object ClientWriteService {
                 is ClientCommand.Edit -> {
                     repository.saveClient(command)
                     WriteReceipt(WriteDestination.KEEP, "client", command.id, null, 0, false)
+                }
+                is ClientCommand.Catalog -> {
+                    repository.saveCatalogProduct(command.record)
+                    WriteReceipt(WriteDestination.KEEP, "catalog", null, null, 0, false)
                 }
                 is ClientCommand.Debt -> repository.saveDebt(command, application)
                 is ClientCommand.Payment -> repository.savePayment(command)
@@ -32,7 +37,8 @@ object ClientWriteService {
         try {
             when (command) {
                 is ClientCommand.Create -> clearQuick(application, command.id)
-                is ClientCommand.Edit, is ClientCommand.ItemizedDebt, is ClientCommand.Correction, is ClientCommand.Reversal -> Unit
+                is ClientCommand.FileTask, is ClientCommand.Edit, is ClientCommand.Catalog, is ClientCommand.Correction, is ClientCommand.Reversal -> Unit
+                is ClientCommand.ItemizedDebt -> PurchaseDrafts(application).clearCommitted(command.clientId, command.id)
                 is ClientCommand.Debt -> {
                     if (command.quick) clearQuick(application, command.id)
                     else clearOperation(application, checkNotNull(command.existingId), "debt", command.id)

@@ -56,6 +56,29 @@ class HistoryReportComposeTest {
         assertEquals("d", opened.get())
     }
 
+    @Test fun historyGroupsLocalDaysAndPreservesReverseInsertionOrder() {
+        val people = mapOf(
+            "a" to LedgerStore.Client("a", "Алиса", "+7 900 123 45 67"),
+            "b" to LedgerStore.Client("b", "Борис", "")
+        )
+        val entries = listOf(
+            LedgerStore.Entry("first", "a", "debt", 100L, "2026-11-20T23:30:00Z", "", "", ""),
+            LedgerStore.Entry("later", "b", "debt", 200L, "2026-11-22T12:00:00Z", "", "", ""),
+            LedgerStore.Entry("same", "a", "debt", 300L, "2026-11-21T00:15:00Z", "", "", ""),
+            LedgerStore.Entry("older", "b", "debt", 400L, "2026-11-19T12:00:00Z", "", "Яблоки", "")
+        )
+        val zone = ZoneOffset.ofHours(3)
+        assertEquals(listOf("later", "same", "first", "older"),
+            HistoryRows.select(entries, people, null, "", null, null, "Все", zone).map { it.id })
+        assertEquals(listOf("same", "first"),
+            HistoryRows.select(entries, people, null, "89001234567", null, null, "Все", zone).map { it.id })
+        assertEquals(listOf("older"),
+            HistoryRows.select(entries, people, null, "яблоки", null, null, "Все", zone).map { it.id })
+        val date = LocalDate.of(2026, 11, 21)
+        assertEquals(listOf("same", "first"),
+            HistoryRows.select(entries, people, null, "", date, date, "Все", zone).map { it.id })
+    }
+
     @Test fun reportSeparatesReceiptsAndReversalsAndPreservesExportAction() {
         val report = PeriodReport.build(fixture().snapshot.entries, day.minusDays(4), day, ZoneOffset.UTC)
         assertEquals(10000L, report.opening)

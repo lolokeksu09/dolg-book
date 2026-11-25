@@ -66,25 +66,32 @@ test('itemized debts use an additive migration and versioned validated purchase 
   const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
   const purchase=read('android/app/src/main/java/dev/ventry/raschet/Purchase.java');
   assert.ok(store.includes("ALTER TABLE entries ADD COLUMN purchase"));
-  assert.ok(store.includes('Math.max(root.getInt("version"),3)'));
+  assert.ok(store.includes('Math.max(version,3)'));
   assert.ok(store.includes('purchase.total!=amount'));
   assert.ok(store.includes('last.purchase!=null&&amount!=last.amount'));
   assert.ok(purchase.includes('RoundingMode.HALF_UP'));
   assert.ok(ui.includes('new ClientCommand.ItemizedDebt(purchaseId,clientId,purchase.encode()'));
-  assert.ok(ui.includes('e.purchase.summary()'));
+  const files=read('android/app/src/main/kotlin/dev/ventry/raschet/BookFileService.kt');
+  assert.ok(files.includes('entry.purchase?.summary().orEmpty()'));
+  assert.ok(files.includes('writer.write(listOf('));
 });
 
-test('legacy catalog data stays portable but the standalone catalog and picker are removed',()=>{
+test('catalog data stays portable and real editing/picking is routed to the repository',()=>{
   const store=read('android/app/src/main/java/dev/ventry/raschet/LedgerStore.java');
   const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
+  const settings=read('android/app/src/main/kotlin/dev/ventry/raschet/SettingsCompose.kt');
+  const service=read('android/app/src/main/kotlin/dev/ventry/raschet/ClientWriteService.kt');
   assert.ok(store.includes('CREATE TABLE products'));
-  assert.ok(store.includes('root.put("products",ps)'));
-  assert.ok(store.includes('root.put("version",4)'));
+  assert.ok(store.includes('for(Product product:catalog)'));
+  assert.ok(store.includes('version=4;'));
   assert.ok(store.includes('for(Product p:newProducts)'));
-  assert.doesNotMatch(ui,/\b(?:openCatalog|catalogView|showProductForm|addCatalogPicker|applyProduct)\s*\(/);
-  assert.doesNotMatch(ui,/ledger\.(?:products|saveProduct)\s*\(/);
-  assert.ok(!ui.includes('Каталог товаров'));
-  assert.ok(!ui.includes('Выбрать из каталога'));
+  assert.ok(settings.includes('LedgerMetric("Каталог товаров"'));
+  assert.ok(ui.includes('new SqliteLedgerRepository(ledger).catalog()'));
+  assert.ok(ui.includes('new ClientCommand.Catalog(new CatalogRecord('));
+  assert.ok(service.includes('repository.saveCatalogProduct(command.record)'));
+  assert.ok(ui.includes('Выбрать из каталога'));
+  assert.ok(ui.includes('catalog.removeIf(CatalogRecord::getArchived)'));
+  assert.ok(ui.includes('units.get(unit.getSelectedItemPosition())'));
   assert.ok(ui.includes('new ClientCommand.ItemizedDebt(purchaseId,clientId,purchase.encode()'));
   assert.ok(ui.includes('showPurchaseDetails('));
 });
@@ -103,11 +110,11 @@ test('client history follows two primary actions and secondary actions live in o
 test('compact book keeps essential controls and hides redundant empty-state filters',()=>{
   const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
   assert.ok(ui.includes('private int controlHeight(){return largeText?54:48;}'));
-  assert.ok(ui.includes('private int navHeight(){return largeText?68:56;}'));
+  assert.ok(ui.includes('private int navHeight(){return largeText?76:64;}'));
   const clients=ui.slice(ui.indexOf('private View clientsView(BookScreenData data)'),ui.indexOf('private void showClientFilters()'));
   const compose=read('android/app/src/main/kotlin/dev/ventry/raschet/ClientsCompose.kt');
   assert.ok(clients.includes('ClientsCompose.create(this,data,clientScope,clientFilter'));
-  assert.ok(compose.indexOf('if (model.allCount == 0)')<compose.indexOf('"+ Добавить клиента"'));
+  assert.match(compose, /if \(model\.allCount > 0\) TextButton\(onClick = actions\.add,/);
   assert.ok(compose.includes('LazyColumn('));
   assert.ok(compose.includes('CollectionsInsights.visible(model.scoped, filter, amountFirst, recentFirst, query)'));
   assert.ok(clients.includes('this::showClientFilters'));
@@ -154,16 +161,21 @@ test('counter-first UI keeps both financial actions, compact search and viewport
 });
 
 
-test('AMOLED ledger uses shared semantic palette and real metric rows',()=>{
+test('Ventry ledger uses shared semantic palette and real metric rows',()=>{
   const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
   const theme=read('android/app/src/main/java/dev/ventry/raschet/LedgerTheme.java');
-  assert.ok(theme.includes('BG=0xff000000'));
+  assert.ok(theme.includes('BG=0xff101113'));
+   assert.ok(theme.includes('PANEL=0xff191a1d'));
+   assert.ok(theme.includes('TEXT=0xfff2f1ee'));
+   assert.ok(theme.includes('ACCENT=0xffe3d5bd'));
   for(const screen of ['MainActivity','IntroActivity','SplashActivity']) assert.ok(read('android/app/src/main/java/dev/ventry/raschet/'+screen+'.java').includes('LedgerTheme.BG'));
   const book=read('android/app/src/main/kotlin/dev/ventry/raschet/BookCompose.kt');
   const collections=read('android/app/src/main/kotlin/dev/ventry/raschet/CollectionsCompose.kt');
   assert.ok(book.includes('LedgerTotal("Общая задолженность", model.total)'));
+  assert.ok(book.includes('"Должников: " + model.debtors'));
   assert.ok(collections.includes('LedgerMetric("Просрочено", ledgerMoney(model.overdue)'));
-  assert.ok(book.includes('LedgerMetric("Возврат долгов"'));
+  assert.ok(book.includes('contentDescription = "Возврат долгов"'));
+  assert.ok(book.includes('clickable(onClick = actions.collections)'));
   assert.ok(ui.includes('android.R.attr.state_focused'));
   const detail=read('android/app/src/main/kotlin/dev/ventry/raschet/ClientDetailCompose.kt');
   assert.ok(detail.includes('TextDecoration.LineThrough'));
@@ -232,7 +244,9 @@ test('payment journal is separate from unpaid debt and shortcuts only prefill th
   assert.ok(book.includes('BookDays.groupPayments(entries, zone)'));
   assert.ok(book.includes('"Оплаты по датам" to true'));
   assert.ok(book.includes('actions.mode(value)'));
-  assert.ok(ui.includes('amount.setText(amountInput(available))'));
+  assert.ok(ui.includes("if(historicalMaximum[0]>0)amount.setText(amountInput(historicalMaximum[0]));"));
+  assert.ok(ui.includes("historicalMaximum[0]=DatedPayments.maximum(clientEntries,clientId,entryDay[0],today,ZoneId.systemDefault());"));
+  assert.ok(ui.includes("else if(payment&&cents>historicalMaximum[0])"));
   assert.ok(ui.includes('"payment".equals(receipt.getKind())&&receipt.getDestination()==WriteDestination.BOOK'));
   assert.ok(days.includes('if(!"payment".equals(e.type))continue;'));
 });
@@ -301,7 +315,8 @@ test('collection workspace is separate from chronological book and uses a read-o
   assert.ok(ui.includes('tab.equals("Возврат")?collectionView(data)'));
   assert.ok(ui.includes('directory.setFollowUp(person.id,day[0]'));
   assert.ok(ui.includes('fromCollections?WriteDestination.COLLECTIONS:WriteDestination.DETAIL'));
-  assert.ok(ui.includes('case COLLECTIONS: tab="Возврат";selectedClient=null;break;'));
+  assert.ok(ui.includes("case COLLECTIONS: tab=\"Возврат\";selectedClient=null;returnToBook=false;returnToCollections=false;break;"));
+  assert.ok(ui.includes("tab=returnToBook?\"Главная\":returnToCollections?\"Возврат\":\"Клиенты\";"));
   assert.ok(queue.includes('if(s.balance>0)'));
 });
 
@@ -324,7 +339,10 @@ test('client drafts keep operation identity and original date across reopening',
  const draft=read('android/app/src/main/java/dev/ventry/raschet/LedgerDrafts.java');
  assert.ok(ui.includes('previous.day:initialDay'));
  assert.ok(ui.includes('new ClientCommand.Payment(operationId[0],clientId,cents'));
- assert.ok(ui.includes('new LedgerDrafts(this).clearAll()'));
+ const files=read('android/app/src/main/kotlin/dev/ventry/raschet/BookFileService.kt');
+ const restore=files.slice(files.indexOf('private fun restore('));
+ assert.ok(restore.indexOf('val count = ledger.importJson(backup)')>=0);
+ assert.ok(restore.indexOf('LedgerDrafts(app).clearAll()')>restore.indexOf('val count = ledger.importJson(backup)'));
  assert.ok(draft.includes('json.put("day",day.toString())'));
 });
 

@@ -45,7 +45,11 @@ test('book exports stay local and preserve entries',()=>{
   const store=read('android/app/src/main/java/dev/ventry/raschet/LedgerStore.java');
   const manifest=read('android/app/src/main/AndroidManifest.xml');
   assert.ok(store.includes('raschet-ledger.db'));
-  assert.ok(store.includes('return root.put("clients",cs).put("entries",es).toString(2)'));
+  assert.ok(store.includes('public synchronized void writeJson(java.io.Writer output)'));
+  assert.ok(store.includes('output.write(row.toString())'));
+  const service=read('android/app/src/main/kotlin/dev/ventry/raschet/BookFileService.kt');
+  assert.ok(service.includes('ledger.writeJson(writer)'));
+  assert.ok(!service.includes('ledger.exportJson().toByteArray'));
   assert.ok(!manifest.includes('android.permission.INTERNET'));
 });
 

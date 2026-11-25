@@ -2,6 +2,7 @@ package dev.ventry.raschet
 
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -11,6 +12,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.height
+import androidx.compose.material3.TextButton
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -117,14 +120,25 @@ internal fun HistoryContent(data: BookScreenData, clientId: String?, initialQuer
     BoxWithConstraints(Modifier.fillMaxSize().background(ledgerBg), contentAlignment = Alignment.TopCenter) {
         val compact = maxWidth < 365.dp || largeText || LocalDensity.current.fontScale > 1.2f
         LazyColumn(Modifier.widthIn(max = 800.dp).fillMaxSize().testTag("history-list"),
-            contentPadding = PaddingValues(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            item("title") { Text("История", color = ledgerText, fontSize = 22.sp, fontWeight = FontWeight.Bold) }
+            contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            item("title") {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("История", color = ledgerText, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
+                        Text("Операций: " + data.snapshot.entries.size, color = ledgerMuted, fontSize = 13.sp)
+                    }
+                    TextButton(onClick = actions.period, modifier = Modifier.heightIn(min = 48.dp)) { Text("Период") }
+                }
+            }
             if (data.snapshot.entries.isEmpty()) {
                 item("empty-book") {
-                    Text("История пока пустая", color = ledgerText, fontWeight = FontWeight.Bold)
-                    Text("Здесь будут долги и оплаты.", color = ledgerMuted)
-                    Button(onClick = actions.add, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                        Text(if (people.isEmpty()) "Добавить первого клиента" else "Записать долг")
+                    Column(Modifier.fillMaxWidth().background(ledgerPanel, RoundedCornerShape(12.dp)).padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text("История пока пустая", color = ledgerText, fontWeight = FontWeight.Medium, fontSize = 18.sp)
+                        Text("Каждая записанная задолженность, оплата и отмена появятся здесь.", color = ledgerMuted, fontSize = 14.sp)
+                        Button(onClick = actions.add, shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                            Text(if (people.isEmpty()) "Добавить первого клиента" else "Записать долг")
+                        }
                     }
                 }
             } else {
@@ -138,10 +152,13 @@ internal fun HistoryContent(data: BookScreenData, clientId: String?, initialQuer
                                         selected = choice == filter; contentDescription = "Фильтр: " + choice
                                     }
                                     val click = { if (choice != filter) actions.filter(choice) }
-                                    if (choice == filter) Button(onClick = click, modifier = modifier,
-                                        contentPadding = PaddingValues(horizontal = 4.dp)) { Text(choice, fontSize = 12.sp) }
-                                    else OutlinedButton(onClick = click, modifier = modifier,
-                                        contentPadding = PaddingValues(horizontal = 4.dp)) { Text(choice, fontSize = 12.sp) }
+                                    Column(modifier.clickable(onClick = click), horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Box(Modifier.fillMaxWidth().heightIn(min = 46.dp), contentAlignment = Alignment.Center) {
+                                            Text(choice, color = if (choice == filter) ledgerText else ledgerMuted,
+                                                fontWeight = if (choice == filter) FontWeight.SemiBold else FontWeight.Normal, fontSize = 13.sp)
+                                        }
+                                        Box(Modifier.fillMaxWidth().height(2.dp).background(if (choice == filter) ledgerAccent else ledgerBorder.copy(alpha = .45f)))
+                                    }
                                 }
                             }
                         }
@@ -183,7 +200,7 @@ internal fun HistoryContent(data: BookScreenData, clientId: String?, initialQuer
                         itemsIndexed(shown, key = { _, row -> "history-" + row.entry.id }) { index, row ->
                             if (index == 0 || shown[index - 1].date != row.date) {
                                 Text(ledgerLongDate.format(row.date), color = ledgerMuted, fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth().background(ledgerPanel).padding(6.dp))
+                                    fontWeight = FontWeight.Medium, modifier = Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 4.dp))
                             }
                             DetailOperationRow(row, largeText, { actions.open(row.entry.id) },
                                 { actions.purchase(row.entry) }, people[row.entry.clientId]?.name)

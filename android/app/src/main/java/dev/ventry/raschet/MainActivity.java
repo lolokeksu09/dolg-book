@@ -7,6 +7,8 @@ import dev.ventry.raschet.presentation.BookScreenData;
 import dev.ventry.raschet.presentation.ReadState;
 import dev.ventry.raschet.presentation.WriteState;
 import dev.ventry.raschet.data.ClientCommand;
+import dev.ventry.raschet.data.CatalogRecord;
+import dev.ventry.raschet.data.SqliteLedgerRepository;
 import dev.ventry.raschet.data.WriteReceipt;
 import dev.ventry.raschet.data.WriteDestination;
 import dev.ventry.raschet.domain.DebtApproval;
@@ -41,13 +43,6 @@ import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import org.json.JSONException;
-
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -67,7 +62,7 @@ public final class MainActivity extends ComponentActivity {
     private static final int BG=LedgerTheme.BG, PANEL=LedgerTheme.PANEL, ELEVATED=LedgerTheme.ELEVATED;
     private static final int BORDER=LedgerTheme.BORDER, TEXT=LedgerTheme.TEXT, MUTED=LedgerTheme.MUTED;
     private static final int ACCENT=LedgerTheme.ACCENT, INK=LedgerTheme.INK, ALERT=LedgerTheme.ALERT, RED=LedgerTheme.RED;
-    private static final int REQUEST_IMPORT=101, REQUEST_EXPORT=102, REQUEST_PDF=103, REQUEST_REPORT=105, MAX_IMPORT=5*1024*1024;
+    private static final int REQUEST_IMPORT=101, REQUEST_EXPORT=102, REQUEST_PDF=103, REQUEST_REPORT=105;
     private static final String RECOVERY_PREFS="raschet_local_recovery";
     private static final int NOTIFICATION_PERMISSION_REQUEST=104;
     public static final String EXTRA_FIRST_START = "dev.ventry.raschet.FIRST_START";
@@ -95,7 +90,7 @@ public final class MainActivity extends ComponentActivity {
     private String collectionQuery="";
     private boolean collectionUrgent;
     private int collectionLimit=60;
-    private boolean returnToCollections;
+    private boolean returnToCollections,returnToBook;
     private String historyClientId=null;
     private String clientFilter=CollectionsInsights.ALL;
     private boolean clientsAmountFirst,clientsRecentFirst;
@@ -109,14 +104,15 @@ public final class MainActivity extends ComponentActivity {
     private int historyVisibleLimit=100, detailVisibleLimit=80, bookDayLimit=30;
     private String detailFilter=ClientStatement.ALL, detailFilterClient;
     private final Set<String> expandedBookDays=new java.util.HashSet<>();
-    private LocalDate bookFrom,bookTo;
+    private LocalDate bookFrom,bookTo,bookCalendarDay;
+    private boolean bookCalendar;
     private String bookQuery="";
     private boolean bookOnlyUnpaid,bookAutoExpand,bookPayments;
     private final DateTimeFormatter bookDateFormat=DateTimeFormatter.ofPattern("dd.MM.yy",new Locale("ru","RU"));
     private final int pad=14;
     private String settingsExpanded="";
     private int controlHeight(){return largeText?54:48;}
-    private int navHeight(){return largeText?68:56;}
+    private int navHeight(){return largeText?76:64;}
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
@@ -145,6 +141,7 @@ public final class MainActivity extends ComponentActivity {
             historyVisibleLimit=state.getInt("history_visible_limit",100);
             collectionQuery=state.getString("collection_query","");collectionUrgent=state.getBoolean("collection_urgent",false);
             collectionLimit=state.getInt("collection_limit",60);returnToCollections=state.getBoolean("return_to_collections",false);
+            returnToBook=state.getBoolean("return_to_book",false);
             historyQuery=state.getString("history_query","");historyClientId=state.getString("history_client_id");
             detailVisibleLimit=state.getInt("detail_visible_limit",80);
             detailFilter=state.getString("detail_filter",ClientStatement.ALL);detailFilterClient=state.getString("detail_filter_client");
@@ -152,6 +149,7 @@ public final class MainActivity extends ComponentActivity {
             bookFrom=readDate(state,"book_from");bookTo=readDate(state,"book_to");
             bookQuery=state.getString("book_query","");bookOnlyUnpaid=state.getBoolean("book_unpaid",false);
             bookPayments=state.getBoolean("book_payments",false);
+            bookCalendar=state.getBoolean("book_calendar",false);bookCalendarDay=readDate(state,"book_calendar_day");
             ArrayList<String> expanded=state.getStringArrayList("expanded_book_days");
             if(expanded!=null)expandedBookDays.addAll(expanded);
             pendingExport=state.getBoolean("pending_export");
@@ -186,6 +184,7 @@ public final class MainActivity extends ComponentActivity {
         out.putInt("history_visible_limit",historyVisibleLimit);
         out.putString("collection_query",collectionQuery);out.putBoolean("collection_urgent",collectionUrgent);
         out.putInt("collection_limit",collectionLimit);out.putBoolean("return_to_collections",returnToCollections);
+        out.putBoolean("return_to_book",returnToBook);
         out.putString("history_query",historyQuery);out.putString("history_client_id",historyClientId);
         out.putInt("detail_visible_limit",detailVisibleLimit);
         out.putString("detail_filter",detailFilter);out.putString("detail_filter_client",detailFilterClient);
@@ -193,6 +192,7 @@ public final class MainActivity extends ComponentActivity {
         saveDate(out,"book_from",bookFrom);saveDate(out,"book_to",bookTo);
         out.putString("book_query",bookQuery);out.putBoolean("book_unpaid",bookOnlyUnpaid);
         out.putBoolean("book_payments",bookPayments);
+        out.putBoolean("book_calendar",bookCalendar);saveDate(out,"book_calendar_day",bookCalendarDay);
         out.putStringArrayList("expanded_book_days",new ArrayList<>(expandedBookDays));
         out.putBoolean("pending_export",pendingExport);
         out.putBoolean("pending_export_csv",pendingExportCsv);
@@ -219,14 +219,14 @@ public final class MainActivity extends ComponentActivity {
         });
         LinearLayout header=row();
         header.setGravity(Gravity.CENTER_VERTICAL);
-        header.setPadding(dp(14),dp(4),dp(14),dp(4));
+        header.setPadding(dp(16),dp(8),dp(16),dp(8));
         android.widget.ImageView insignia=new android.widget.ImageView(this);
         insignia.setImageResource(R.drawable.ic_ventry);
         insignia.setContentDescription("Ventry");
         insignia.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
-        header.addView(insignia,new LinearLayout.LayoutParams(dp(24),dp(24)));
+        header.addView(insignia,new LinearLayout.LayoutParams(dp(28),dp(28)));
         LinearLayout heading=row();heading.setGravity(Gravity.CENTER_VERTICAL);
-        heading.addView(label("Расчёт",16,TEXT,true));
+        heading.addView(label("Расчёт",18,TEXT,true));
         shopCaption=label(shopName,12,MUTED,false);
         shopCaption.setSingleLine(true);
         shopCaption.setEllipsize(android.text.TextUtils.TruncateAt.END);
@@ -235,9 +235,7 @@ public final class MainActivity extends ComponentActivity {
         shopParams.leftMargin=dp(12);heading.addView(shopCaption,shopParams);
         LinearLayout.LayoutParams headingParams=new LinearLayout.LayoutParams(0,-2,1);
         headingParams.leftMargin=dp(8);header.addView(heading,headingParams);
-        header.setMinimumHeight(dp(44));root.addView(header);
-        addListDivider(root);
-
+        header.setMinimumHeight(dp(52));root.addView(header);
         LinearLayout body=row();
         // Weighted Compose hosts need bounded height even in the first measure pass.
         // Baseline alignment would speculatively measure a zero-width weighted child
@@ -247,7 +245,7 @@ public final class MainActivity extends ComponentActivity {
             navigation=stack(8);
             navigation.setPadding(dp(8),dp(12),dp(8),dp(8));
             navigation.setBackgroundColor(PANEL);
-            body.addView(navigation,new LinearLayout.LayoutParams(dp(largeText?160:132),-1));
+            body.addView(navigation,new LinearLayout.LayoutParams(dp(largeText?196:164),-1));
         }
         page=new FrameLayout(this);
         body.addView(page,new LinearLayout.LayoutParams(0,-1,1));
@@ -269,7 +267,7 @@ public final class MainActivity extends ComponentActivity {
         navigation.removeAllViews();
         if(bookViewModel.hasPendingWrite()){
             page.removeAllViews();
-            page.addView(scroll(screen("Сохранение записи","Дождитесь завершения записи.")),new FrameLayout.LayoutParams(-1,-1));
+            page.addView(scroll(screen("Обработка данных","Дождитесь завершения операции.")),new FrameLayout.LayoutParams(-1,-1));
             return;
         }
         for(int i=0;i<TABS.length;i++){
@@ -279,24 +277,31 @@ public final class MainActivity extends ComponentActivity {
             LinearLayout item=tablet?row():stack(2);
             item.setGravity(Gravity.CENTER);
             item.setPadding(dp(tablet?10:2),dp(tablet?6:2),dp(tablet?6:2),dp(tablet?6:2));
-            item.setBackground(ripple(shape(active?LedgerTheme.SELECTED:PANEL,8,0)));
+            item.setBackground(ripple(shape(tablet&&active?LedgerTheme.SELECTED:PANEL,12,0)));
             android.widget.ImageView icon=new android.widget.ImageView(this);
             icon.setImageResource(ICONS[i]);
             icon.setColorFilter(active?ACCENT:MUTED);
             icon.setContentDescription(null);
-            item.addView(icon,new LinearLayout.LayoutParams(dp(20),dp(20)));
+            if(tablet)item.addView(icon,new LinearLayout.LayoutParams(dp(22),dp(22)));
+            else {
+                FrameLayout iconFrame=new FrameLayout(this);
+                iconFrame.setBackground(shape(active?LedgerTheme.SELECTED:PANEL,12,0));
+                FrameLayout.LayoutParams iconParams=new FrameLayout.LayoutParams(dp(22),dp(22),Gravity.CENTER);
+                iconFrame.addView(icon,iconParams);
+                item.addView(iconFrame,new LinearLayout.LayoutParams(dp(46),dp(30)));
+            }
             TextView name=label(caption,tablet?14:11,active?ACCENT:MUTED,active);
             name.setGravity(Gravity.CENTER);
             name.setSingleLine(true);
             name.setIncludeFontPadding(false);
             name.setEllipsize(android.text.TextUtils.TruncateAt.END);
             LinearLayout.LayoutParams np=new LinearLayout.LayoutParams(-2,-2);
-            if(tablet)np.leftMargin=dp(12);
+            if(tablet){np.width=0;np.weight=1f;np.leftMargin=dp(10);}
             item.addView(name,np);
             item.setContentDescription(caption);
             item.setSelected(active);
             item.setFocusable(true);
-            item.setOnClickListener(v->{firstStartPending=false;tab=destination;selectedClient=null;returnToCollections=false;settingsExpanded="";render();});
+            item.setOnClickListener(v->{firstStartPending=false;tab=destination;selectedClient=null;returnToCollections=false;returnToBook=false;settingsExpanded="";render();});
             LinearLayout.LayoutParams ip=tablet?new LinearLayout.LayoutParams(-1,dp(controlHeight())):
                     new LinearLayout.LayoutParams(0,-1,1);
             if(tablet)ip.bottomMargin=dp(6);else {ip.leftMargin=dp(2);ip.rightMargin=dp(2);}
@@ -304,11 +309,15 @@ public final class MainActivity extends ComponentActivity {
         }
         page.removeAllViews();
         if(needsBookSnapshot()){
-            LinearLayout loading=screen("Загрузка книги","Читаем сохранённые записи…");
-            page.addView(scroll(loading),new FrameLayout.LayoutParams(-1,-1));
-            bookViewModel.refresh();
+            BookScreenData cached=bookViewModel.currentOrLoad();
+            if(cached!=null){
+                showReadyBook(cached);
+            }else{
+                LinearLayout loading=screen("Загрузка книги","Читаем сохранённые записи…");
+                page.addView(scroll(loading),new FrameLayout.LayoutParams(-1,-1));
+            }
         }else{
-            bookViewModel.clear();
+            // Preferences are rendered separately; preserve the foreground ledger snapshot.
             renderContent(null);
         }
     }
@@ -324,19 +333,23 @@ public final class MainActivity extends ComponentActivity {
                 ||state!=bookViewModel.getState().getValue())return;
         if(state instanceof ReadState.Ready<?> ready){
             BookScreenData data=(BookScreenData)ready.getValue();
-            if(firstStartPending){
-                firstStartPending=false;
-                if(tab.equals("Главная")&&data.getSnapshot().getClients().isEmpty()){
-                    tab="Клиенты";render();return;
-                }
-            }
-            renderContent(data);
+            if(!data.getToday().equals(LocalDate.now())){render();return;}
+            showReadyBook(data);
         }else if(state instanceof ReadState.Failed){
             page.removeAllViews();
             LinearLayout error=screen("Ошибка чтения книги","Данные не были изменены.");
             addButton(error,"Повторить",true,this::render,1);
             page.addView(scroll(error),new FrameLayout.LayoutParams(-1,-1));
         }
+    }
+    private void showReadyBook(BookScreenData data){
+        if(firstStartPending){
+            firstStartPending=false;
+            if(tab.equals("Главная")&&data.getSnapshot().getClients().isEmpty()){
+                tab="Клиенты";render();return;
+            }
+        }
+        renderContent(data);
     }
     private void renderContent(BookScreenData data){
         page.removeAllViews();
@@ -361,25 +374,26 @@ public final class MainActivity extends ComponentActivity {
                 getPreferences(MODE_PRIVATE).getLong("last_json_export",0L)==0L,
                 this::showQuickDebt,()->chooseClient("payment"),this::openCollections,
                 payments->{if(bookPayments!=payments){bookPayments=payments;clearBookFilters();expandedBookDays.clear();bookAutoExpand=true;render();}},
-                this::showBookFilters,()->{clearBookFilters();render();},
+                this::showBookFilters,()->{clearBookFilters();bookCalendarDay=null;render();},
                 key->{if(!expandedBookDays.add(key))expandedBookDays.remove(key);},
                 key->{if(key!=null)expandedBookDays.add(key);bookAutoExpand=false;},
                 limit->bookDayLimit=limit,
-                id->{returnToCollections=false;selectedClient=id;tab="Клиенты";render();},
+                id->{returnToCollections=false;returnToBook=true;selectedClient=id;tab="Клиенты";render();},
                 this::showOperation,id->showEntryForm(id,"payment"),id->showEntryForm(id,"debt"),
                 day->showQuickDebt(false,day),day->chooseClient("payment",day),
-                ()->{tab="Отчёт";selectedClient=null;render();},()->exportBook(false));
+                ()->{tab="Отчёт";selectedClient=null;render();},()->exportBook(false),
+                bookCalendar,bookCalendarDay,(calendar,day)->{bookCalendar=calendar;bookCalendarDay=day;});
     }
 
     private void openCollections(){
-        collectionQuery="";collectionUrgent=false;collectionLimit=60;returnToCollections=false;selectedClient=null;tab="Возврат";render();
+        collectionQuery="";collectionUrgent=false;collectionLimit=60;returnToCollections=false;returnToBook=false;selectedClient=null;tab="Возврат";render();
     }
     private View collectionView(BookScreenData data){
         return CollectionsCompose.create(this,data,collectionQuery,collectionUrgent,collectionLimit,largeText,
                 query->{collectionQuery=query;collectionLimit=60;},
                 urgent->{collectionUrgent=urgent;collectionLimit=60;},
                 limit->collectionLimit=limit,this::openClientFilter,
-                id->{returnToCollections=true;tab="Клиенты";selectedClient=id;render();},
+                id->{returnToCollections=true;returnToBook=false;tab="Клиенты";selectedClient=id;render();},
                 id->showEntryForm(id,"payment"),this::showFollowUp);
     }
     private void showFollowUp(LedgerStore.Client person){
@@ -445,6 +459,10 @@ public final class MainActivity extends ComponentActivity {
         addButton(presets,"Сегодня",false,()->{period[0]=today;period[1]=today;update.run();},1);
         addButton(presets,"Последние 7 дней",false,()->{period[0]=today.minusDays(6);period[1]=today;update.run();},1);
         addButton(presets,"Этот месяц",false,()->{period[0]=today.withDayOfMonth(1);period[1]=today;update.run();},1);
+        addButton(presets,"Выбрать день в календаре",false,()->pickReportDate("Дата записей",period[0]==null?today:period[0],chosen->{
+            if(chosen.isAfter(LocalDate.now())){message("Выберите прошедшую дату.");return;}
+            period[0]=chosen;period[1]=chosen;update.run();
+        }),1);
         addButton(presets,"Выбрать период",false,()->pickReportDate("Начало периода",period[0]==null?today:period[0],from->{
             LocalDate end=period[1]==null||period[1].isBefore(from)?from:period[1];
             pickReportDate("Конец периода",end,to->{
@@ -461,7 +479,7 @@ public final class MainActivity extends ComponentActivity {
         },1);
         showDialog("Фильтры книги",form,()->{
             bookQuery=query.getText().toString().trim();bookFrom=period[0];bookTo=period[1];bookOnlyUnpaid=!bookPayments&&unpaid.isChecked();
-            bookDayLimit=30;bookAutoExpand=hasBookFilter();expandedBookDays.clear();return true;
+            bookDayLimit=30;bookAutoExpand=hasBookFilter();bookCalendarDay=null;expandedBookDays.clear();return true;
         });
     }
     private View tabletClientsView(BookScreenData data) {
@@ -482,7 +500,7 @@ public final class MainActivity extends ComponentActivity {
         return columns;
     }
     private void openClientFilter(String filter) {
-        clientFilter=filter;clientScope=ClientDirectory.ACTIVE;clientVisibleLimit=60;search="";returnToCollections=false;selectedClient=null;tab="Клиенты";render();
+        clientFilter=filter;clientScope=ClientDirectory.ACTIVE;clientVisibleLimit=60;search="";returnToCollections=false;returnToBook=false;selectedClient=null;tab="Клиенты";render();
     }
     private View clientsView(BookScreenData data) {
         return ClientsCompose.create(this,data,clientScope,clientFilter,clientsAmountFirst,clientsRecentFirst,
@@ -490,7 +508,7 @@ public final class MainActivity extends ComponentActivity {
                 value->{search=value;clientVisibleLimit=60;},
                 limit->clientVisibleLimit=limit,
                 ()->showClientForm(null),this::showClientFilters,
-                id->{selectedClient=id;render();},
+                id->{returnToBook=false;returnToCollections=false;selectedClient=id;render();},
                 ()->openClientFilter(CollectionsInsights.ALL),
                 ()->{clientFilter=CollectionsInsights.ALL;clientVisibleLimit=60;render();});
     }
@@ -523,11 +541,16 @@ public final class MainActivity extends ComponentActivity {
         final CollectionsInsights.CustomerStatus status=found;
         if(!id.equals(detailFilterClient)){detailFilterClient=id;detailFilter=ClientStatement.ALL;detailVisibleLimit=80;}
         return ClientDetailCompose.create(this,data,id,detailFilter,detailVisibleLimit,largeText,returnToCollections,
-                ()->{selectedClient=null;tab=returnToCollections?"Возврат":"Клиенты";returnToCollections=false;render();},
+                this::returnFromClient,
                 archived->showClientActions(status.client,status.balance,status.overdue,archived),
                 ()->showEntryForm(id,"debt"),()->showEntryForm(id,"payment"),
                 ()->changeClientArchive(id,true),this::showDetailFilters,
-                this::showOperation,this::showPurchaseDetails,limit->detailVisibleLimit=limit);
+                this::showOperation,this::showPurchaseDetails,limit->detailVisibleLimit=limit,returnToBook);
+    }
+    private void returnFromClient(){
+        selectedClient=null;
+        tab=returnToBook?"Главная":returnToCollections?"Возврат":"Клиенты";
+        returnToBook=false;returnToCollections=false;render();
     }
     private void showDetailFilters(){
         LinearLayout menu=stack(2);
@@ -537,7 +560,7 @@ public final class MainActivity extends ComponentActivity {
     }
     private void changeClientArchive(String id,boolean archived){
         try{
-            directory.archive(id,LedgerStore.balance(ledger.entries(),id),!archived);
+            directory.archive(id,LedgerStore.balance(ledger.entriesForClient(id),id),!archived);
             selectedClient=null;clientScope=archived?ClientDirectory.ACTIVE:ClientDirectory.ARCHIVE;
             clientFilter=CollectionsInsights.ALL;search="";render();
         }catch(Exception e){message(e.getMessage());}
@@ -592,7 +615,7 @@ public final class MainActivity extends ComponentActivity {
     private void showDebtLimit(LedgerStore.Client client){
         long limit=directory.debtLimit(client.id);
         LinearLayout form=stack(6);
-        form.addView(label(client.name+" · остаток "+money(LedgerStore.balance(ledger.entries(),client.id)),14,TEXT,true));
+        form.addView(label(client.name+" · остаток "+money(LedgerStore.balance(ledger.entriesForClient(client.id),client.id)),14,TEXT,true));
         EditText amount=field("Без лимита",limit>0?amountInput(limit):null);
         amount.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);
         form.addView(formGroup("Лимит задолженности, ₽",amount));
@@ -630,7 +653,7 @@ public final class MainActivity extends ComponentActivity {
         String confirmation(){return consent.isChecked()?approvedFor:"";}
         void verify(String clientId,long addition){
             if(clientId==null)return;
-            long balance=LedgerStore.balance(ledger.entries(),clientId);
+            long balance=LedgerStore.balance(ledger.entriesForClient(clientId),clientId);
             update(clientId,balance,addition);
             DebtLimits.requireConsent(directory.debtLimit(clientId),balance,addition,consent.isChecked());
         }
@@ -741,7 +764,7 @@ public final class MainActivity extends ComponentActivity {
                 ()->{unlocked=false;render();authenticate(BookPrivacy.OPEN);},
                 ()->{if(!privacy.enabled()){privacy.setHideScreens(!privacy.hideScreens());applyPrivacyFlag();render();}},
                 this::createRecoveryPoint,this::restoreRecoveryPoint,this::setAutoRecovery,
-                ()->exportBook(false),()->exportBook(true),this::pickImport);
+                ()->exportBook(false),()->exportBook(true),this::pickImport,this::showCatalog);
         return SettingsCompose.create(this,state,actions);
     }
     private void toggleSettings(String section){
@@ -804,27 +827,20 @@ public final class MainActivity extends ComponentActivity {
     private android.content.SharedPreferences recoveryPrefs() {
         return getSharedPreferences(RECOVERY_PREFS,MODE_PRIVATE);
     }
+    private void submitFile(ClientCommand.FileTask command){
+        if(!unlocked||bookViewModel.hasPendingWrite())return;
+        if(bookViewModel.submitClient(command))render();
+        else message("Дождитесь завершения операции.");
+    }
     private void createRecoveryPoint() {
-        try{
-            vault.create(ledger);
-            message("Защищённая точка создана.");
-            render();
-        }catch(Exception e){message("Точка не создана: "+e.getMessage());}
+        submitFile(ClientCommand.FileTask.CreatePoint.INSTANCE);
     }
     private void restoreRecoveryPoint() {
-        final String snapshot;
-        try{snapshot=vault.readLatest();}
-        catch(Exception ex){message("Не удалось прочитать точку: "+ex.getMessage());return;}
+        if(!vault.hasPoints()){message("Нет защищённых точек.");return;}
         LinearLayout form=stack(10);
-        form.addView(label("Текущая книга будет заменена. Сначала автоматически создадим защищённую копию текущих записей. Для переноса между устройствами используйте внешний JSON.",14,ALERT,false));
-        showDialog("Восстановить точку?",form,()->{
-            vault.create(ledger); // Fail closed: do not replace if recovery point cannot be created.
-            ledger.importJson(snapshot);
-            directory.clearAfterRestore();new QuickDebtDrafts(this).clear();new LedgerDrafts(this).clearAll();
-            getPreferences(MODE_PRIVATE).edit().remove("last_json_export").apply();
-            selectedClient=null;tab="Клиенты";
-            return true;
-        });
+        form.addView(label("Текущая книга будет заменена последней защищённой точкой на момент подтверждения. Сначала автоматически создадим копию текущих записей. Для переноса между устройствами используйте внешний JSON.",14,ALERT,false));
+        showDialog("Восстановить точку?",form,null,()->
+                new ClientCommand.FileTask.RestorePoint(getLocalClassName()));
     }
     private void setAutoRecovery(boolean checked){
         recoveryPrefs().edit().putBoolean("enabled",checked).apply();
@@ -881,6 +897,7 @@ public final class MainActivity extends ComponentActivity {
         }
     }
     @Override protected void onStop(){
+        if(productPickerDialog!=null)productPickerDialog.dismiss();
         if(privacy!=null&&!authInFlight)stoppedAt=android.os.SystemClock.elapsedRealtime();
         reloadOnStart=true;
         bookViewModel.clear();
@@ -910,6 +927,14 @@ public final class MainActivity extends ComponentActivity {
         },1);
         showDialog("Незавершённая запись",content,null);
     }
+    /** Form previews may reuse a coherent snapshot; writes always revalidate in SQLite. */
+    private BookScreenData bookForPreview(){
+        BookScreenData cached=bookViewModel.cachedBook();
+        if(cached!=null)return cached;
+        dev.ventry.raschet.data.LedgerSnapshot snapshot=ledger.readSnapshot();
+        LocalDate today=LocalDate.now();
+        return new BookScreenData(snapshot,today,CollectionsInsights.analyze(snapshot.getClients(),snapshot.getEntries(),today));
+    }
     private void showQuickDebtForm(boolean fromClients,LocalDate initialDay,QuickDebtDrafts.Draft previous){
         QuickDebtDrafts drafts=new QuickDebtDrafts(this);
         final String draftId=previous==null?java.util.UUID.randomUUID().toString():previous.id;
@@ -918,15 +943,37 @@ public final class MainActivity extends ComponentActivity {
         EditText name=field("Имя покупателя",previous==null?null:previous.name);
         EditText phone=field("Телефон (необязательно)",previous==null?null:previous.phone);phone.setInputType(InputType.TYPE_CLASS_PHONE);
         EditText amount=field("0,00",previous==null?null:previous.amount);amount.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        name.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_NEXT);
+        amount.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_DONE);
+        styleMoneyField(amount);
         form.addView(formGroup("Имя покупателя",name));
-        form.addView(formGroup("Телефон (необязательно)",phone));
         LinearLayout matches=stack(2);form.addView(matches);
         form.addView(formGroup(fromClients?"Сумма долга, ₽ (необязательно)":"Сумма долга, ₽",amount));
+        TextView projected=label("",14,MUTED,false);
+        projected.setVisibility(View.GONE);
+        projected.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
+        form.addView(projected);
         LimitNotice notice=new LimitNotice(form);
         if(fromClients)form.addView(label("Без суммы сохраняется только клиент.",12,MUTED,false));
         LocalDate[] day={initialDay};
         TextView date=debtDateField(day);
         form.addView(formGroup("Дата записи",date));
+        LinearLayout phoneGroup=formGroup("Телефон (необязательно)",phone);
+        phoneGroup.setVisibility(phone.length()>0?View.VISIBLE:View.GONE);
+        LinearLayout phoneAction=stack(0);
+        addButton(phoneAction,phone.length()>0?"Скрыть телефон":"Добавить телефон",false,()->{
+            boolean open=phoneGroup.getVisibility()!=View.VISIBLE;
+            phoneGroup.setVisibility(open?View.VISIBLE:View.GONE);
+            TextView button=(TextView)phoneAction.getChildAt(0);
+            String title=open?"Скрыть телефон":phone.length()>0?"Показать телефон":"Добавить телефон";
+            button.setText(title);button.setContentDescription(title);
+            if(open)phone.requestFocus();
+        },1);
+        form.addView(phoneAction);form.addView(phoneGroup);
+        name.setOnEditorActionListener((v,action,event)->{
+            if(action!=android.view.inputmethod.EditorInfo.IME_ACTION_NEXT)return false;
+            amount.requestFocus();return true;
+        });
         LinearLayout extra=stack(5);
         EditText due=field("Без срока",previous==null?null:previous.due);due.setFocusable(false);due.setClickable(true);
         due.setOnClickListener(v->{
@@ -949,10 +996,10 @@ public final class MainActivity extends ComponentActivity {
         },1);
         form.addView(toggle);extra.setVisibility(due.length()>0||note.length()>0?View.VISIBLE:View.GONE);form.addView(extra);
         if(extra.getVisibility()==View.VISIBLE){TextView button=(TextView)toggle.getChildAt(0);button.setText("Скрыть дополнительные поля");button.setContentDescription("Скрыть дополнительные поля");}
-        List<LedgerStore.Client> customers=ledger.clients();
-        List<LedgerStore.Entry> snapshot=ledger.entries();
-        Map<String,Long> lastAmounts=RecentDebts.lastAmounts(snapshot);
-        List<CollectionsInsights.CustomerStatus> statuses=CollectionsInsights.analyze(customers,snapshot,LocalDate.now());
+        BookScreenData preview=bookForPreview();
+        List<LedgerStore.Client> customers=preview.getSnapshot().getClients();
+        Map<String,Long> lastAmounts=RecentDebts.lastAmounts(preview.getSnapshot().getEntries());
+        List<CollectionsInsights.CustomerStatus> statuses=preview.getStatuses();
         Map<String,Long> balances=new HashMap<>();
         for(CollectionsInsights.CustomerStatus status:statuses)balances.put(status.client.id,status.balance);
         String[] selected={null};
@@ -965,16 +1012,45 @@ public final class MainActivity extends ComponentActivity {
                     day[0],due.getText().toString(),note.getText().toString());
             if(value.isEmpty())drafts.clear();else drafts.save(value);
         };
-        Runnable refreshLimit=()->notice.update(selected[0],selected[0]==null?0L:balances.getOrDefault(selected[0],0L),previewAmount(amount));
+        Runnable refreshLimit=()->{
+            long current=selected[0]==null?0L:balances.getOrDefault(selected[0],0L);
+            long addition=previewAmount(amount);
+            notice.update(selected[0],current,addition);
+            projected.setVisibility(addition>0?View.VISIBLE:View.GONE);
+            if(addition>0){
+                long next=current+addition;
+                projected.setText(next>LedgerStore.MAX_AMOUNT?"Превышен максимальный остаток":
+                        (selected[0]==null?"Сумма новой записи: ":"Остаток после записи: ")+money(next));
+                projected.setTextColor(next>LedgerStore.MAX_AMOUNT?RED:ACCENT);
+            }
+        };
         amount.addTextChangedListener(watcher(v->refreshLimit.run()));
         java.util.function.Consumer<LedgerStore.Client> choose=customer->{
             updating[0]=true;selected[0]=customer.id;
             name.setText(customer.name);phone.setText(customer.phone);updating[0]=false;
+            if(phoneGroup.getVisibility()!=View.VISIBLE){
+                TextView button=(TextView)phoneAction.getChildAt(0);
+                String title=phone.length()>0?"Показать телефон":"Добавить телефон";
+                button.setText(title);button.setContentDescription(title);
+            }
+            amount.requestFocus();amount.selectAll();
             matches.removeAllViews();
             matches.addView(label("Выбран существующий клиент · "+money(balances.getOrDefault(customer.id,0L)),12,ACCENT,true));
             addRecentAmount(matches,amount,lastAmounts.getOrDefault(customer.id,0L));
             refreshLimit.run();persist.run();
         };
+        Map<String,LedgerStore.Client> customersById=new HashMap<>();
+        Map<String,String> searchNames=new HashMap<>();
+        for(LedgerStore.Client customer:customers){
+            customersById.put(customer.id,customer);
+            searchNames.put(customer.id,customer.name.toLowerCase(new Locale("ru","RU")));
+        }
+        List<LedgerStore.Client> recent=new ArrayList<>();
+        for(String id:lastAmounts.keySet()){
+            LedgerStore.Client customer=customersById.get(id);
+            if(customer!=null&&!directory.archived(id,balances.getOrDefault(id,0L)))recent.add(customer);
+            if(recent.size()>=3)break;
+        }
         Runnable refresh=()->{
             refreshLimit.run();matches.removeAllViews();
             if(selected[0]!=null){
@@ -985,15 +1061,7 @@ public final class MainActivity extends ComponentActivity {
             String digits=phone.getText().toString().replaceAll("[^0-9]","");
             if(query.isEmpty()&&digits.length()<3){
                 if(!digits.isEmpty())return;
-                List<LedgerStore.Client> recent=new ArrayList<>();
-                Map<String,LedgerStore.Client> byId=new HashMap<>();
-                for(LedgerStore.Client customer:customers)byId.put(customer.id,customer);
-                for(String id:lastAmounts.keySet()){
-                    LedgerStore.Client customer=byId.get(id);
-                    if(customer!=null&&!directory.archived(id,balances.getOrDefault(id,0L)))recent.add(customer);
-                    if(recent.size()>=3)break;
-                }
-                if(!recent.isEmpty())addButton(matches,"Недавние клиенты",false,()->{
+                 if(!recent.isEmpty())addButton(matches,"Недавние клиенты",false,()->{
                     matches.removeAllViews();
                     for(LedgerStore.Client customer:recent)
                         actionRow(matches,"›",customer.name,money(balances.getOrDefault(customer.id,0L)),()->choose.accept(customer));
@@ -1002,7 +1070,7 @@ public final class MainActivity extends ComponentActivity {
             }
             int count=0;
             for(LedgerStore.Client customer:customers){
-                String n=customer.name.toLowerCase(new Locale("ru","RU"));
+                String n=searchNames.get(customer.id);
                 if(!(!query.isEmpty()&&n.contains(query))&&!(digits.length()>=3&&ClientSearch.phoneMatches(customer.phone,digits)))continue;
                 if(count++>=5)break;
                 boolean archived=directory.archived(customer.id,balances.getOrDefault(customer.id,0L));
@@ -1065,11 +1133,10 @@ public final class MainActivity extends ComponentActivity {
     private void chooseClient(String type) {chooseClient(type,LocalDate.now());}
     private void chooseClient(String type,LocalDate initialDay) {
         if(type.equals("debt")){showQuickDebt();return;}
-        List<LedgerStore.Client> customers=ledger.clients();
-        if(customers.isEmpty()){message("Пока нет клиентов с долгом.");return;}
+        BookScreenData preview=bookForPreview();
+        if(preview.getSnapshot().getClients().isEmpty()){message("Пока нет клиентов с долгом.");return;}
         LinearLayout content=stack(8);
-        List<CollectionsInsights.CustomerStatus> statuses=directory.select(
-                CollectionsInsights.analyze(customers,ledger.entries(),LocalDate.now()),ClientDirectory.ACTIVE);
+        List<CollectionsInsights.CustomerStatus> statuses=directory.select(preview.getStatuses(),ClientDirectory.ACTIVE);
         EditText lookup=field("Имя или номер телефона",null);
         lookup.setSingleLine(true);
         content.addView(lookup);
@@ -1106,7 +1173,7 @@ public final class MainActivity extends ComponentActivity {
         fill.run();
         showDialog("Выберите клиента",content,null);
     }
-    private Dialog chooser;
+    private Dialog chooser, productPickerDialog;
     private void showClientForm(LedgerStore.Client client) {
         if(client==null){showQuickDebt(true);return;}
         LinearLayout content=stack(12);
@@ -1153,53 +1220,232 @@ public final class MainActivity extends ComponentActivity {
             return true;
         });
     }
+    private android.widget.Spinner selection(String description,List<String> choices,int selected){
+        android.widget.Spinner spinner=new android.widget.Spinner(this);
+        android.widget.ArrayAdapter<String> adapter=new android.widget.ArrayAdapter<>(this,
+                android.R.layout.simple_spinner_item,choices);
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        spinner.setAdapter(adapter);
+        spinner.setContentDescription(description);
+        spinner.setMinimumHeight(dp(controlHeight()));
+        spinner.setSelection(Math.max(0,selected));
+        return spinner;
+    }
+    private void onSelection(android.widget.Spinner spinner,java.util.function.IntConsumer action){
+        spinner.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener(){
+            @Override public void onItemSelected(android.widget.AdapterView<?> parent,View view,int position,long id){
+                action.accept(position);
+            }
+            @Override public void onNothingSelected(android.widget.AdapterView<?> parent){}
+        });
+    }
+    private List<CatalogRecord> catalogRows(){
+        List<CatalogRecord> records=new ArrayList<>(new SqliteLedgerRepository(ledger).catalog());
+        records.sort(Comparator.comparing((CatalogRecord product)->!product.getFavorite())
+                .thenComparing(product->Product.normalize(product.getName())).thenComparing(CatalogRecord::getId));
+        return records;
+    }
+    private void showCatalog(){
+        List<CatalogRecord> records=catalogRows();
+        LinearLayout form=stack(6), results=stack(2);
+        EditText query=field("Название или категория",null);
+        form.addView(query);
+        addButton(form,"+ Новый товар",true,()->{
+            if(chooser!=null)chooser.dismiss();
+            showCatalogEditor(null);
+        },1);
+        form.addView(results);
+        Runnable filter=()->{
+            results.removeAllViews();
+            String needle=Product.normalize(query.getText().toString());
+            int count=0;
+            for(CatalogRecord product:records){
+                if(!Product.normalize(product.getName()+" "+product.getCategory()).contains(needle))continue;
+                count++;
+                if(count>60)continue;
+                String title=(product.getArchived()?"Архив · ":product.getFavorite()?"Избранное · ":"")+
+                        product.getName()+" · "+money(product.getPrice())+"/"+product.getUnit();
+                clientMenuAction(results,title,()->showCatalogEditor(product));
+            }
+            if(count==0)results.addView(label(records.isEmpty()?"Добавьте первый товар.":"Нет совпадений.",14,MUTED,false));
+            if(count>60)results.addView(label("Показано 60 из "+count+". Уточните поиск.",12,MUTED,false));
+        };
+        query.addTextChangedListener(watcher(v->filter.run()));
+        filter.run();
+        showDialog("Каталог товаров",form,null);
+    }
+    private void showCatalogEditor(CatalogRecord existing){
+        LinearLayout form=stack(7);
+        EditText name=field("Название товара",existing==null?null:existing.getName());
+        EditText category=field("Категория (необязательно)",existing==null?null:existing.getCategory());
+        EditText price=field("Цена за единицу, ₽",existing==null?null:amountInput(existing.getPrice()));
+        price.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        List<String> units=java.util.Arrays.asList(Product.UNITS);
+        android.widget.Spinner unit=selection("Единица измерения",units,existing==null?0:units.indexOf(existing.getUnit()));
+        CheckBox favorite=new CheckBox(this);favorite.setText("В избранном");favorite.setTextColor(TEXT);
+        favorite.setChecked(existing!=null&&existing.getFavorite());
+        CheckBox archive=new CheckBox(this);archive.setText("В архиве");archive.setTextColor(TEXT);
+        archive.setChecked(existing!=null&&existing.getArchived());
+        form.addView(formGroup("Товар",name));form.addView(formGroup("Категория",category));
+        form.addView(formGroup("Цена",price));form.addView(unit);form.addView(favorite);
+        if(existing!=null)form.addView(archive);
+        form.addView(label("Изменение цены не меняет ранее записанные покупки.",12,MUTED,false));
+        final String id=existing==null?java.util.UUID.randomUUID().toString():existing.getId();
+        showDialog(existing==null?"Новый товар":"Изменить товар",form,null,()->
+                new ClientCommand.Catalog(new CatalogRecord(id,name.getText().toString(),category.getText().toString(),
+                        units.get(unit.getSelectedItemPosition()),LedgerStore.parseAmount(price.getText().toString()),
+                        favorite.isChecked(),archive.isChecked())));
+    }
+    /** Child dialog leaves the purchase form and its draft alive. */
+    private void showProductPicker(CatalogPicker catalog,java.util.function.Consumer<CatalogRecord> choose){
+        Dialog picker=new Dialog(this);
+        productPickerDialog=picker;
+        picker.setOnDismissListener(d->{if(productPickerDialog==picker)productPickerDialog=null;});
+        picker.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        LinearLayout body=stack(8);
+        body.setPadding(dp(16),dp(16),dp(16),dp(16));
+        body.setBackground(shape(PANEL,12,BORDER));
+        body.addView(label("Товары",22,TEXT,true));
+        EditText search=field("Поиск товара или категории",null);
+        search.setSingleLine(true);
+        body.addView(search);
+        CheckBox favorites=new CheckBox(this);
+        favorites.setText("Только избранные");favorites.setTextColor(TEXT);
+        body.addView(favorites);
+        TextView count=label("",12,MUTED,false);
+        body.addView(count);
+        ScrollView list=new ScrollView(this){
+            @Override protected void onMeasure(int widthSpec,int heightSpec){
+                android.graphics.Rect visible=new android.graphics.Rect();
+                root.getWindowVisibleDisplayFrame(visible);
+                int max=Math.min(dp(248),Math.max(dp(88),visible.height()-dp(240)));
+                if(View.MeasureSpec.getMode(heightSpec)!=View.MeasureSpec.UNSPECIFIED)max=Math.min(max,View.MeasureSpec.getSize(heightSpec));
+                super.onMeasure(widthSpec,View.MeasureSpec.makeMeasureSpec(max,View.MeasureSpec.AT_MOST));
+            }
+        };
+        LinearLayout results=stack(4);list.addView(results);
+        body.addView(list,new LinearLayout.LayoutParams(-1,-2));
+        Runnable refresh=()->{
+            results.removeAllViews();
+            CatalogPicker.Result found=catalog.search(search.getText().toString(),favorites.isChecked());
+            count.setText(found.total>CatalogPicker.LIMIT?"Показано "+CatalogPicker.LIMIT+" из "+found.total+" · уточните поиск":"Найдено: "+found.total);
+            if(found.rows.isEmpty())results.addView(label("Нет подходящих товаров.",14,MUTED,false));
+            for(CatalogRecord product:found.rows){
+                LinearLayout item=stack(3);
+                item.setPadding(dp(10),dp(9),dp(10),dp(9));
+                item.setBackground(shape(ELEVATED,8,BORDER));
+                item.addView(label(product.getName(),16,TEXT,true));
+                String meta=money(product.getPrice())+" / "+product.getUnit();
+                if(!product.getCategory().isEmpty())meta+=" · "+product.getCategory();
+                if(product.getFavorite())meta+=" · Избранное";
+                item.addView(label(meta,13,MUTED,false));
+                item.setContentDescription(product.getName()+", "+meta);
+                item.setFocusable(true);item.setClickable(true);
+                item.setOnClickListener(v->{picker.dismiss();choose.accept(product);});
+                results.addView(item);
+            }
+            list.scrollTo(0,0);
+        };
+        search.addTextChangedListener(watcher(v->refresh.run()));
+        favorites.setOnCheckedChangeListener((button,checked)->refresh.run());
+        addButton(body,"Закрыть",false,picker::dismiss,1);
+        refresh.run();
+        picker.setContentView(body);
+        Window window=picker.getWindow();
+        if(window!=null){
+            if(privacy.hideScreens())window.addFlags(WindowManager.LayoutParams.FLAG_SECURE);
+            window.setBackgroundDrawableResource(android.R.color.transparent);
+            window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE|WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);
+        }
+        picker.show();
+        if(window!=null)window.setLayout(Math.min(getResources().getDisplayMetrics().widthPixels-dp(26),dp(510)),WindowManager.LayoutParams.WRAP_CONTENT);
+    }
+
     private final class PurchaseRow {
         final EditText name,quantity,price;
+        final android.widget.Spinner unit;
+        final List<String> units=new ArrayList<>();
         final TextView subtotal;
         View removeAction;
         final LinearLayout block;
-        PurchaseRow(){
-            block=stack(4);
+        PurchaseRow(CatalogPicker catalog){
+            block=card();
             name=field("Название товара",null);
             quantity=field("1","1");
             price=field("0,00",null);
             name.setSingleLine(true);
             quantity.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);
             price.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);
+            units.add("Без единицы");
+            units.addAll(java.util.Arrays.asList(Product.UNITS));
+            unit=selection("Единица измерения",units,0);
+            if(!catalog.isEmpty()){
+                addButton(block,"Выбрать из каталога",false,()->showProductPicker(catalog,product->{
+                    name.setText(product.getName());
+                    price.setText(amountInput(product.getPrice()));
+                    unit.setSelection(Math.max(0,units.indexOf(product.getUnit())));
+                    quantity.requestFocus();
+                    quantity.selectAll();
+                }),1);
+            }
             block.addView(formGroup("Товар",name));
             LinearLayout numbers=row();
             numbers.addView(formGroup("Количество",quantity),new LinearLayout.LayoutParams(0,-2,1));
             numbers.addView(formGroup("Цена, ₽",price),new LinearLayout.LayoutParams(0,-2,1));
             block.addView(numbers);
-            subtotal=label("Сумма позиции: —",14,ACCENT,true);
+            block.addView(unit);
+            subtotal=label("Сумма позиции: —",18,ACCENT,true);
             block.addView(subtotal);
         }
         Purchase.Item item(){
             return new Purchase.Item(name.getText().toString(),Purchase.quantity(quantity.getText().toString()),
-                    LedgerStore.parseAmount(price.getText().toString()));
+                    LedgerStore.parseAmount(price.getText().toString()),
+                    unit.getSelectedItemPosition()==0?"":units.get(unit.getSelectedItemPosition()));
         }
     }
     private void showPurchaseForm(String clientId){
         LedgerStore.Client client=null;
         for(LedgerStore.Client c:ledger.clients())if(c.id.equals(clientId)){client=c;break;}
         if(client==null){message("Клиент не найден.");return;}
-        if(directory.archived(clientId,LedgerStore.balance(ledger.entries(),clientId))){
+        if(directory.archived(clientId,LedgerStore.balance(ledger.entriesForClient(clientId),clientId))){
             message("Сначала верните клиента из архива.");return;
         }
+        PurchaseDrafts drafts=new PurchaseDrafts(this);
+        PurchaseDrafts.Draft previous=drafts.get(clientId);
+        if(previous!=null&&ledger.hasEntryId(previous.id)){drafts.clear(clientId);previous=null;}
+        final String purchaseId=previous==null?java.util.UUID.randomUUID().toString():previous.id;
+        final PurchaseDrafts.Draft restored=previous;
+        final boolean[] hydrating={true};
         LinearLayout form=stack(7);
         form.addView(label(client.name+" · товары в долг",14,TEXT,true));
+        if(restored!=null)form.addView(label("Черновик покупки восстановлен. Проверьте товары и цены.",12,ACCENT,false));
         LinearLayout rows=stack(6);
         List<PurchaseRow> items=new ArrayList<>();
-        EditText discount=field("0,00",null);
+        List<CatalogRecord> catalog=catalogRows();
+        catalog.removeIf(CatalogRecord::getArchived);
+        CatalogPicker catalogPicker=new CatalogPicker(catalog);
+        EditText discount=field("0,00",restored==null?null:restored.discount);
+        EditText due=field("Без срока",restored==null?null:restored.due);
+        EditText note=field("Комментарий",restored==null?null:restored.note);
+        Runnable persist=()->{
+            if(hydrating[0]||items.isEmpty())return;
+            List<PurchaseDrafts.Row> raw=new ArrayList<>();
+            for(PurchaseRow r:items)raw.add(new PurchaseDrafts.Row(r.name.getText().toString(),
+                    r.quantity.getText().toString(),r.price.getText().toString(),
+                    r.unit.getSelectedItemPosition()<=0?"":r.units.get(r.unit.getSelectedItemPosition())));
+            drafts.save(clientId,new PurchaseDrafts.Draft(purchaseId,raw,
+                    discount.getText().toString(),due.getText().toString(),note.getText().toString()));
+        };
         discount.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);
         LinearLayout summary=stack(2);
-        TextView total=label("Итого к записи: —",20,ACCENT,true);
+        TextView total=label("Итого к записи: —",26,ACCENT,true);
+        total.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
         TextView details=label("Заполните товары и цены.",13,MUTED,false);
         summary.addView(total);summary.addView(details);
         // Keep the current total visible at the top of the scrollable form.
         form.addView(summary);
         LimitNotice notice=new LimitNotice(form);
-        final long available=LedgerStore.balance(ledger.entries(),clientId);
+        final long available=LedgerStore.balance(ledger.entriesForClient(clientId),clientId);
         addListDivider(form);form.addView(rows);
         Runnable update=()->{
             List<Purchase.Item> valid=new ArrayList<>();
@@ -1219,21 +1465,21 @@ public final class MainActivity extends ComponentActivity {
         };
         Runnable add=()->{
             if(items.size()>=Purchase.MAX_ITEMS){message("Максимум 8 позиций в одной покупке.");return;}
-            PurchaseRow r=new PurchaseRow();items.add(r);rows.addView(r.block,margin(-1,-2,8));
+            PurchaseRow r=new PurchaseRow(catalogPicker);items.add(r);rows.addView(r.block,margin(-1,-2,8));
             addButton(r.block,"Удалить позицию",false,()->{
                 if(items.size()==1){message("Оставьте хотя бы одну позицию.");return;}
-                items.remove(r);rows.removeView(r.block);update.run();
+                items.remove(r);rows.removeView(r.block);update.run();persist.run();
             },1);
             r.removeAction=r.block.getChildAt(r.block.getChildCount()-1);
-            r.name.addTextChangedListener(watcher(v->update.run()));
-            r.quantity.addTextChangedListener(watcher(v->update.run()));
-            r.price.addTextChangedListener(watcher(v->update.run()));
-            update.run();
+            r.name.addTextChangedListener(watcher(v->{update.run();persist.run();}));
+            r.quantity.addTextChangedListener(watcher(v->{update.run();persist.run();}));
+            r.price.addTextChangedListener(watcher(v->{update.run();persist.run();}));
+            onSelection(r.unit,index->{update.run();persist.run();});
+            update.run();persist.run();
         };
         addButton(form,"+ Добавить товар",false,add,1);
         form.addView(formGroup("Скидка на покупку, ₽",discount));
-        discount.addTextChangedListener(watcher(v->update.run()));
-        EditText due=field("Без срока",null);
+        discount.addTextChangedListener(watcher(v->{update.run();persist.run();}));
         due.setFocusable(false);due.setOnClickListener(v->{
             LocalDate today=LocalDate.now();
             new DatePickerDialog(this,(picker,y,m,d)->due.setText(LocalDate.of(y,m+1,d).toString()),
@@ -1242,18 +1488,32 @@ public final class MainActivity extends ComponentActivity {
         form.addView(formGroup("Вернуть до (необязательно)",due));
         LinearLayout clearPurchaseDue=stack(0);
         addButton(clearPurchaseDue,"Без срока",false,()->due.setText(""),1);
-        clearPurchaseDue.setVisibility(View.GONE);
-        due.addTextChangedListener(watcher(v->clearPurchaseDue.setVisibility(v.isEmpty()?View.GONE:View.VISIBLE)));
+        clearPurchaseDue.setVisibility(due.getText().length()==0?View.GONE:View.VISIBLE);
+        due.addTextChangedListener(watcher(v->{clearPurchaseDue.setVisibility(v.isEmpty()?View.GONE:View.VISIBLE);persist.run();}));
         form.addView(clearPurchaseDue);
-        EditText note=field("Комментарий",null);
         form.addView(formGroup("Комментарий (необязательно)",note));
-        form.addView(label("При закрытии незаписанный состав покупки не сохраняется.",12,MUTED,false));
-        add.run();
-        final String purchaseId=java.util.UUID.randomUUID().toString();
+        note.addTextChangedListener(watcher(v->persist.run()));
+        form.addView(label("Черновик сохраняется автоматически до записи покупки.",12,MUTED,false));
+        if(restored==null)add.run();
+        else for(PurchaseDrafts.Row raw:restored.rows){
+            add.run();
+            PurchaseRow r=items.get(items.size()-1);
+            r.name.setText(raw.name);r.quantity.setText(raw.quantity);r.price.setText(raw.price);
+            r.unit.setSelection(Math.max(0,r.units.indexOf(raw.unit)));
+        }
+        hydrating[0]=false;
+        update.run();
+        persist.run();
+        addButton(form,"Очистить черновик",false,()->{
+            if(chooser!=null)chooser.dismiss();
+            drafts.clear(clientId);
+            showPurchaseForm(clientId);
+        },1);
         showDialog("Покупка в долг",form,null,()->{
             List<Purchase.Item> valid=new ArrayList<>();
             for(PurchaseRow r:items)valid.add(r.item());
             Purchase purchase=new Purchase(valid,Purchase.discount(discount.getText().toString()));
+            persist.run();
             return new ClientCommand.ItemizedDebt(purchaseId,clientId,purchase.encode(),
                     due.getText().toString(),note.getText().toString().trim(),notice.confirmation());
         });
@@ -1284,13 +1544,19 @@ public final class MainActivity extends ComponentActivity {
         LedgerStore.Client c=null;
         for(LedgerStore.Client person:ledger.clients())if(person.id.equals(clientId))c=person;
         if(c==null){message("Клиент не найден.");return;}
-        final long available=LedgerStore.balance(ledger.entries(),clientId);
+        final List<LedgerStore.Entry> clientEntries=ledger.entriesForClient(clientId);
+        final long available=LedgerStore.balance(clientEntries,clientId);
         final boolean fromBook=tab.equals("Главная");
         final boolean fromCollections=tab.equals("Возврат");
         if(directory.archived(clientId,available)){message("Сначала верните клиента из архива.");return;}
         if(type.equals("payment")&&available<=0){message("Нет долга для оплаты.");return;}
         LinearLayout content=stack(7);
-        content.addView(label(c.name+" · остаток "+money(available),13,MUTED,false));
+        LinearLayout identity=stack(4);
+        identity.setPadding(dp(12),dp(10),dp(12),dp(10));
+        identity.setBackground(shape(ELEVATED,10,0));
+        identity.addView(label(c.name,17,TEXT,true));
+        identity.addView(label("Текущий остаток: "+money(available),13,MUTED,false));
+        content.addView(identity);
         LedgerDrafts drafts=new LedgerDrafts(this);
         LedgerDrafts.Draft previous=drafts.get(clientId,type);
         if(previous!=null&&ledger.hasEntryId(previous.id)){drafts.clear(clientId,type);previous=null;}
@@ -1300,53 +1566,76 @@ public final class MainActivity extends ComponentActivity {
         if(savedDraft)
             content.addView(label("Незавершённый черновик восстановлен. Проверьте сумму перед записью.",12,ACCENT,false));
         EditText amount=field("0,00",preset);amount.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        styleMoneyField(amount);
         content.addView(formGroup("Сумма, ₽",amount));
+        LocalDate[] entryDay={savedDraft?previous.day:initialDay};
+        final boolean payment=type.equals("payment");
+        long[] historicalMaximum={payment?DatedPayments.maximum(clientEntries,clientId,entryDay[0],LocalDate.now(),ZoneId.systemDefault()):available};
         final LimitNotice notice=type.equals("debt")?new LimitNotice(content):null;
         if(notice!=null){
-            addRecentAmount(content,amount,RecentDebts.lastAmounts(ledger.entries()).getOrDefault(clientId,0L));
+            addRecentAmount(content,amount,RecentDebts.lastAmounts(clientEntries).getOrDefault(clientId,0L));
             Runnable check=()->notice.update(clientId,available,previewAmount(amount));
             amount.addTextChangedListener(watcher(v->check.run()));check.run();
         }
-        if(type.equals("payment")){
-            LinearLayout amounts=row();
-            addButton(amounts,"Половина",false,()->amount.setText(amountInput(Math.max(1L,available/2))),1);
-            addButton(amounts,"Весь остаток",false,()->amount.setText(amountInput(available)),1);
+        LinearLayout amounts=row();
+        TextView dateLimit=label("",12,MUTED,false);
+        dateLimit.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
+        final TextView[] fullButton={null};
+        final LinearLayout promiseActions=stack(0);
+        if(payment){
+            addButton(amounts,"Половина",false,()->{
+                long maximum=historicalMaximum[0];
+                if(maximum>0)amount.setText(amountInput(Math.max(1L,maximum/2)));
+            },1);
+            addButton(amounts,"Весь остаток",false,()->{
+                if(historicalMaximum[0]>0)amount.setText(amountInput(historicalMaximum[0]));
+            },1);
+            fullButton[0]=(TextView)amounts.getChildAt(1);
             content.addView(amounts,margin(-1,dp(controlHeight()),0));
             ClientDirectory.FollowUp promise=directory.followUp(clientId);
             if(promise!=null&&promise.amount>0){
-                PaymentPromises.Progress progress=PaymentPromises.calculate(ledger.entries(),clientId,promise,LocalDate.now(),ZoneId.systemDefault());
+                PaymentPromises.Progress progress=PaymentPromises.calculate(clientEntries,clientId,promise,LocalDate.now(),ZoneId.systemDefault());
                 long outstanding=Math.min(available,Math.max(0L,promise.amount-progress.paid));
-                if(progress.valid&&outstanding>0)addButton(content,"По обещанию: "+money(outstanding),false,()->amount.setText(amountInput(outstanding)),1);
+                if(progress.valid&&outstanding>0)addButton(promiseActions,"По обещанию: "+money(outstanding),false,()->amount.setText(amountInput(outstanding)),1);
             }
+            content.addView(promiseActions);
         }
         TextView projected=label("Остаток после записи: —",16,ACCENT,true);
         projected.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
-        content.addView(projected);
+        LinearLayout projectionPanel=stack(0);
+        projectionPanel.setPadding(dp(12),dp(10),dp(12),dp(10));
+        projectionPanel.setBackground(shape(ELEVATED,8,0));
+        projectionPanel.addView(projected);
+        content.addView(projectionPanel);
         Runnable updateProjection=()->{
             try{
                 long cents=LedgerStore.parseAmount(amount.getText().toString());
                 long next=type.equals("payment")?available-cents:available+cents;
                 if(next<0){projected.setText("Оплата превышает остаток");projected.setTextColor(RED);}
+                else if(payment&&cents>historicalMaximum[0]){projected.setText("Оплата превышает доступную сумму на эту дату");projected.setTextColor(RED);}
                 else if(next>LedgerStore.MAX_AMOUNT){projected.setText("Превышен максимальный остаток");projected.setTextColor(RED);}
                 else{projected.setText("Остаток после записи: "+money(next));projected.setTextColor(ACCENT);}
             }catch(Exception e){projected.setText("Остаток после записи: —");projected.setTextColor(MUTED);}
         };
         amount.addTextChangedListener(watcher(v->updateProjection.run()));
         updateProjection.run();
-        LocalDate[] entryDay={savedDraft?previous.day:initialDay};
         TextView entryDate=debtDateField(entryDay);
         content.addView(formGroup(type.equals("debt")?"Дата записи":"Дата оплаты",entryDate));
-        if(type.equals("payment")){
-            TextView dateLimit=label("",12,MUTED,false);content.addView(dateLimit);
-            long[] historicalMaximum={available};
+        if(payment){
+            content.addView(dateLimit);
             Runnable colorCheck=()->dateLimit.setTextColor(historicalMaximum[0]==0||previewAmount(amount)>historicalMaximum[0]?RED:MUTED);
             Runnable dateCheck=()->{
                 LocalDate today=LocalDate.now();
-                if(entryDay[0].equals(today)){dateLimit.setVisibility(View.GONE);return;}
-                historicalMaximum[0]=DatedPayments.maximum(ledger.entries(),clientId,entryDay[0],today,ZoneId.systemDefault());
-                dateLimit.setVisibility(View.VISIBLE);
+                boolean current=entryDay[0].equals(today);
+                historicalMaximum[0]=DatedPayments.maximum(clientEntries,clientId,entryDay[0],today,ZoneId.systemDefault());
+                String caption=current?"Весь остаток":"Всё за дату";
+                fullButton[0].setText(caption);fullButton[0].setContentDescription(caption);
+                for(int i=0;i<amounts.getChildCount();i++)amounts.getChildAt(i).setEnabled(historicalMaximum[0]>0);
+                // Promises are current-state shortcuts, not historical amounts.
+                promiseActions.setVisibility(current?View.VISIBLE:View.GONE);
+                dateLimit.setVisibility(current?View.GONE:View.VISIBLE);
                 dateLimit.setText("На эту дату можно принять до "+money(historicalMaximum[0])+". Проверьте дату фактической оплаты.");
-                colorCheck.run();
+                colorCheck.run();updateProjection.run();
             };
             entryDate.addTextChangedListener(watcher(v->dateCheck.run()));
             amount.addTextChangedListener(watcher(v->colorCheck.run()));dateCheck.run();
@@ -1463,7 +1752,10 @@ public final class MainActivity extends ComponentActivity {
             }
         }
         if(entry.purchase!=null)clientMenuAction(content,"Состав покупки",()->showPurchaseDetails(entry));
-        clientMenuAction(content,"Карточка клиента",()->{selectedClient=entry.clientId;tab="Клиенты";render();});
+        clientMenuAction(content,"Карточка клиента",()->{
+            if(!"Клиенты".equals(tab)){returnToBook="Главная".equals(tab);returnToCollections="Возврат".equals(tab);}
+            selectedClient=entry.clientId;tab="Клиенты";render();
+        });
         clientMenuAction(content,"Все операции клиента",()->{
             historyClientId=entry.clientId;historyQuery="";historyFrom=null;historyTo=null;historyFilter="Все";
             historyVisibleLimit=100;selectedClient=null;tab="История";render();
@@ -1481,7 +1773,7 @@ public final class MainActivity extends ComponentActivity {
         LedgerStore.Entry original=ledger.lastActive(clientId);
         if(original==null){message("Нет действующей записи для исправления.");return;}
         if(expectedId!=null&&!expectedId.equals(original.id)){message("Запись уже не последняя. Откройте актуальную историю.");return;}
-        long currentBalance=LedgerStore.balance(ledger.entries(),clientId);
+        long currentBalance=LedgerStore.balance(ledger.entriesForClient(clientId),clientId);
         LinearLayout content=stack(7);
         content.addView(label(("debt".equals(original.type)?"Долг":"Оплата")+" · "+formatDate(original.date),14,TEXT,true));
         content.addView(label("Исходная сумма: "+money(original.amount)+" · текущий долг: "+money(currentBalance),13,MUTED,false));
@@ -1535,7 +1827,7 @@ public final class MainActivity extends ComponentActivity {
         LedgerStore.Entry last=ledger.lastActive(clientId);
         if(last==null){message("Отменять пока нечего.");return;}
         if(expectedId!=null&&!expectedId.equals(last.id)){message("Запись уже не последняя. Откройте актуальную историю.");return;}
-        long balance=LedgerStore.balance(ledger.entries(),clientId);
+        long balance=LedgerStore.balance(ledger.entriesForClient(clientId),clientId);
         long after;
         try{after=LedgerStore.correctedBalance(balance,last,0L);}
         catch(IllegalArgumentException|IllegalStateException invalid){message(invalid.getMessage());return;}
@@ -1559,10 +1851,12 @@ public final class MainActivity extends ComponentActivity {
         if(bookViewModel.hasPendingWrite())return;
         Dialog dialog=new Dialog(this);
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
-        LinearLayout box=stack(7);
-        box.setPadding(dp(14),dp(14),dp(14),dp(14));
-        box.setBackground(shape(PANEL,12,BORDER));
-        box.addView(label(title,20,TEXT,true));
+        LinearLayout box=stack(10);
+        box.setPadding(dp(18),dp(16),dp(18),dp(16));
+        box.setBackground(shape(PANEL,16,BORDER));
+        TextView heading=label(title,22,TEXT,true);
+        if(android.os.Build.VERSION.SDK_INT>=28)heading.setAccessibilityHeading(true);
+        box.addView(heading);
         addListDivider(box);
         ScrollView scroll=new ScrollView(this){
             @Override protected void onMeasure(int widthSpec,int heightSpec){
@@ -1580,6 +1874,7 @@ public final class MainActivity extends ComponentActivity {
         box.addView(scroll,new LinearLayout.LayoutParams(-1,-2));
         TextView error=label("",12,RED,false);
         error.setVisibility(View.GONE);
+        error.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
         box.addView(error);
         LinearLayout buttons=row();
         addButton(buttons,"Закрыть",false,dialog::dismiss,1);
@@ -1605,6 +1900,7 @@ public final class MainActivity extends ComponentActivity {
             if(privacy.hideScreens())window.addFlags(WindowManager.LayoutParams.FLAG_SECURE);
             window.setBackgroundDrawableResource(android.R.color.transparent);
             window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+            window.setDimAmount(.62f);
             window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
             window.setLayout(Math.min(getResources().getDisplayMetrics().widthPixels-dp(26),dp(510)),
                     WindowManager.LayoutParams.WRAP_CONTENT);
@@ -1646,11 +1942,12 @@ public final class MainActivity extends ComponentActivity {
         restoreClientDialog();
         bookViewModel.acknowledgeWrite(state);
         if(state instanceof WriteState.Done<?> done){
-            applyWriteReceipt((WriteReceipt)done.getValue());
+            WriteReceipt receipt=(WriteReceipt)done.getValue();
+            applyWriteReceipt(receipt);
             saving=true;
             try{if(dialog!=null&&dialog.isShowing())dialog.dismiss();}
             finally{saving=false;}
-            render();message("Сохранено.");
+            render();message(receipt.getMessage()==null?"Сохранено.":receipt.getMessage());
         }else if(state instanceof WriteState.Failed failed){
             if(dialog!=null&&dialog.isShowing()&&error!=null){
                 error.setText(failed.getMessage());error.setVisibility(View.VISIBLE);
@@ -1661,21 +1958,24 @@ public final class MainActivity extends ComponentActivity {
         }
     }
     private void applyWriteReceipt(WriteReceipt receipt){
-        if("debt".equals(receipt.getKind())){
+        if("debt".equals(receipt.getKind())&&!(returnToBook&&receipt.getDestination()==WriteDestination.DETAIL)){
             bookPayments=false;clearBookFilters();
             bookDayLimit=Math.max(bookDayLimit,receipt.getRank());
+            bookCalendarDay=receipt.getDay();
             expandedBookDays.add(receipt.getDay().toString());
         }else if("payment".equals(receipt.getKind())&&receipt.getDestination()==WriteDestination.BOOK){
             bookPayments=true;clearBookFilters();
             bookDayLimit=Math.max(bookDayLimit,receipt.getRank());
+            bookCalendarDay=receipt.getDay();
             expandedBookDays.clear();expandedBookDays.add(receipt.getDay().toString());
         }
         switch(receipt.getDestination()){
             case CLIENTS:
+                returnToBook=false;returnToCollections=false;
                 tab="Клиенты";selectedClient=null;clientScope=ClientDirectory.ACTIVE;
                 clientFilter=CollectionsInsights.ALL;search="";clientVisibleLimit=60;break;
-            case BOOK: tab="Главная";selectedClient=null;break;
-            case COLLECTIONS: tab="Возврат";selectedClient=null;break;
+            case BOOK: tab="Главная";selectedClient=null;returnToBook=false;returnToCollections=false;break;
+            case COLLECTIONS: tab="Возврат";selectedClient=null;returnToBook=false;returnToCollections=false;break;
             case DETAIL: tab="Клиенты";selectedClient=receipt.getClientId();break;
             case KEEP: break;
         }
@@ -1702,23 +2002,6 @@ public final class MainActivity extends ComponentActivity {
             message("Не удалось открыть выбор файла: "+e.getMessage());
         }
     }
-    private String makeCsv() {
-        StringBuilder out=new StringBuilder("\uFEFFКлиент;Телефон;Дата;Тип;Сумма (руб);Срок;Комментарий;ID;Отменяет ID;Состав покупки\r\n");
-        Map<String,LedgerStore.Client> people=new HashMap<>();
-        for(LedgerStore.Client c:ledger.clients())people.put(c.id,c);
-        for(LedgerStore.Entry e:ledger.entries()){
-            LedgerStore.Client c=people.get(e.clientId);
-            for(String cell:new String[]{c==null?"":c.name,c==null?"":c.phone,e.date,e.type,
-                    String.format(Locale.ROOT,"%.2f",e.amount/100d).replace('.',','),e.due,e.note,e.id,e.reverses,e.purchase==null?"":e.purchase.summary()})
-                out.append(csvCell(cell)).append(';');
-            out.setLength(out.length()-1);out.append("\r\n");
-        }
-        return out.toString();
-    }
-    private static String csvCell(String s) {
-        if(!s.isEmpty()&&"=+-@\t\r".indexOf(s.charAt(0))>=0)s="'"+s;
-        return "\""+s.replace("\"","\"\"")+"\"";
-    }
     @Override protected void onActivityResult(int request,int result,Intent data) {
         super.onActivityResult(request,result,data);
         if(request==BookPrivacy.OPEN||request==BookPrivacy.ENABLE||request==BookPrivacy.DISABLE){
@@ -1732,82 +2015,44 @@ public final class MainActivity extends ComponentActivity {
             unlocked=true;stoppedAt=-1;reloadOnStart=false;applyPrivacyFlag();render();
             onClientWriteState(bookViewModel.getWriteState().getValue());return;
         }
+        // Never start a file operation using a result returned after the credential gate expired.
+        boolean authorized=unlocked&&!BookPrivacy.shouldRelock(privacy.enabled(),stoppedAt,
+                android.os.SystemClock.elapsedRealtime());
+        boolean ready=authorized&&result==RESULT_OK&&data!=null&&data.getData()!=null;
         if(request==REQUEST_EXPORT){
             boolean canExport=pendingExport;
             boolean csv=pendingExportCsv;
             pendingExport=false;
-            if(result!=RESULT_OK||data==null||data.getData()==null||!canExport)return;
-            try {
-                String body=csv?makeCsv():ledger.exportJson();
-                try(OutputStream out=getContentResolver().openOutputStream(data.getData(),"wt")){
-                    if(out==null)throw new IOException("Нет доступа к файлу.");
-                    out.write(body.getBytes(StandardCharsets.UTF_8));
-                    out.flush();
-                }
-                if(!csv){
-                    getPreferences(MODE_PRIVATE).edit()
-                            .putLong("last_json_export",System.currentTimeMillis()).apply();
-                }
-                message("Резервная копия сохранена.");
-                if(tab.equals("Настройки")||tab.equals("Главная"))render();
-            }catch(Exception ex){message("Ошибка сохранения: "+ex.getMessage());}
+            if(ready&&canExport)submitFile(new ClientCommand.FileTask.Export(
+                    data.getData().toString(),csv,getLocalClassName()));
         }else if(request==REQUEST_REPORT){
             LocalDate from=pendingReportFrom,to=pendingReportTo;
             pendingReportFrom=null;pendingReportTo=null;
-            if(from==null||to==null||result!=RESULT_OK||data==null||data.getData()==null)return;
-            try(OutputStream out=getContentResolver().openOutputStream(data.getData(),"wt")){
-                if(out==null)throw new IOException("Нет доступа к файлу.");
-                out.write(PeriodReport.build(ledger.entries(),from,to,ZoneId.systemDefault()).csv().getBytes(StandardCharsets.UTF_8));
-                out.flush();message("Отчёт CSV сохранён.");
-            }catch(Exception ex){message("Ошибка отчёта: "+ex.getMessage());}
+            if(ready&&from!=null&&to!=null)submitFile(new ClientCommand.FileTask.Report(
+                    data.getData().toString(),from,to));
         }else if(request==REQUEST_PDF){
             String id=pendingPdfClientId;
             pendingPdfClientId=null;
-            if(id==null||result!=RESULT_OK||data==null||data.getData()==null)return;
-            LedgerStore.Client client=null;
-            for(LedgerStore.Client item:ledger.clients())if(item.id.equals(id)){client=item;break;}
-            if(client==null){message("Клиент не найден.");return;}
-            try(OutputStream out=getContentResolver().openOutputStream(data.getData(),"wt")){
-                if(out==null)throw new IOException("Не удалось открыть PDF-файл.");
-                CustomerStatementPdf.write(out,shopName,client,ledger.entries());
-                out.flush();
-                message("Выписка PDF сохранена.");
-            }catch(Exception ex){message("Ошибка PDF: "+ex.getMessage());}
-        }else if(request==REQUEST_IMPORT && result==RESULT_OK && data!=null && data.getData()!=null){
-            try(InputStream in=getContentResolver().openInputStream(data.getData())){
-                if(in==null)throw new IOException("Не удалось прочитать файл.");
-                ByteArrayOutputStream bytes=new ByteArrayOutputStream();
-                byte[] buf=new byte[8192];int n;
-                while((n=in.read(buf))!=-1){
-                    if(bytes.size()+n>MAX_IMPORT)throw new IOException("JSON-копия больше 5 МБ.");
-                    bytes.write(buf,0,n);
-                }
-                String backup=bytes.toString("UTF-8");
-                LinearLayout form=stack(12);
-                form.addView(label("Текущие клиенты и операции будут полностью заменены содержимым JSON-файла. Сохраните свою копию перед продолжением.",15,ALERT,false));
-                showDialog("Восстановить книгу?",form,()->{
-                    // Import is destructive. Keep an authenticated encrypted rollback point first.
-                    // If creating this point fails, abort before touching SQLite.
-                    vault.create(ledger);
-                    int[] count=ledger.importJson(backup);
-                    directory.clearAfterRestore();new QuickDebtDrafts(this).clear();new LedgerDrafts(this).clearAll();
-                    // A backup of the previous book is not a backup of this restored book.
-                    getPreferences(MODE_PRIVATE).edit().remove("last_json_export").apply();
-                    selectedClient=null;tab="Клиенты";
-                    message("Восстановлено: "+count[0]+" клиентов, "+count[1]+" операций.");
-                    return true;
-                });
-            }catch(Exception ex){message("Не удалось прочитать JSON: "+ex.getMessage());}
+            if(ready&&id!=null)submitFile(new ClientCommand.FileTask.Pdf(data.getData().toString(),id,shopName));
+        }else if(request==REQUEST_IMPORT&&ready){
+            String uri=data.getData().toString();
+            LinearLayout form=stack(12);
+            form.addView(label("Текущие клиенты и операции будут полностью заменены содержимым JSON-файла. Сохраните свою копию перед продолжением.",15,ALERT,false));
+            showDialog("Восстановить книгу?",form,null,()->new ClientCommand.FileTask.Import(uri,getLocalClassName()));
+        }
+        if(!authorized&&result==RESULT_OK&&(request==REQUEST_EXPORT||request==REQUEST_REPORT||
+                request==REQUEST_PDF||request==REQUEST_IMPORT)){
+            message("Откройте книгу и повторите файловую операцию.");
         }
     }
     @Override public void onBackPressed() {
         if(!unlocked){finishAndRemoveTask();return;}
         if(bookViewModel.hasPendingWrite())return;
-        if(selectedClient!=null){selectedClient=null;tab=returnToCollections?"Возврат":"Клиенты";returnToCollections=false;render();}
+        if(selectedClient!=null){returnFromClient();}
         else if(!tab.equals("Главная")){tab="Главная";render();}
         else super.onBackPressed();
     }
-    @Override protected void onDestroy() {if(bookViewModel!=null)bookViewModel.clear();if(ledger!=null)ledger.close();super.onDestroy();}
+    @Override protected void onDestroy() {if(productPickerDialog!=null)productPickerDialog.dismiss();if(bookViewModel!=null)bookViewModel.clear();if(ledger!=null)ledger.close();super.onDestroy();}
     private void message(String m) {Toast.makeText(this,m,Toast.LENGTH_LONG).show();}
 
     private LinearLayout screen(String title,String subtitle) {
@@ -1845,14 +2090,23 @@ public final class MainActivity extends ComponentActivity {
     private LinearLayout formGroup(String title,View child) {
         LinearLayout group=stack(4);
         group.addView(label(title,13,MUTED,true));
-        group.addView(child,new LinearLayout.LayoutParams(-1,dp(controlHeight())));
+        group.addView(child,new LinearLayout.LayoutParams(-1,Math.max(dp(controlHeight()),child.getMinimumHeight())));
         return group;
+    }
+    private void styleMoneyField(EditText edit){
+        edit.setTextSize(largeText?32:29);
+        edit.setMinimumHeight(dp(64));
+        edit.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));
+        edit.setFontFeatureSettings("kern, tnum");
+        edit.setGravity(Gravity.CENTER_VERTICAL|Gravity.START);
+        edit.setPadding(dp(14),dp(6),dp(14),dp(6));
     }
     private EditText field(String hint,String value) {
         EditText edit=new EditText(this);
         edit.setSingleLine(true);
         edit.setTextSize(largeText?17:15);
         edit.setTextColor(TEXT);edit.setHintTextColor(MUTED);
+        edit.setFontFeatureSettings("kern, tnum");
         edit.setHint(hint);if(value!=null)edit.setText(value);
         edit.setPadding(dp(11),0,dp(11),0);edit.setMinimumHeight(dp(48));
         android.graphics.drawable.StateListDrawable focusBackground=new android.graphics.drawable.StateListDrawable();

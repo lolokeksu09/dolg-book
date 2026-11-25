@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.TextButton
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -21,6 +23,9 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Shapes
+import androidx.compose.material3.Typography
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -44,6 +49,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import dev.ventry.raschet.presentation.BookScreenData
 import java.util.Locale
@@ -71,8 +77,24 @@ internal fun LedgerMaterialTheme(content: @Composable () -> Unit) {
             primary = accent, onPrimary = Color(LedgerTheme.INK),
             background = ledgerBackground, onBackground = text,
             surface = panel, onSurface = text, onSurfaceVariant = muted,
-            outline = border, error = red
-        ), content = content
+            outline = border, error = red,
+            secondary = accent, onSecondary = Color(LedgerTheme.INK),
+            secondaryContainer = selectedBackground, onSecondaryContainer = text,
+            primaryContainer = selectedBackground, onPrimaryContainer = text,
+            tertiary = alert, onTertiary = Color(LedgerTheme.INK),
+            tertiaryContainer = panel, onTertiaryContainer = text,
+            surfaceVariant = selectedBackground, errorContainer = Color(0xff542d2d),
+            onError = Color(0xff421b1b), onErrorContainer = Color(0xffffdada)
+        ), typography = Typography(
+            bodyLarge = TextStyle(fontSize = 16.sp, lineHeight = 1.25.em),
+            bodyMedium = TextStyle(fontSize = 14.sp, lineHeight = 1.35.em),
+            bodySmall = TextStyle(fontSize = 12.sp, lineHeight = 1.33.em),
+            labelLarge = TextStyle(fontSize = 14.sp, lineHeight = 1.3.em, fontWeight = FontWeight.Medium),
+            labelMedium = TextStyle(fontSize = 12.sp, lineHeight = 1.33.em, fontWeight = FontWeight.Medium),
+            labelSmall = TextStyle(fontSize = 11.sp, lineHeight = 1.27.em)
+        ), shapes = Shapes(extraSmall = RoundedCornerShape(6.dp), small = RoundedCornerShape(8.dp),
+            medium = RoundedCornerShape(10.dp), large = RoundedCornerShape(14.dp), extraLarge = RoundedCornerShape(18.dp)),
+        content = content
     )
 }
 
@@ -184,15 +206,23 @@ internal fun ClientListContent(
     }
 
     val result = visible
+    val visibleDebt = remember(result) { result?.sumOf { it.balance } ?: 0L }
     BoxWithConstraints(Modifier.fillMaxSize().background(ledgerBackground), contentAlignment = Alignment.TopCenter) {
         val compact = maxWidth >= 340.dp && LocalDensity.current.fontScale <= 1.2f && !largeText
         LazyColumn(
             modifier = Modifier.widthIn(max = 800.dp).fillMaxSize(),
-            contentPadding = PaddingValues(start = 14.dp, top = 8.dp, end = 14.dp, bottom = 16.dp),
+            contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             item("title") {
-                Text("Клиенты", color = text, fontSize = if (largeText) 24.sp else 20.sp, fontWeight = FontWeight.Bold)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Клиенты", color = text, fontSize = if (largeText) 28.sp else 24.sp, fontWeight = FontWeight.SemiBold)
+                        Text("Всего: " + model.allCount, color = muted, fontSize = 13.sp)
+                    }
+                    if (model.allCount > 0) TextButton(onClick = actions.add,
+                        modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = "+ Добавить клиента" }) { Text("+ Клиент") }
+                }
             }
             if (model.allCount == 0) {
                 item("empty-book") {
@@ -201,23 +231,7 @@ internal fun ClientListContent(
                 }
             } else {
                 item("tools") {
-                    if (compact) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            ClientSearchField(query, ::search, Modifier.weight(1f), largeText)
-                            Button(onClick = actions.add, shape = RoundedCornerShape(8.dp),
-                                modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = "+ Добавить клиента" },
-                                contentPadding = PaddingValues(horizontal = 14.dp)) {
-                                Text("+", fontSize = 22.sp)
-                            }
-                        }
-                    } else {
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Button(onClick = actions.add, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                                Text("+ Добавить клиента")
-                            }
-                            ClientSearchField(query, ::search, Modifier.fillMaxWidth(), largeText)
-                        }
-                    }
+                    ClientSearchField(query, ::search, Modifier.fillMaxWidth(), largeText)
                 }
                 item("filters") {
                     Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)
@@ -247,6 +261,9 @@ internal fun ClientListContent(
                             model.scoped.isEmpty() && scope != ClientDirectory.ACTIVE && query.isBlank() ->
                                 ClientEmpty(if (scope == ClientDirectory.ARCHIVE) "Архив пуст" else "Нет избранных клиентов",
                                     "Управляйте списками из карточки клиента.", "Рабочие клиенты", actions.resetScope, largeText)
+                            model.scoped.isEmpty() && query.isBlank() ->
+                                ClientEmpty("Нет рабочих клиентов", "Проверьте архив и выбранный список клиентов.",
+                                    "Фильтры клиентов", actions.filters, largeText)
                             query.isNotBlank() -> ClientEmpty("Никого не нашли", "Попробуйте другое имя или номер телефона.",
                                 "Очистить поиск", { search("") }, largeText)
                             filter == CollectionsInsights.CLEAR -> ClientEmpty("Нет клиентов без долга",
@@ -265,7 +282,8 @@ internal fun ClientListContent(
                         item("summary") {
                             Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
                                 Text("Клиентов: " + result.size, color = muted, fontSize = 12.sp)
-                                Text("Долг: " + money(result.sumOf { it.balance }), color = text, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                Text("Долг: " + money(visibleDebt), color = text, fontSize = 13.sp, fontWeight = FontWeight.Medium,
+                                    style = TextStyle(fontFeatureSettings = "tnum"))
                             }
                             HorizontalDivider(color = border)
                         }
@@ -291,6 +309,11 @@ private fun ClientSearchField(value: String, changed: (String) -> Unit, modifier
     OutlinedTextField(
         value = value, onValueChange = changed, singleLine = true,
         placeholder = { Text("Поиск по имени или телефону", fontSize = if (largeText) 15.sp else 13.sp) },
+        trailingIcon = {
+            if (value.isNotEmpty()) TextButton(onClick = { changed("") },
+                modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = "Очистить поиск" },
+                contentPadding = PaddingValues(horizontal = 10.dp)) { Text("×", fontSize = 22.sp) }
+        },
         textStyle = MaterialTheme.typography.bodyMedium.copy(fontSize = if (largeText) 17.sp else 15.sp),
         modifier = modifier.semantics { contentDescription = "Поиск по имени или телефону" },
         shape = RoundedCornerShape(8.dp)
@@ -299,11 +322,7 @@ private fun ClientSearchField(value: String, changed: (String) -> Unit, modifier
 
 @Composable
 private fun ClientEmpty(title: String, description: String, action: String, run: () -> Unit, largeText: Boolean) {
-    Column(Modifier.fillMaxWidth().padding(top = 24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(title, color = text, fontSize = if (largeText) 20.sp else 18.sp, fontWeight = FontWeight.Bold)
-        Text(description, color = muted, fontSize = if (largeText) 16.sp else 14.sp)
-        OutlinedButton(onClick = run, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(action) }
-    }
+    LedgerEmpty(R.drawable.ic_nav_people, title, description, action, run, largeText)
 }
 
 @Composable
@@ -322,6 +341,9 @@ private fun ClientRow(status: CollectionsInsights.CustomerStatus, limit: Long, i
         .semantics { contentDescription = description; selected = isSelected }
         .padding(horizontal = 8.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Box(Modifier.size(38.dp).background(Color(LedgerTheme.ELEVATED), RoundedCornerShape(10.dp)), contentAlignment = Alignment.Center) {
+            Text(customer.name.trim().take(1).uppercase(Locale("ru", "RU")), color = Color(LedgerTheme.ACCENT), fontSize = 17.sp, fontWeight = FontWeight.Medium)
+        }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(customer.name, color = text, fontSize = if (largeText) 17.sp else 15.sp, fontWeight = FontWeight.SemiBold)
             if (customer.phone.isNotEmpty()) Text(customer.phone, color = muted, fontSize = 13.sp)
@@ -331,7 +353,9 @@ private fun ClientRow(status: CollectionsInsights.CustomerStatus, limit: Long, i
             if (limitText.isNotEmpty()) Text(limitText, color = alert, fontSize = 12.sp)
         }
         Column(horizontalAlignment = Alignment.End) {
-            Text(money(amount), color = text, fontSize = if (largeText) 18.sp else 16.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.End)
+            Text(money(amount), color = if (amount == 0L) muted else text, fontSize = if (largeText) 18.sp else 16.sp,
+                fontWeight = FontWeight.Medium, textAlign = TextAlign.End,
+                style = androidx.compose.ui.text.TextStyle(fontFeatureSettings = "tnum"))
             if (amount == 0L) Text("Нет долга", color = muted, fontSize = 11.sp)
         }
         Text("›", color = muted, fontSize = 19.sp)
