@@ -38,7 +38,7 @@ final class RecoveryFrames {
         }
         @Override public void write(byte[] data,int offset,int length) throws IOException{
             if(finished)throw new IOException("Recovery stream finished");
-            java.util.Objects.checkFromIndexSize(offset,length,data.length);
+            if(offset<0||length<0||offset>data.length-length)throw new IndexOutOfBoundsException();
             if(length>limit-count)throw new IOException("Размер книги превышает лимит резервирования.");
             count+=length;
             while(length>0){
@@ -106,7 +106,7 @@ final class RecoveryFrames {
             return plain[offset++]&255;
         }
         @Override public int read(byte[] target,int start,int length) throws IOException{
-            java.util.Objects.checkFromIndexSize(start,length,target.length);
+            if(start<0||length<0||start>target.length-length)throw new IndexOutOfBoundsException();
             if(length==0)return 0;
             if(offset==plain.length&&!next())return -1;
             int n=Math.min(length,plain.length-offset);
