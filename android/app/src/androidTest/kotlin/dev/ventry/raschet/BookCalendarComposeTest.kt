@@ -2,6 +2,11 @@ package dev.ventry.raschet
 
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.performScrollToNode
+import java.util.concurrent.atomic.AtomicReference
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -54,4 +59,45 @@ class BookCalendarComposeTest {
         compose.onNodeWithText("Октябрь 2026").assertExists()
         assertEquals(YearMonth.of(2026, 10), month.value)
     }
+
+    @Test fun calendarOpensOnlySelectedDateAndAddsDebtForThatDate() {
+        val today = LocalDate.of(2026, 11, 25)
+        val first = today.minusDays(1)
+        val second = today.minusDays(2)
+        val a = LedgerStore.Client("a", "Алиса", "")
+        val b = LedgerStore.Client("b", "Борис", "")
+        val d1 = BookDays.Day(first)
+        val d2 = BookDays.Day(second)
+        d1.add(LedgerStore.Entry("a1","a","debt",10000L,"2026-11-24T12:00:00Z","","",""),false,7000L)
+        d2.add(LedgerStore.Entry("b1","b","debt",20000L,"2026-11-23T12:00:00Z","","",""),false,20000L)
+        val chosen = AtomicReference<LocalDate>()
+        val added = AtomicReference<LocalDate>()
+        val model = BookUiModel(27000L, 2, 0, mapOf("a" to a,"b" to b), listOf(d1,d2),
+            true, 30000L, 27000L, null, false, today)
+        val actions = BookActions({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {},
+            { added.set(it) }, {}, {}, {})
+        compose.setContent {
+            LedgerMaterialTheme {
+                BookContent(model, false, false, "Все даты", emptySet(), 30, false, actions,
+                    true, today, { _, date -> chosen.set(date) })
+            }
+        }
+        val firstDesc = "24.11.26, записей 1, записано " + ledgerMoney(10000L) + ", осталось " + ledgerMoney(7000L)
+        val secondDesc = "23.11.26, записей 1, записано " + ledgerMoney(20000L) + ", осталось " + ledgerMoney(20000L)
+        val list = compose.onNodeWithTag("book-list")
+        list.performScrollToNode(hasContentDescription(firstDesc))
+        compose.onNodeWithContentDescription(firstDesc).performClick()
+        assertEquals(first, chosen.get())
+        list.performScrollToNode(hasText("Алиса"))
+        compose.onNodeWithText("Алиса").assertExists()
+        compose.onNodeWithText("Борис").assertDoesNotExist()
+        list.performScrollToNode(hasContentDescription(secondDesc))
+        compose.onNodeWithContentDescription(secondDesc).performClick()
+        list.performScrollToNode(hasText("Борис"))
+        compose.onNodeWithText("Алиса").assertDoesNotExist()
+        list.performScrollToNode(hasText("+ Долг за этот день"))
+        compose.onNodeWithText("+ Долг за этот день").performClick()
+        assertEquals(second, added.get())
+    }
+
 }
