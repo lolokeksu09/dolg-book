@@ -2119,7 +2119,7 @@ public final class MainActivity extends ComponentActivity {
             try{
                 long next=LedgerStore.correctedBalance(currentBalance,original,LedgerStore.parseAmount(amount.getText().toString()));
                 projection.setText("Остаток после исправления: "+money(next));projection.setTextColor(ACCENT);
-            }catch(IllegalArgumentException error){projection.setText(error.getMessage());projection.setTextColor(RED);}
+            }catch(IllegalArgumentException|IllegalStateException error){projection.setText(error.getMessage());projection.setTextColor(RED);}
         };
         amount.addTextChangedListener(watcher(v->preview.run()));preview.run();
         EditText due=field("Без срока",original.due);
@@ -2142,12 +2142,11 @@ public final class MainActivity extends ComponentActivity {
         content.addView(formGroup("Комментарий",note));
         EditText reason=field("Почему исправлено",null);
         content.addView(formGroup("Причина исправления (обязательно)",reason));
-        showDialog("Исправить последнюю запись",content,()->{
-            ledger.correctSelected(clientId,original.id,LedgerStore.parseAmount(amount.getText().toString()),
+        showDialog("Исправить последнюю запись",content,null,()->
+                new ClientCommand.Correction(clientId,original.id,LedgerStore.parseAmount(amount.getText().toString()),
                     original.type.equals("debt")?due.getText().toString():"",
-                    note.getText().toString().trim(),reason.getText().toString());
-            selectedClient=clientId;tab="Клиенты";return true;
-        });
+                    note.getText().toString().trim(),reason.getText().toString()));
+
     }
     private void showReversal(String clientId){showReversal(clientId,null);}
     private void showReversal(String clientId,String expectedId) {
@@ -2157,7 +2156,7 @@ public final class MainActivity extends ComponentActivity {
         long balance=LedgerStore.balance(ledger.entries(),clientId);
         long after;
         try{after=LedgerStore.correctedBalance(balance,last,0L);}
-        catch(IllegalArgumentException invalid){message(invalid.getMessage());return;}
+        catch(IllegalArgumentException|IllegalStateException invalid){message(invalid.getMessage());return;}
         LinearLayout content=stack(7);
         content.addView(label((last.type.equals("debt")?"Долг":"Оплата")+" · "+formatDate(last.date),14,TEXT,true));
         content.addView(label("Отменяемая сумма: "+money(last.amount),15,TEXT,true));
@@ -2166,9 +2165,8 @@ public final class MainActivity extends ComponentActivity {
         content.addView(label("Отмена записывается сегодняшней датой. Исходная операция остаётся в истории.",12,MUTED,false));
         EditText reason=field("Например, запись внесена ошибочно",null);
         content.addView(formGroup("Причина отмены",reason));
-        showDialog("Отменить последнюю запись",content,()->{
-            ledger.reverseSelected(clientId,last.id,reason.getText().toString());return true;
-        });
+        showDialog("Отменить последнюю запись",content,null,()->
+                new ClientCommand.Reversal(clientId,last.id,reason.getText().toString()));
     }
     private interface SaveAction { boolean save() throws Exception; }
     private interface ClientCommandFactory { ClientCommand command() throws Exception; }
