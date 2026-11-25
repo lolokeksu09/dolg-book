@@ -1865,15 +1865,13 @@ public final class MainActivity extends ComponentActivity {
         form.addView(formGroup("Комментарий (необязательно)",note));
         form.addView(label("При закрытии незаписанный состав покупки не сохраняется.",12,MUTED,false));
         add.run();
-        showDialog("Покупка в долг",form,()->{
+        final String purchaseId=java.util.UUID.randomUUID().toString();
+        showDialog("Покупка в долг",form,null,()->{
             List<Purchase.Item> valid=new ArrayList<>();
             for(PurchaseRow r:items)valid.add(r.item());
             Purchase purchase=new Purchase(valid,Purchase.discount(discount.getText().toString()));
-            if(directory.archived(clientId,LedgerStore.balance(ledger.entries(),clientId)))
-                throw new IllegalArgumentException("Сначала верните клиента из архива.");
-            notice.verify(clientId,purchase.total);
-            ledger.addPurchase(clientId,purchase,due.getText().toString(),note.getText().toString().trim());
-            selectedClient=clientId;tab="Клиенты";return true;
+            return new ClientCommand.ItemizedDebt(purchaseId,clientId,purchase.encode(),
+                    due.getText().toString(),note.getText().toString().trim(),notice.confirmation());
         });
     }
     private void showPurchaseDetails(LedgerStore.Entry entry){
