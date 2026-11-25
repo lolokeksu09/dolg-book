@@ -19,9 +19,11 @@ import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.LocalDate
 import java.util.function.BiConsumer
+import java.util.function.Consumer
+import dev.ventry.raschet.domain.AnalyticsExport
 
 @Composable
-internal fun ClientAnalyticsContent(result: AnalyticsResult, onHistory: BiConsumer<LocalDate, LocalDate>) {
+internal fun ClientAnalyticsContent(result: AnalyticsResult, onHistory: BiConsumer<LocalDate, LocalDate>, onExport: Consumer<AnalyticsExport.Spec>) {
     val data = result.period
     val customer = result.customer
     val name = result.request.customerId?.let { result.names[it] }
@@ -105,6 +107,7 @@ internal fun ClientAnalyticsContent(result: AnalyticsResult, onHistory: BiConsum
                 AnalyticsValue("Записей оплаты ранее", previous.effective.paymentCount.toString())
             }
         }
+        item("export") { AnalyticsExportActions(result, onExport) }
         item("history") {
             OutlinedButton(onClick = { onHistory.accept(data.range.from, data.range.to) },
                 modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Операции клиента за период") }
