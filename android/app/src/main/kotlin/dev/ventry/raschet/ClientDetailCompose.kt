@@ -141,11 +141,12 @@ internal fun detailProjection(
 
 object ClientDetailCompose {
     @JvmStatic
+    @JvmOverloads
     fun create(owner: ComponentActivity, data: BookScreenData, id: String, filter: String,
         initialLimit: Int, largeText: Boolean, fromCollections: Boolean, onBack: Runnable,
         onMore: Consumer<Boolean>, onDebt: Runnable, onPayment: Runnable, onRestore: Runnable,
         onFilter: Runnable, onOpen: Consumer<String>, onPurchase: Consumer<LedgerStore.Entry>,
-        onLimit: IntConsumer): ComposeView {
+        onLimit: IntConsumer, fromBook: Boolean = false): ComposeView {
         val app = owner.applicationContext
         val actions = DetailActions(onBack::run, onMore::accept, onDebt::run, onPayment::run,
             onRestore::run, onFilter::run, onOpen::accept, onPurchase::accept, onLimit::accept)
@@ -173,7 +174,7 @@ object ClientDetailCompose {
                     }
                     val current = model
                     when {
-                        current != null -> ClientDetailContent(current, filter, initialLimit, largeText, fromCollections, actions)
+                        current != null -> ClientDetailContent(current, filter, initialLimit, largeText, fromCollections, actions, fromBook)
                         missing || failed -> Column(Modifier.fillMaxSize().background(bg).padding(16.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text(if (missing) "Клиент не найден" else "Ошибка чтения клиента", color = ink)
@@ -192,7 +193,7 @@ object ClientDetailCompose {
 
 @Composable
 internal fun ClientDetailContent(model: DetailData, filter: String, initialLimit: Int,
-    largeText: Boolean, fromCollections: Boolean, actions: DetailActions) {
+    largeText: Boolean, fromCollections: Boolean, actions: DetailActions, fromBook: Boolean = false) {
     var visibleLimit by remember { mutableIntStateOf(initialLimit) }
     val client = model.status.client
     BoxWithConstraints(Modifier.fillMaxSize().background(bg), contentAlignment = Alignment.TopCenter) {
@@ -201,7 +202,7 @@ internal fun ClientDetailContent(model: DetailData, filter: String, initialLimit
             contentPadding = PaddingValues(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             item("context") {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Text(if (fromCollections) "←  Возврат долгов" else "←  Все клиенты",
+                    Text(if (fromBook) "←  Книга" else if (fromCollections) "←  Возврат долгов" else "←  Все клиенты",
                         color = green, modifier = Modifier.weight(1f).heightIn(min = 48.dp).clickable(onClick = actions.back).padding(vertical = 12.dp))
                     Text("Ещё действия", color = green, modifier = Modifier.heightIn(min = 48.dp)
                         .clickable { actions.more(model.archived) }.padding(12.dp))
