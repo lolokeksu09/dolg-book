@@ -49,3 +49,9 @@
 
 .client-add-debt{width:100%;margin-top:10px}
 .client-add-debt[hidden]{display:none}
+
+#payment-actions{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;margin:8px 0 16px}
+#payment-actions[hidden]{display:none}
+#full-payment{min-height:44px}
+#payment-remaining{font-size:14px;color:var(--green);overflow-wrap:anywhere}
+#entry-form input[aria-invalid="true"]{border-color:#9b3c27}
