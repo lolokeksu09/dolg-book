@@ -75,32 +75,33 @@ public class LargeBookInstrumentedTest {
                 assertEquals(android.util.JsonToken.END_DOCUMENT,reader.peek());
             }
             assertEquals(CLIENTS,clients);assertEquals(ROWS,entries);assertEquals(2,version);
-            assertTrue("Fixture must exercise oversized portable export",file.length()>BackupSize.MAX_BYTES);
-            try{
-                vault.create(book);
-                fail("Oversized protected point must be rejected");
-            }catch(java.io.IOException expected){
-                assertEquals(1,vault.count());
-                assertEquals(original,vault.readLatest());
-                assertEquals(1,points.listFiles().length);
-            }
-            // Exercise the streaming parser above the current public safety boundary
-            // in QA only. The real file service still enforces the 10 MiB limit.
+            assertTrue("Fixture must exceed the legacy 10 MiB limit",file.length()>BackupSize.LEGACY_MAX_BYTES);
+            assertTrue(BackupSize.isSupported(file.length()));
+            start=SystemClock.elapsedRealtime();
+            File largePoint=vault.create(book);
+            long recoveryMs=SystemClock.elapsedRealtime()-start;
+            assertEquals(2,vault.count());
+            assertTrue(largePoint.length()>BackupSize.LEGACY_MAX_BYTES);
             String restoredName="raschet-large-restore-qa-only.db";
             context.deleteDatabase(restoredName);
             long importMs;
             try(LedgerStore restored=new LedgerStore(context,restoredName);
-                java.io.Reader input=new InputStreamReader(new FileInputStream(file),StandardCharsets.UTF_8)){
+                java.io.Reader input=BackupSize.openUtf8(new FileInputStream(file))){
                 start=SystemClock.elapsedRealtime();
                 assertArrayEquals(new int[]{CLIENTS,ROWS},restored.importJson(input));
                 importMs=SystemClock.elapsedRealtime()-start;
                 assertEquals(ROWS_PER_CLIENT,restored.entriesForClient("qa-0").size());
                 assertEquals(3500L,LedgerStore.balance(restored.entriesForClient("qa-999"),"qa-999"));
                 assertEquals(ROWS,android.database.DatabaseUtils.queryNumEntries(restored.getReadableDatabase(),"entries"));
+                // The encrypted reader must restore the identical full-size book as well.
+                try(java.io.Reader encrypted=vault.openLatest()){
+                    assertArrayEquals(new int[]{CLIENTS,ROWS},restored.importJson(encrypted));
+                }
+                assertEquals(3500L,LedgerStore.balance(restored.entriesForClient("qa-999"),"qa-999"));
             }finally{context.deleteDatabase(restoredName);}
             Log.i("RaschetBenchmark","LARGE_BOOK_PASS rows="+ROWS+" clients="+CLIENTS+
                     " seed_ms="+seedMs+" snapshot_projection_ms="+projectionMs+
-                    " indexed_read_ms="+indexedMs+" export_ms="+exportMs+" import_ms="+importMs+" json_bytes="+file.length());
+                    " indexed_read_ms="+indexedMs+" export_ms="+exportMs+" import_ms="+importMs+" recovery_ms="+recoveryMs+" json_bytes="+file.length());
         }finally{
             file.delete();
             File[] remaining=points.listFiles();
