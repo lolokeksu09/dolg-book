@@ -49,6 +49,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import java.util.function.Consumer
+import java.util.function.BiConsumer
 import java.util.function.IntConsumer
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -91,6 +92,7 @@ internal data class BookActions(
 
 object BookCompose {
     @JvmStatic
+    @JvmOverloads
     fun create(owner: ComponentActivity, data: BookScreenData, payments: Boolean,
         from: LocalDate?, to: LocalDate?, query: String, onlyUnpaid: Boolean,
         hasFilter: Boolean, filterSummary: String, initialExpanded: Set<String>,
@@ -100,7 +102,9 @@ object BookCompose {
         onAutoExpanded: Consumer<String?>, onLimit: IntConsumer, onOpenClient: Consumer<String>,
         onOperation: Consumer<String>, onPayClient: Consumer<String>, onDebtClient: Consumer<String>,
         onDebtDate: Consumer<LocalDate>, onPaymentDate: Consumer<LocalDate>,
-        onReport: Runnable, onBackup: Runnable): ComposeView {
+        onReport: Runnable, onBackup: Runnable, initialCalendar: Boolean = false,
+        initialCalendarDay: LocalDate? = null,
+        onCalendar: BiConsumer<Boolean, LocalDate> = BiConsumer { _, _ -> }): ComposeView {
         val app = owner.applicationContext
         val actions = BookActions(onDebt::run, onPayment::run, onCollections::run, onMode::accept,
             onFilters::run, onClear::run, onToggle::accept, onAutoExpanded::accept, onLimit::accept,
@@ -134,7 +138,7 @@ object BookCompose {
                     val current = model
                     when {
                         current != null -> BookContent(current, payments, hasFilter, filterSummary, firstExpanded,
-                            initialLimit, largeText, actions)
+                            initialLimit, largeText, actions, initialCalendar, initialCalendarDay, onCalendar::accept)
                         failed -> Column(Modifier.fillMaxSize().background(ledgerBg).padding(16.dp)) {
                             Text("Ошибка чтения книги", color = ledgerText)
                             OutlinedButton(onClick = { failed = false; attempt++ }) { Text("Повторить") }
@@ -151,14 +155,16 @@ object BookCompose {
 
 @Composable
 internal fun BookContent(model: BookUiModel, payments: Boolean, hasFilter: Boolean, filterSummary: String,
-    initialExpanded: Set<String>, initialLimit: Int, largeText: Boolean, actions: BookActions) {
+    initialExpanded: Set<String>, initialLimit: Int, largeText: Boolean, actions: BookActions,
+    initialCalendar: Boolean = false, initialCalendarDay: LocalDate? = null,
+    onCalendar: (Boolean, LocalDate) -> Unit = { _, _ -> }) {
     var expanded by remember { mutableStateOf(initialExpanded) }
     var limit by remember { mutableIntStateOf(initialLimit) }
     val rowLimits = remember { mutableStateMapOf<String, Int>() }
-    var calendar by remember { mutableStateOf(false) }
-    var selectedDay by remember { mutableStateOf(if (hasFilter) model.days.firstOrNull()?.date ?: model.today else model.today) }
+    var calendar by remember { mutableStateOf(initialCalendar) }
+    var selectedDay by remember { mutableStateOf(initialCalendarDay ?: if (hasFilter) model.days.firstOrNull()?.date ?: model.today else model.today) }
     var month by remember { mutableStateOf(YearMonth.from(selectedDay)) }
-    val byDate = remember(model.days) { model.days.associateBy { it.date } }
+    val byDate = remember(model.days, calendar) { if (calendar) model.days.associateBy { it.date } else emptyMap() }
     val visibleDays = if (calendar) listOfNotNull(byDate[selectedDay]) else model.days.take(limit)
     BoxWithConstraints(Modifier.fillMaxSize().background(ledgerBg), contentAlignment = Alignment.TopCenter) {
         val stacked = maxWidth < 365.dp || LocalDensity.current.fontScale > 1.2f || largeText
@@ -203,15 +209,19 @@ internal fun BookContent(model: BookUiModel, payments: Boolean, hasFilter: Boole
                     color = ledgerMuted, fontSize = 12.sp)
             }
             item("calendar-mode") {
-                OutlinedButton(onClick = { calendar = !calendar }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                OutlinedButton(onClick = { calendar = !calendar; onCalendar(calendar, selectedDay) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                     Text(if (calendar) "Список дат" else "Календарь")
                 }
             }
             if (calendar) {
                 item("calendar") {
                     BookCalendar(month, selectedDay, model.today, byDate, payments,
-                        onMonth = { next -> month = next; selectedDay = if (next == YearMonth.from(model.today)) model.today else next.atDay(1) },
-                        onDay = { selectedDay = it })
+                        onMonth = { next ->
+                            month = next
+                            selectedDay = if (next == YearMonth.from(model.today)) model.today else next.atDay(1)
+                            onCalendar(true, selectedDay)
+                        },
+                        onDay = { selectedDay = it; onCalendar(true, selectedDay) })
                 }
                 item("selected-calendar-date") {
                     Text("Выбранный день · " + ledgerDayFormat.format(selectedDay), color = ledgerText,
@@ -237,7 +247,7 @@ internal fun BookContent(model: BookUiModel, payments: Boolean, hasFilter: Boole
                 val key = day.date.toString()
                 val open = calendar || key in expanded
                 item("day-" + key) {
-                    val description = ledgerDayFormat.format(day.date) + ", записей " + day.entries.size +
+                    val description = (if (calendar) "Сводка · " else "") + ledgerDayFormat.format(day.date) + ", записей " + day.entries.size +
                         (if (payments) ", получено " + ledgerMoney(day.recorded) else ", записано " + ledgerMoney(day.recorded) +
                             ", осталось " + ledgerMoney(day.remaining)) + if (calendar) "" else if (open) ", свернуть" else ", раскрыть"
                     Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).then(
