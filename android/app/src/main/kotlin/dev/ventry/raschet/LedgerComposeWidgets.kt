@@ -61,17 +61,12 @@ internal fun LedgerMetric(title: String, value: String, color: Color = ledgerMut
 
 @Composable
 internal fun LedgerTotal(title: String, amount: Long, detail: String? = null) {
-    val paper = Color(0xfff4f0df)
-    val ink = Color(LedgerTheme.INK)
-    Column(Modifier.fillMaxWidth().background(paper, RoundedCornerShape(16.dp)).padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text(title, color = ink, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-        Text(ledgerMoney(amount), color = ink, fontWeight = FontWeight.SemiBold, fontSize = 38.sp,
+    Column(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(title, color = ledgerMuted, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+        Text(ledgerMoney(amount), color = ledgerText, fontWeight = FontWeight.Medium, fontSize = 40.sp,
             style = androidx.compose.ui.text.TextStyle(fontFeatureSettings = "tnum", letterSpacing = (-1).sp))
-        if (detail != null) {
-            HorizontalDivider(color = ink.copy(alpha = 0.22f))
-            Text(detail, color = ink, fontSize = 12.sp)
-        }
+        if (detail != null) Text(detail, color = ledgerMuted, fontSize = 13.sp)
     }
 }
 
@@ -79,18 +74,16 @@ internal fun LedgerTotal(title: String, amount: Long, detail: String? = null) {
 @Composable
 internal fun LedgerEmpty(icon: Int, title: String, description: String, action: String,
     onAction: () -> Unit, largeText: Boolean = false) {
-    Column(Modifier.fillMaxWidth().padding(vertical = 12.dp)
-        .background(ledgerPanel, RoundedCornerShape(16.dp))
-        .border(1.dp, ledgerBorder.copy(alpha = 0.45f), RoundedCornerShape(16.dp)).padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Box(Modifier.size(48.dp).background(Color(LedgerTheme.ELEVATED), RoundedCornerShape(12.dp)),
-            contentAlignment = Alignment.Center) {
-            Icon(painterResource(icon), contentDescription = null, tint = ledgerAccent, modifier = Modifier.size(24.dp))
-        }
-        Text(title, color = ledgerText, fontWeight = FontWeight.SemiBold, fontSize = if (largeText) 22.sp else 20.sp)
-        Text(description, color = ledgerMuted, fontSize = if (largeText) 16.sp else 14.sp)
-        Button(onClick = onAction, shape = RoundedCornerShape(10.dp),
-            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(action) }
+    Column(Modifier.fillMaxWidth().padding(top = 52.dp, bottom = 24.dp, start = 8.dp, end = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Icon(painterResource(icon), contentDescription = null, tint = ledgerMuted, modifier = Modifier.size(36.dp))
+        Text(title, color = ledgerText, fontWeight = FontWeight.Medium, fontSize = if (largeText) 22.sp else 20.sp,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        Text(description, color = ledgerMuted, fontSize = if (largeText) 16.sp else 14.sp,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        Button(onClick = onAction, shape = RoundedCornerShape(8.dp),
+            modifier = Modifier.heightIn(min = 48.dp)) { Text(action) }
     }
 }
 
