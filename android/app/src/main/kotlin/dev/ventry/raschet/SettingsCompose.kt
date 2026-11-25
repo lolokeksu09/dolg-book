@@ -19,6 +19,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -152,8 +153,8 @@ private fun SettingsHint(value: String, large: Boolean) {
 
 @Composable
 private fun SettingsPanel(content: @Composable () -> Unit) {
-    Column(Modifier.fillMaxWidth().background(ledgerPanel, RoundedCornerShape(14.dp)).padding(horizontal = 14.dp, vertical = 6.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)) { content() }
+    Column(Modifier.fillMaxWidth().background(ledgerPanel, RoundedCornerShape(8.dp)).padding(horizontal = 14.dp, vertical = 2.dp),
+        verticalArrangement = Arrangement.spacedBy(0.dp)) { content() }
 }
 
 /** State is committed by the callback, never optimistically flipped before permission/OS confirmation. */
@@ -168,7 +169,10 @@ private fun SettingsToggle(title: String, detail: String, description: String,
             Text(title, color = ledgerText, fontWeight = FontWeight.Medium, fontSize = if (large) 19.sp else 15.sp)
             SettingsHint(detail, large)
         }
-        Switch(checked = checked, onCheckedChange = null)
+        Switch(checked = checked, onCheckedChange = null, colors = SwitchDefaults.colors(
+            checkedThumbColor = ledgerBg, checkedTrackColor = ledgerAccent,
+            uncheckedThumbColor = ledgerMuted, uncheckedTrackColor = ledgerPanel,
+            uncheckedBorderColor = ledgerBorder))
     }
     HorizontalDivider(color = ledgerBorder)
 }
