@@ -33,31 +33,49 @@ public final class RecoveryVault {
     RecoveryVault(File root){dir=root;}
 
     public File create(LedgerStore ledger) throws Exception {
-        synchronized(FILE_LOCK){return createJsonLocked(ledger.exportJson());}
+        synchronized(FILE_LOCK){return writePoint(ledger::writeJson);}
     }
     File createJson(String json) throws Exception {
-        synchronized(FILE_LOCK){return createJsonLocked(json);}
+        synchronized(FILE_LOCK){
+            if(json==null)throw new IllegalArgumentException("Пустая копия.");
+            JSONObject checked=new JSONObject(json);
+            if(!checked.has("version")||!checked.has("clients")||!checked.has("entries"))
+                throw new IOException("Недопустимая книга.");
+            return writePoint(writer->writer.write(json));
+        }
     }
-    private File createJsonLocked(String json) throws Exception {
-        if(json==null)throw new IllegalArgumentException("Пустая копия.");
-        byte[] source=json.getBytes(StandardCharsets.UTF_8);
-        BackupSize.requireSupported(source.length);
-        JSONObject checked=new JSONObject(json);
-        if(!checked.has("version")||!checked.has("clients")||!checked.has("entries"))
-            throw new IOException("Недопустимая книга.");
+    private interface PointWriter { void write(java.io.Writer writer) throws Exception; }
+
+    /** VRC1: magic + IV + AES-GCM ciphertext/tag. No plaintext temporary file. */
+    private File writePoint(PointWriter source) throws Exception {
         if(!dir.isDirectory()&&!dir.mkdirs())throw new IOException("Нет папки для копии.");
         Cipher cipher=Cipher.getInstance("AES/GCM/NoPadding");
         cipher.init(Cipher.ENCRYPT_MODE,key());
         byte[] iv=cipher.getIV();
         if(iv.length!=IV_SIZE)throw new IOException("Неверный IV.");
-        byte[] encrypted=cipher.doFinal(source);
         String name="recovery-"+System.currentTimeMillis()+"-"+System.nanoTime()+".vrc";
         File target=new File(dir,name),tmp=new File(dir,name+".tmp");
         try{
             try(FileOutputStream stream=new FileOutputStream(tmp)){
                 stream.write(MAGIC);
                 stream.write(iv);
-                stream.write(encrypted);
+                java.io.OutputStream encrypted=new java.io.OutputStream(){
+                    private long plaintextBytes;
+                    @Override public void write(int value) throws IOException{
+                        write(new byte[]{(byte)value},0,1);
+                    }
+                    @Override public void write(byte[] data,int offset,int length) throws IOException{
+                        BackupSize.requireSupported(plaintextBytes+length);
+                        byte[] chunk=cipher.update(data,offset,length);
+                        if(chunk!=null)stream.write(chunk);
+                        plaintextBytes+=length;
+                    }
+                };
+                java.io.Writer writer=new java.io.BufferedWriter(new java.io.OutputStreamWriter(encrypted,StandardCharsets.UTF_8));
+                source.write(writer);
+                writer.flush();
+                // Explicit finalization: authentication/tag errors must abort before rename.
+                stream.write(cipher.doFinal());
                 stream.flush();stream.getFD().sync();
             }
             if(!tmp.renameTo(target))throw new IOException("Не удалось записать копию.");
