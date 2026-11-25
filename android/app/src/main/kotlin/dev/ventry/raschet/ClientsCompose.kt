@@ -54,7 +54,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.coroutineContext
 
-private val background = Color(LedgerTheme.BG)
+private val ledgerBackground = Color(LedgerTheme.BG)
 private val panel = Color(LedgerTheme.PANEL)
 private val border = Color(LedgerTheme.BORDER)
 private val text = Color(LedgerTheme.TEXT)
@@ -69,7 +69,7 @@ internal fun LedgerMaterialTheme(content: @Composable () -> Unit) {
     MaterialTheme(
         colorScheme = darkColorScheme(
             primary = accent, onPrimary = Color(LedgerTheme.INK),
-            background = background, onBackground = text,
+            background = ledgerBackground, onBackground = text,
             surface = panel, onSurface = text, onSurfaceVariant = muted,
             outline = border, error = red
         ), content = content
@@ -134,11 +134,11 @@ object ClientsCompose {
                     when {
                         model != null -> ClientListContent(model, scope, filter, amountFirst, recentFirst,
                             selectedId, query, visibleLimit, largeText, actions)
-                        failed -> Column(Modifier.fillMaxSize().background(background).padding(16.dp)) {
+                        failed -> Column(Modifier.fillMaxSize().background(ledgerBackground).padding(16.dp)) {
                             Text("Ошибка чтения клиентов", color = text)
                             OutlinedButton(onClick = { failed = false; attempt++ }) { Text("Повторить") }
                         }
-                        else -> Box(Modifier.fillMaxSize().background(background), contentAlignment = Alignment.Center) {
+                        else -> Box(Modifier.fillMaxSize().background(ledgerBackground), contentAlignment = Alignment.Center) {
                             CircularProgressIndicator()
                         }
                     }
@@ -184,7 +184,7 @@ internal fun ClientListContent(
     }
 
     val result = visible
-    BoxWithConstraints(Modifier.fillMaxSize().background(background), contentAlignment = Alignment.TopCenter) {
+    BoxWithConstraints(Modifier.fillMaxSize().background(ledgerBackground), contentAlignment = Alignment.TopCenter) {
         val compact = maxWidth >= 340.dp && LocalDensity.current.fontScale <= 1.2f && !largeText
         LazyColumn(
             modifier = Modifier.widthIn(max = 800.dp).fillMaxSize(),
@@ -317,7 +317,7 @@ private fun ClientRow(status: CollectionsInsights.CustomerStatus, limit: Long, i
         (if (status.overdue > 0) ", просрочено " + money(status.overdue) else "") +
         (if (limitText.isNotEmpty()) ", " + limitText.lowercase(Locale.ROOT) else "")
     Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)
-        .background(if (isSelected) selectedBackground else background, RoundedCornerShape(6.dp))
+        .background(if (isSelected) selectedBackground else ledgerBackground, RoundedCornerShape(6.dp))
         .clickable(onClick = open)
         .semantics { contentDescription = description; selected = isSelected }
         .padding(horizontal = 8.dp, vertical = 7.dp),
