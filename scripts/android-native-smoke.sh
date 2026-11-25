@@ -25,15 +25,16 @@ dump_ui() {
   adb exec-out cat /sdcard/raschet-ui.xml > android/build/native-ui.xml
 }
 tap_text() {
-  local target="$1" coords attempt
+  local target="$1" match_mode="${2:-exact}" coords attempt
   # Off-screen practice actions require scrolling on compact displays.
   for attempt in 1 2 3 4; do
     dump_ui
-    if coords=$(python3 - "$target" <<'PY'
+    if coords=$(python3 - "$target" "$match_mode" <<'PY'
 import re, sys, xml.etree.ElementTree as ET
-target=sys.argv[1]
+target, mode=sys.argv[1:3]
 for node in ET.parse("android/build/native-ui.xml").iter("node"):
-    if node.attrib.get("text")==target or node.attrib.get("content-desc")==target:
+    description=node.attrib.get("content-desc","")
+    if node.attrib.get("text")==target or description==target or (mode=="client" and description.startswith(target+", остаток ")):
         nums=[int(s) for s in re.findall(r"\d+",node.attrib.get("bounds",""))]
         if len(nums)==4 and nums[3] > nums[1]:
             print(f"{(nums[0]+nums[2])//2} {(nums[1]+nums[3])//2}")
@@ -218,7 +219,7 @@ tap_text 'Сохранить'
 sleep 0.6
 dump_ui
 grep -Fq 'TestBuyer' android/build/native-ui.xml
-tap_text 'TestBuyer'
+tap_text 'TestBuyer' client
 sleep 0.4
 tap_text '+ Долг'
 sleep 0.4
@@ -408,7 +409,7 @@ if grep -Fq 'Каталог товаров' android/build/native-ui.xml; then
 fi
 tap_text 'Клиенты'
 sleep 0.4
-tap_text 'TestBuyer'
+tap_text 'TestBuyer' client
 sleep 0.4
 tap_text 'Ещё действия'
 sleep 0.3
