@@ -543,7 +543,7 @@ public final class MainActivity extends ComponentActivity {
     }
     private void changeClientArchive(String id,boolean archived){
         try{
-            directory.archive(id,LedgerStore.balance(ledger.entries(),id),!archived);
+            directory.archive(id,LedgerStore.balance(ledger.entriesForClient(id),id),!archived);
             selectedClient=null;clientScope=archived?ClientDirectory.ACTIVE:ClientDirectory.ARCHIVE;
             clientFilter=CollectionsInsights.ALL;search="";render();
         }catch(Exception e){message(e.getMessage());}
@@ -598,7 +598,7 @@ public final class MainActivity extends ComponentActivity {
     private void showDebtLimit(LedgerStore.Client client){
         long limit=directory.debtLimit(client.id);
         LinearLayout form=stack(6);
-        form.addView(label(client.name+" · остаток "+money(LedgerStore.balance(ledger.entries(),client.id)),14,TEXT,true));
+        form.addView(label(client.name+" · остаток "+money(LedgerStore.balance(ledger.entriesForClient(client.id),client.id)),14,TEXT,true));
         EditText amount=field("Без лимита",limit>0?amountInput(limit):null);
         amount.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);
         form.addView(formGroup("Лимит задолженности, ₽",amount));
@@ -636,7 +636,7 @@ public final class MainActivity extends ComponentActivity {
         String confirmation(){return consent.isChecked()?approvedFor:"";}
         void verify(String clientId,long addition){
             if(clientId==null)return;
-            long balance=LedgerStore.balance(ledger.entries(),clientId);
+            long balance=LedgerStore.balance(ledger.entriesForClient(clientId),clientId);
             update(clientId,balance,addition);
             DebtLimits.requireConsent(directory.debtLimit(clientId),balance,addition,consent.isChecked());
         }
@@ -1286,7 +1286,7 @@ public final class MainActivity extends ComponentActivity {
         LedgerStore.Client client=null;
         for(LedgerStore.Client c:ledger.clients())if(c.id.equals(clientId)){client=c;break;}
         if(client==null){message("Клиент не найден.");return;}
-        if(directory.archived(clientId,LedgerStore.balance(ledger.entries(),clientId))){
+        if(directory.archived(clientId,LedgerStore.balance(ledger.entriesForClient(clientId),clientId))){
             message("Сначала верните клиента из архива.");return;
         }
         LinearLayout form=stack(7);
@@ -1304,7 +1304,7 @@ public final class MainActivity extends ComponentActivity {
         // Keep the current total visible at the top of the scrollable form.
         form.addView(summary);
         LimitNotice notice=new LimitNotice(form);
-        final long available=LedgerStore.balance(ledger.entries(),clientId);
+        final long available=LedgerStore.balance(ledger.entriesForClient(clientId),clientId);
         addListDivider(form);form.addView(rows);
         Runnable update=()->{
             List<Purchase.Item> valid=new ArrayList<>();
@@ -1390,7 +1390,7 @@ public final class MainActivity extends ComponentActivity {
         LedgerStore.Client c=null;
         for(LedgerStore.Client person:ledger.clients())if(person.id.equals(clientId))c=person;
         if(c==null){message("Клиент не найден.");return;}
-        final long available=LedgerStore.balance(ledger.entries(),clientId);
+        final long available=LedgerStore.balance(ledger.entriesForClient(clientId),clientId);
         final boolean fromBook=tab.equals("Главная");
         final boolean fromCollections=tab.equals("Возврат");
         if(directory.archived(clientId,available)){message("Сначала верните клиента из архива.");return;}
@@ -1409,7 +1409,7 @@ public final class MainActivity extends ComponentActivity {
         content.addView(formGroup("Сумма, ₽",amount));
         final LimitNotice notice=type.equals("debt")?new LimitNotice(content):null;
         if(notice!=null){
-            addRecentAmount(content,amount,RecentDebts.lastAmounts(ledger.entries()).getOrDefault(clientId,0L));
+            addRecentAmount(content,amount,RecentDebts.lastAmounts(ledger.entriesForClient(clientId)).getOrDefault(clientId,0L));
             Runnable check=()->notice.update(clientId,available,previewAmount(amount));
             amount.addTextChangedListener(watcher(v->check.run()));check.run();
         }
@@ -1420,7 +1420,7 @@ public final class MainActivity extends ComponentActivity {
             content.addView(amounts,margin(-1,dp(controlHeight()),0));
             ClientDirectory.FollowUp promise=directory.followUp(clientId);
             if(promise!=null&&promise.amount>0){
-                PaymentPromises.Progress progress=PaymentPromises.calculate(ledger.entries(),clientId,promise,LocalDate.now(),ZoneId.systemDefault());
+                PaymentPromises.Progress progress=PaymentPromises.calculate(ledger.entriesForClient(clientId),clientId,promise,LocalDate.now(),ZoneId.systemDefault());
                 long outstanding=Math.min(available,Math.max(0L,promise.amount-progress.paid));
                 if(progress.valid&&outstanding>0)addButton(content,"По обещанию: "+money(outstanding),false,()->amount.setText(amountInput(outstanding)),1);
             }
@@ -1449,7 +1449,7 @@ public final class MainActivity extends ComponentActivity {
             Runnable dateCheck=()->{
                 LocalDate today=LocalDate.now();
                 if(entryDay[0].equals(today)){dateLimit.setVisibility(View.GONE);return;}
-                historicalMaximum[0]=DatedPayments.maximum(ledger.entries(),clientId,entryDay[0],today,ZoneId.systemDefault());
+                historicalMaximum[0]=DatedPayments.maximum(ledger.entriesForClient(clientId),clientId,entryDay[0],today,ZoneId.systemDefault());
                 dateLimit.setVisibility(View.VISIBLE);
                 dateLimit.setText("На эту дату можно принять до "+money(historicalMaximum[0])+". Проверьте дату фактической оплаты.");
                 colorCheck.run();
@@ -1587,7 +1587,7 @@ public final class MainActivity extends ComponentActivity {
         LedgerStore.Entry original=ledger.lastActive(clientId);
         if(original==null){message("Нет действующей записи для исправления.");return;}
         if(expectedId!=null&&!expectedId.equals(original.id)){message("Запись уже не последняя. Откройте актуальную историю.");return;}
-        long currentBalance=LedgerStore.balance(ledger.entries(),clientId);
+        long currentBalance=LedgerStore.balance(ledger.entriesForClient(clientId),clientId);
         LinearLayout content=stack(7);
         content.addView(label(("debt".equals(original.type)?"Долг":"Оплата")+" · "+formatDate(original.date),14,TEXT,true));
         content.addView(label("Исходная сумма: "+money(original.amount)+" · текущий долг: "+money(currentBalance),13,MUTED,false));
@@ -1641,7 +1641,7 @@ public final class MainActivity extends ComponentActivity {
         LedgerStore.Entry last=ledger.lastActive(clientId);
         if(last==null){message("Отменять пока нечего.");return;}
         if(expectedId!=null&&!expectedId.equals(last.id)){message("Запись уже не последняя. Откройте актуальную историю.");return;}
-        long balance=LedgerStore.balance(ledger.entries(),clientId);
+        long balance=LedgerStore.balance(ledger.entriesForClient(clientId),clientId);
         long after;
         try{after=LedgerStore.correctedBalance(balance,last,0L);}
         catch(IllegalArgumentException|IllegalStateException invalid){message(invalid.getMessage());return;}
@@ -1880,7 +1880,7 @@ public final class MainActivity extends ComponentActivity {
             if(client==null){message("Клиент не найден.");return;}
             try(OutputStream out=getContentResolver().openOutputStream(data.getData(),"wt")){
                 if(out==null)throw new IOException("Не удалось открыть PDF-файл.");
-                CustomerStatementPdf.write(out,shopName,client,ledger.entries());
+                CustomerStatementPdf.write(out,shopName,client,ledger.entriesForClient(id));
                 out.flush();
                 message("Выписка PDF сохранена.");
             }catch(Exception ex){message("Ошибка PDF: "+ex.getMessage());}
