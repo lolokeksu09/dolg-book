@@ -2,6 +2,7 @@ package dev.ventry.raschet
 
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -39,6 +40,8 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -169,20 +172,20 @@ internal fun BookContent(model: BookUiModel, payments: Boolean, hasFilter: Boole
     BoxWithConstraints(Modifier.fillMaxSize().background(ledgerBg), contentAlignment = Alignment.TopCenter) {
         val stacked = maxWidth < 365.dp || LocalDensity.current.fontScale > 1.2f || largeText
         LazyColumn(Modifier.widthIn(max = 800.dp).fillMaxSize().testTag("book-list"),
-            contentPadding = PaddingValues(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             item("title") {
-                Text("Долговая книга", color = ledgerText, fontWeight = FontWeight.Bold, fontSize = 22.sp)
+                Text("Долговая книга", color = ledgerText, fontWeight = FontWeight.SemiBold, fontSize = 28.sp)
                 Text("Сегодня · " + DateTimeFormatter.ofPattern("d MMM yyyy", Locale("ru", "RU")).format(model.today),
                     color = ledgerMuted, fontSize = 13.sp)
             }
-            item("total") { LedgerTotal("Общая задолженность", model.total) }
+            item("total") { LedgerTotal("Общая задолженность", model.total, "Должников: " + model.debtors) }
             item("quick") {
                 if (stacked) Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Button(onClick = actions.debt, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("+ Записать долг") }
-                    OutlinedButton(onClick = actions.payment, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Принять оплату") }
+                    Button(onClick = actions.debt, shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("+ Записать долг") }
+                    OutlinedButton(onClick = actions.payment, shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Принять оплату") }
                 } else Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = actions.debt, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("+ Записать долг") }
-                    OutlinedButton(onClick = actions.payment, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("Принять оплату") }
+                    Button(onClick = actions.debt, shape = RoundedCornerShape(10.dp), modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("+ Записать долг") }
+                    OutlinedButton(onClick = actions.payment, shape = RoundedCornerShape(10.dp), modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("Принять оплату") }
                 }
             }
             if (model.draft != null) item("draft") { LedgerMetric("Незавершённая запись", model.draft, ledgerAccent, actions.debt) }
@@ -190,11 +193,19 @@ internal fun BookContent(model: BookUiModel, payments: Boolean, hasFilter: Boole
                 if (model.urgent > 0) "Требуют внимания: " + model.urgent else "Должников: " + model.debtors,
                 if (model.urgent > 0) ledgerAlert else ledgerMuted, actions.collections) }
             item("modes") {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(Modifier.fillMaxWidth().background(ledgerPanel, RoundedCornerShape(10.dp)).padding(4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     for ((title, value) in listOf("Долги по датам" to false, "Оплаты по датам" to true)) {
-                        val modifier = Modifier.weight(1f).heightIn(min = 48.dp).semantics { selected = payments == value; contentDescription = title }
-                        if (payments == value) Button(onClick = {}, modifier = modifier) { Text(title, fontSize = 12.sp) }
-                        else OutlinedButton(onClick = { actions.mode(value) }, modifier = modifier) { Text(title, fontSize = 12.sp) }
+                        val active = payments == value
+                        Box(Modifier.weight(1f).heightIn(min = 48.dp)
+                            .background(if (active) Color(LedgerTheme.SELECTED) else Color.Transparent, RoundedCornerShape(7.dp))
+                            .clickable { if (!active) actions.mode(value) }
+                            .semantics { selected = active; contentDescription = title }.padding(horizontal = 4.dp),
+                            contentAlignment = Alignment.Center) {
+                            Text(title, color = if (active) ledgerAccent else ledgerMuted,
+                                fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
+                                fontSize = 12.sp, textAlign = TextAlign.Center)
+                        }
                     }
                 }
             }
@@ -209,8 +220,9 @@ internal fun BookContent(model: BookUiModel, payments: Boolean, hasFilter: Boole
                     color = ledgerMuted, fontSize = 12.sp)
             }
             item("calendar-mode") {
-                OutlinedButton(onClick = { calendar = !calendar; onCalendar(calendar, selectedDay) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                    Text(if (calendar) "Список дат" else "Календарь")
+                LedgerMetric(if (calendar) "Список дат" else "Календарь",
+                    if (calendar) "Вернуться к хронологии" else "Выбрать день месяца") {
+                    calendar = !calendar; onCalendar(calendar, selectedDay)
                 }
             }
             if (calendar) {
@@ -237,8 +249,13 @@ internal fun BookContent(model: BookUiModel, payments: Boolean, hasFilter: Boole
                     }
                 }
             }
-            if (!calendar && !model.hasDays) item("empty") { Text(if (payments) "Пока нет оплат. Нажмите «Принять оплату»." else
-                "Пока нет долгов. Нажмите «Записать долг», чтобы начать.", color = ledgerMuted) }
+            if (!calendar && !model.hasDays) item("empty") {
+                Column(Modifier.fillMaxWidth().background(ledgerPanel, RoundedCornerShape(12.dp)).padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Text(if (payments) "Пока нет оплат" else "Пока нет долгов", color = ledgerText, fontWeight = FontWeight.SemiBold)
+                    Text(if (payments) "Здесь появятся поступления от покупателей." else "Запишите первый долг — он появится в книге за нужную дату.", color = ledgerMuted, fontSize = 13.sp)
+                }
+            }
             else if (!calendar && model.days.isEmpty()) item("empty-filter") {
                 Text("Нет записей по выбранным условиям.", color = ledgerMuted)
                 OutlinedButton(onClick = actions.clear, modifier = Modifier.fillMaxWidth()) { Text("Сбросить фильтры книги") }
