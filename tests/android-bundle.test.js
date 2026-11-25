@@ -118,7 +118,8 @@ test('compact book keeps essential controls and hides redundant empty-state filt
 
 test('dense lists, selected filters and content-sized dialogs are wired',()=>{
   const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
-  assert.ok(ui.includes('addListDivider(rows)'));
+  const compose=read('android/app/src/main/kotlin/dev/ventry/raschet/ClientsCompose.kt');
+  assert.ok(compose.includes('HorizontalDivider(color = border)'));
   assert.ok(ui.includes('filterMenuAction(menu,scope,scope.equals(clientScope)'));
   assert.ok(ui.includes('filterMenuAction(menu,choice,choice.equals(clientFilter)'));
   assert.ok(ui.includes('if(selected)item.addView(label("Выбрано"'));
