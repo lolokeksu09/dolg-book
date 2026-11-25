@@ -90,7 +90,7 @@ public final class MainActivity extends ComponentActivity {
     private String collectionQuery="";
     private boolean collectionUrgent;
     private int collectionLimit=60;
-    private boolean returnToCollections;
+    private boolean returnToCollections,returnToBook;
     private String historyClientId=null;
     private String clientFilter=CollectionsInsights.ALL;
     private boolean clientsAmountFirst,clientsRecentFirst;
@@ -141,6 +141,7 @@ public final class MainActivity extends ComponentActivity {
             historyVisibleLimit=state.getInt("history_visible_limit",100);
             collectionQuery=state.getString("collection_query","");collectionUrgent=state.getBoolean("collection_urgent",false);
             collectionLimit=state.getInt("collection_limit",60);returnToCollections=state.getBoolean("return_to_collections",false);
+            returnToBook=state.getBoolean("return_to_book",false);
             historyQuery=state.getString("history_query","");historyClientId=state.getString("history_client_id");
             detailVisibleLimit=state.getInt("detail_visible_limit",80);
             detailFilter=state.getString("detail_filter",ClientStatement.ALL);detailFilterClient=state.getString("detail_filter_client");
@@ -183,6 +184,7 @@ public final class MainActivity extends ComponentActivity {
         out.putInt("history_visible_limit",historyVisibleLimit);
         out.putString("collection_query",collectionQuery);out.putBoolean("collection_urgent",collectionUrgent);
         out.putInt("collection_limit",collectionLimit);out.putBoolean("return_to_collections",returnToCollections);
+        out.putBoolean("return_to_book",returnToBook);
         out.putString("history_query",historyQuery);out.putString("history_client_id",historyClientId);
         out.putInt("detail_visible_limit",detailVisibleLimit);
         out.putString("detail_filter",detailFilter);out.putString("detail_filter_client",detailFilterClient);
@@ -294,7 +296,7 @@ public final class MainActivity extends ComponentActivity {
             item.setContentDescription(caption);
             item.setSelected(active);
             item.setFocusable(true);
-            item.setOnClickListener(v->{firstStartPending=false;tab=destination;selectedClient=null;returnToCollections=false;settingsExpanded="";render();});
+            item.setOnClickListener(v->{firstStartPending=false;tab=destination;selectedClient=null;returnToCollections=false;returnToBook=false;settingsExpanded="";render();});
             LinearLayout.LayoutParams ip=tablet?new LinearLayout.LayoutParams(-1,dp(controlHeight())):
                     new LinearLayout.LayoutParams(0,-1,1);
             if(tablet)ip.bottomMargin=dp(6);else {ip.leftMargin=dp(2);ip.rightMargin=dp(2);}
@@ -371,7 +373,7 @@ public final class MainActivity extends ComponentActivity {
                 key->{if(!expandedBookDays.add(key))expandedBookDays.remove(key);},
                 key->{if(key!=null)expandedBookDays.add(key);bookAutoExpand=false;},
                 limit->bookDayLimit=limit,
-                id->{returnToCollections=false;selectedClient=id;tab="Клиенты";render();},
+                id->{returnToCollections=false;returnToBook=true;selectedClient=id;tab="Клиенты";render();},
                 this::showOperation,id->showEntryForm(id,"payment"),id->showEntryForm(id,"debt"),
                 day->showQuickDebt(false,day),day->chooseClient("payment",day),
                 ()->{tab="Отчёт";selectedClient=null;render();},()->exportBook(false),
@@ -379,14 +381,14 @@ public final class MainActivity extends ComponentActivity {
     }
 
     private void openCollections(){
-        collectionQuery="";collectionUrgent=false;collectionLimit=60;returnToCollections=false;selectedClient=null;tab="Возврат";render();
+        collectionQuery="";collectionUrgent=false;collectionLimit=60;returnToCollections=false;returnToBook=false;selectedClient=null;tab="Возврат";render();
     }
     private View collectionView(BookScreenData data){
         return CollectionsCompose.create(this,data,collectionQuery,collectionUrgent,collectionLimit,largeText,
                 query->{collectionQuery=query;collectionLimit=60;},
                 urgent->{collectionUrgent=urgent;collectionLimit=60;},
                 limit->collectionLimit=limit,this::openClientFilter,
-                id->{returnToCollections=true;tab="Клиенты";selectedClient=id;render();},
+                id->{returnToCollections=true;returnToBook=false;tab="Клиенты";selectedClient=id;render();},
                 id->showEntryForm(id,"payment"),this::showFollowUp);
     }
     private void showFollowUp(LedgerStore.Client person){
@@ -493,7 +495,7 @@ public final class MainActivity extends ComponentActivity {
         return columns;
     }
     private void openClientFilter(String filter) {
-        clientFilter=filter;clientScope=ClientDirectory.ACTIVE;clientVisibleLimit=60;search="";returnToCollections=false;selectedClient=null;tab="Клиенты";render();
+        clientFilter=filter;clientScope=ClientDirectory.ACTIVE;clientVisibleLimit=60;search="";returnToCollections=false;returnToBook=false;selectedClient=null;tab="Клиенты";render();
     }
     private View clientsView(BookScreenData data) {
         return ClientsCompose.create(this,data,clientScope,clientFilter,clientsAmountFirst,clientsRecentFirst,
@@ -501,7 +503,7 @@ public final class MainActivity extends ComponentActivity {
                 value->{search=value;clientVisibleLimit=60;},
                 limit->clientVisibleLimit=limit,
                 ()->showClientForm(null),this::showClientFilters,
-                id->{selectedClient=id;render();},
+                id->{returnToBook=false;returnToCollections=false;selectedClient=id;render();},
                 ()->openClientFilter(CollectionsInsights.ALL),
                 ()->{clientFilter=CollectionsInsights.ALL;clientVisibleLimit=60;render();});
     }
@@ -534,11 +536,16 @@ public final class MainActivity extends ComponentActivity {
         final CollectionsInsights.CustomerStatus status=found;
         if(!id.equals(detailFilterClient)){detailFilterClient=id;detailFilter=ClientStatement.ALL;detailVisibleLimit=80;}
         return ClientDetailCompose.create(this,data,id,detailFilter,detailVisibleLimit,largeText,returnToCollections,
-                ()->{selectedClient=null;tab=returnToCollections?"Возврат":"Клиенты";returnToCollections=false;render();},
+                this::returnFromClient,
                 archived->showClientActions(status.client,status.balance,status.overdue,archived),
                 ()->showEntryForm(id,"debt"),()->showEntryForm(id,"payment"),
                 ()->changeClientArchive(id,true),this::showDetailFilters,
-                this::showOperation,this::showPurchaseDetails,limit->detailVisibleLimit=limit);
+                this::showOperation,this::showPurchaseDetails,limit->detailVisibleLimit=limit,returnToBook);
+    }
+    private void returnFromClient(){
+        selectedClient=null;
+        tab=returnToBook?"Главная":returnToCollections?"Возврат":"Клиенты";
+        returnToBook=false;returnToCollections=false;render();
     }
     private void showDetailFilters(){
         LinearLayout menu=stack(2);
@@ -1732,7 +1739,10 @@ public final class MainActivity extends ComponentActivity {
             }
         }
         if(entry.purchase!=null)clientMenuAction(content,"Состав покупки",()->showPurchaseDetails(entry));
-        clientMenuAction(content,"Карточка клиента",()->{selectedClient=entry.clientId;tab="Клиенты";render();});
+        clientMenuAction(content,"Карточка клиента",()->{
+            if(!"Клиенты".equals(tab)){returnToBook="Главная".equals(tab);returnToCollections="Возврат".equals(tab);}
+            selectedClient=entry.clientId;tab="Клиенты";render();
+        });
         clientMenuAction(content,"Все операции клиента",()->{
             historyClientId=entry.clientId;historyQuery="";historyFrom=null;historyTo=null;historyFilter="Все";
             historyVisibleLimit=100;selectedClient=null;tab="История";render();
@@ -1931,7 +1941,7 @@ public final class MainActivity extends ComponentActivity {
         }
     }
     private void applyWriteReceipt(WriteReceipt receipt){
-        if("debt".equals(receipt.getKind())){
+        if("debt".equals(receipt.getKind())&&!(returnToBook&&receipt.getDestination()==WriteDestination.DETAIL)){
             bookPayments=false;clearBookFilters();
             bookDayLimit=Math.max(bookDayLimit,receipt.getRank());
             bookCalendarDay=receipt.getDay();
@@ -1944,10 +1954,11 @@ public final class MainActivity extends ComponentActivity {
         }
         switch(receipt.getDestination()){
             case CLIENTS:
+                returnToBook=false;returnToCollections=false;
                 tab="Клиенты";selectedClient=null;clientScope=ClientDirectory.ACTIVE;
                 clientFilter=CollectionsInsights.ALL;search="";clientVisibleLimit=60;break;
-            case BOOK: tab="Главная";selectedClient=null;break;
-            case COLLECTIONS: tab="Возврат";selectedClient=null;break;
+            case BOOK: tab="Главная";selectedClient=null;returnToBook=false;returnToCollections=false;break;
+            case COLLECTIONS: tab="Возврат";selectedClient=null;returnToBook=false;returnToCollections=false;break;
             case DETAIL: tab="Клиенты";selectedClient=receipt.getClientId();break;
             case KEEP: break;
         }
@@ -2020,7 +2031,7 @@ public final class MainActivity extends ComponentActivity {
     @Override public void onBackPressed() {
         if(!unlocked){finishAndRemoveTask();return;}
         if(bookViewModel.hasPendingWrite())return;
-        if(selectedClient!=null){selectedClient=null;tab=returnToCollections?"Возврат":"Клиенты";returnToCollections=false;render();}
+        if(selectedClient!=null){returnFromClient();}
         else if(!tab.equals("Главная")){tab="Главная";render();}
         else super.onBackPressed();
     }
