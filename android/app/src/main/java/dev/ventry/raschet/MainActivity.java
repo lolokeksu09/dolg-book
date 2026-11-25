@@ -112,7 +112,7 @@ public final class MainActivity extends ComponentActivity {
     private final int pad=14;
     private String settingsExpanded="";
     private int controlHeight(){return largeText?54:48;}
-    private int navHeight(){return largeText?68:56;}
+    private int navHeight(){return largeText?76:64;}
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
@@ -219,14 +219,14 @@ public final class MainActivity extends ComponentActivity {
         });
         LinearLayout header=row();
         header.setGravity(Gravity.CENTER_VERTICAL);
-        header.setPadding(dp(14),dp(4),dp(14),dp(4));
+        header.setPadding(dp(16),dp(8),dp(16),dp(8));
         android.widget.ImageView insignia=new android.widget.ImageView(this);
         insignia.setImageResource(R.drawable.ic_ventry);
         insignia.setContentDescription("Ventry");
         insignia.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
-        header.addView(insignia,new LinearLayout.LayoutParams(dp(24),dp(24)));
+        header.addView(insignia,new LinearLayout.LayoutParams(dp(28),dp(28)));
         LinearLayout heading=row();heading.setGravity(Gravity.CENTER_VERTICAL);
-        heading.addView(label("Расчёт",16,TEXT,true));
+        heading.addView(label("Расчёт",18,TEXT,true));
         shopCaption=label(shopName,12,MUTED,false);
         shopCaption.setSingleLine(true);
         shopCaption.setEllipsize(android.text.TextUtils.TruncateAt.END);
@@ -235,9 +235,7 @@ public final class MainActivity extends ComponentActivity {
         shopParams.leftMargin=dp(12);heading.addView(shopCaption,shopParams);
         LinearLayout.LayoutParams headingParams=new LinearLayout.LayoutParams(0,-2,1);
         headingParams.leftMargin=dp(8);header.addView(heading,headingParams);
-        header.setMinimumHeight(dp(44));root.addView(header);
-        addListDivider(root);
-
+        header.setMinimumHeight(dp(52));root.addView(header);
         LinearLayout body=row();
         // Weighted Compose hosts need bounded height even in the first measure pass.
         // Baseline alignment would speculatively measure a zero-width weighted child
@@ -279,12 +277,19 @@ public final class MainActivity extends ComponentActivity {
             LinearLayout item=tablet?row():stack(2);
             item.setGravity(Gravity.CENTER);
             item.setPadding(dp(tablet?10:2),dp(tablet?6:2),dp(tablet?6:2),dp(tablet?6:2));
-            item.setBackground(ripple(shape(active?LedgerTheme.SELECTED:PANEL,8,0)));
+            item.setBackground(ripple(shape(tablet&&active?LedgerTheme.SELECTED:PANEL,12,0)));
             android.widget.ImageView icon=new android.widget.ImageView(this);
             icon.setImageResource(ICONS[i]);
             icon.setColorFilter(active?ACCENT:MUTED);
             icon.setContentDescription(null);
-            item.addView(icon,new LinearLayout.LayoutParams(dp(20),dp(20)));
+            if(tablet)item.addView(icon,new LinearLayout.LayoutParams(dp(22),dp(22)));
+            else {
+                FrameLayout iconFrame=new FrameLayout(this);
+                iconFrame.setBackground(shape(active?LedgerTheme.SELECTED:PANEL,12,0));
+                FrameLayout.LayoutParams iconParams=new FrameLayout.LayoutParams(dp(22),dp(22),Gravity.CENTER);
+                iconFrame.addView(icon,iconParams);
+                item.addView(iconFrame,new LinearLayout.LayoutParams(dp(46),dp(30)));
+            }
             TextView name=label(caption,tablet?14:11,active?ACCENT:MUTED,active);
             name.setGravity(Gravity.CENTER);
             name.setSingleLine(true);
