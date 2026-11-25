@@ -269,7 +269,7 @@ internal fun ClientDetailContent(model: DetailData, filter: String, initialLimit
 }
 
 @Composable
-private fun DetailOperationRow(row: DetailEntry, largeText: Boolean, open: () -> Unit, purchase: () -> Unit) {
+internal fun DetailOperationRow(row: DetailEntry, largeText: Boolean, open: () -> Unit, purchase: () -> Unit, clientName: String? = null) {
     val e = row.entry
     val color = if (row.canceled) dim else when (e.type) { "payment" -> green; "reversal" -> amber; else -> ink }
     val kind = when (e.type) { "debt" -> "Долг"; "payment" -> "Оплата"; else -> "Отмена" }
@@ -279,6 +279,7 @@ private fun DetailOperationRow(row: DetailEntry, largeText: Boolean, open: () ->
         horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(marker, color = color, fontSize = 18.sp)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            if (clientName != null) Text(clientName, color = ink, fontWeight = FontWeight.Bold)
             Text(kind + if (row.canceled) " · отменено" else "", color = color, fontWeight = FontWeight.SemiBold)
             if (row.remaining != null && !row.canceled) Text(
                 if (row.remaining == 0L) "Погашено" else "Осталось: " + rubles(row.remaining),
