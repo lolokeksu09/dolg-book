@@ -44,7 +44,7 @@ object AnalyticsProjection {
         val opening: Long, val closing: Long, val openingDebtors: Int, val closingDebtors: Int,
         val movement: Movement, val effective: Effective, val activeCustomers: Int,
         val borrowingCustomers: Int, val firstTimeBorrowers: Int, val settledCustomers: Int,
-        val customers: List<Customer>, val daily: List<Day>
+        val customers: List<Customer>, val daily: List<Day>, val focusedDaily: List<Day>
     )
 
     private class MovementBuilder {
@@ -99,9 +99,11 @@ object AnalyticsProjection {
     }
 
     @JvmStatic
+    @JvmOverloads
     fun build(
         entries: List<DatedLedgerRecord>, customerIds: Collection<String>, range: Range,
-        today: LocalDate, zone: ZoneId
+        today: LocalDate, zone: ZoneId, focusId: String? = null,
+        cancellationCheck: Runnable? = null
     ): Snapshot {
         require(!range.to.isAfter(today)) { "Период не может заканчиваться в будущем." }
         val customers = LinkedHashMap<String, CustomerBuilder>()
@@ -113,9 +115,11 @@ object AnalyticsProjection {
         val movement = MovementBuilder()
         val effective = EffectiveBuilder()
         val daily = TreeMap<LocalDate, MovementBuilder>()
+        val focusedDaily = TreeMap<LocalDate, MovementBuilder>()
         var opening = 0L
 
-        for (row in entries) {
+        for ((index, row) in entries.withIndex()) {
+            if (index % 256 == 0) cancellationCheck?.run()
             require(row.amountKopecks > 0 && row.entryId !in earlier) { "Некорректная операция книги." }
             val date = DatedLedger.localDate(row.recordedAt, zone)
             val kind = ReportProjection.kind(row, earlier)
@@ -135,12 +139,15 @@ object AnalyticsProjection {
                     movement.add(kind, row.amountKopecks)
                     customer.movement.add(kind, row.amountKopecks)
                     daily.getOrPut(date) { MovementBuilder() }.add(kind, row.amountKopecks)
+                    if (row.ownerId == focusId) focusedDaily.getOrPut(date) { MovementBuilder() }.add(kind, row.amountKopecks)
                 }
             }
             earlier[row.entryId] = row
         }
 
-        for ((row, date) in originals) {
+        for ((index, original) in originals.withIndex()) {
+            if (index % 256 == 0) cancellationCheck?.run()
+            val (row, date) = original
             if (row.entryId in canceledAsOfEnd) continue
             val customer = customers.getValue(row.ownerId)
             if (row.operation == "debt") {
@@ -156,7 +163,9 @@ object AnalyticsProjection {
         }
 
         // Reuse the production allocation rules for current balances and overdue debts.
+        cancellationCheck?.run()
         val statuses = CollectionProjection.analyze(entries, today)
+        cancellationCheck?.run()
         val result = customers.map { (id, state) ->
             val status = statuses[id] ?: CollectionProjection.EMPTY
             val flow = state.movement.freeze()
@@ -174,6 +183,14 @@ object AnalyticsProjection {
             Day(date, flow, running)
         }
         check(running == closing) { "Нарушена согласованность дневных остатков." }
+        val focus = result.firstOrNull { it.id == focusId }
+        var focusRunning = focus?.opening ?: 0L
+        val focusDays = focusedDaily.map { (date, builder) ->
+            val flow = builder.freeze()
+            focusRunning = Math.addExact(focusRunning, flow.net)
+            Day(date, flow, focusRunning)
+        }
+        check(focusRunning == (focus?.closing ?: 0L)) { "Нарушена согласованность остатков клиента." }
         fun sum(selector: (Customer) -> Long): Long = result.fold(0L) { total, customer ->
             Math.addExact(total, selector(customer))
         }
@@ -185,6 +202,6 @@ object AnalyticsProjection {
             totalMovement, effective.freeze(), result.count { it.movement.count > 0 },
             result.count { it.effective.debtCount > 0 },
             result.count { it.firstDebtAsOfEnd?.let { date -> !date.isBefore(range.from) } == true },
-            result.count { it.opening > 0L && it.closing == 0L }, result.toList(), days)
+            result.count { it.opening > 0L && it.closing == 0L }, result.toList(), days, focusDays)
     }
 }
