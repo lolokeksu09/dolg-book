@@ -473,7 +473,7 @@ private fun AnalyticsSectionRow(section: AnalyticsSection, personal: Boolean, ch
                 AnalyticsSection.REPORTS -> "Экспорт"
             }
             Column(Modifier.weight(1f).clickable { choose(option) }
-                .semantics { selected = active; role = Role.Tab }, horizontalAlignment = Alignment.CenterHorizontally) {
+                .semantics { selected = active; role = Role.Tab; contentDescription = "Вкладка " + label }, horizontalAlignment = Alignment.CenterHorizontally) {
                 Box(Modifier.fillMaxWidth().heightIn(min = 48.dp), contentAlignment = Alignment.Center) {
                     Text(label, color = if (active) ledgerText else ledgerMuted, fontSize = 14.sp,
                         fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal, textAlign = TextAlign.Center)
