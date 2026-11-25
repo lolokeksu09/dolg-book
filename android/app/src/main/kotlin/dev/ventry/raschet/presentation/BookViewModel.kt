@@ -68,6 +68,11 @@ class BookViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /** Main-thread navigation reuses today's immutable snapshot until a write or privacy boundary. */
+    fun cachedBook(): BookScreenData? {
+        if (hasPendingWrite()) return null
+        return (state.value as? ReadState.Ready)?.value?.takeIf { it.today == LocalDate.now() }
+    }
+
     fun currentOrLoad(): BookScreenData? {
         if (hasPendingWrite()) return null
         return reader.ensureFresh { it.today == LocalDate.now() }
