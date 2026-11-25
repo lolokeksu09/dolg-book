@@ -73,6 +73,14 @@ class AnalyticsProjectionTest {
         val next = AnalyticsProjection.build(rows, emptyList(), AnalyticsProjection.Range(date(16), today), today, zone)
         assertEquals(report.closing, next.opening)
         assertEquals(report.current, next.current)
+        val focused = AnalyticsProjection.build(rows, listOf("a", "b", "c"), range, today, zone, "a")
+        assertEquals(listOf(date(10), date(12), date(13)), focused.focusedDaily.map { it.date })
+        assertEquals(listOf(13000L, 11000L, 13000L), focused.focusedDaily.map { it.closing })
+        val focusedB = AnalyticsProjection.build(rows, listOf("a", "b", "c"), range, today, zone, "b")
+        assertEquals(listOf(date(11)), focusedB.focusedDaily.map { it.date })
+        assertEquals(0L, focusedB.focusedDaily.single().closing)
+        assertEquals(focused.current, focusedB.current)
+        assertEquals(focused.daily, focusedB.daily)
     }
 
     @Test fun longAndEmptyPeriodsRemainSparse() {
