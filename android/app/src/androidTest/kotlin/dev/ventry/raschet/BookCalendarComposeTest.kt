@@ -2,6 +2,8 @@ package dev.ventry.raschet
 
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertHasClickAction
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onNodeWithTag
@@ -20,6 +22,14 @@ import org.junit.Test
 
 class BookCalendarComposeTest {
     @get:Rule val compose = createComposeRule()
+
+    @Test fun statisticsCardIsVisibleAndOpensAnalytics() {
+        var clicks = 0
+        compose.setContent { LedgerMaterialTheme { BookAnalyticsEntry { clicks++ } } }
+        val card = compose.onNodeWithTag("book-statistics-entry")
+        card.assertIsDisplayed().assertHasClickAction().performClick()
+        compose.runOnIdle { assertEquals(1, clicks) }
+    }
 
     @Test fun monthGridIsMondayFirstAndHandlesLeapYear() {
         val feb = YearMonth.of(2024, 2)
