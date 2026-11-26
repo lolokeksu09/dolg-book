@@ -25,7 +25,13 @@ test('recovery uses authenticated Android Keystore encryption and fail-closed im
   assert.ok(start>=0 && snapshot>start && mutate>snapshot);
   assert.ok(service.includes('vault.openLatest().use'));
   assert.ok(service.includes('BackupSize.openUtf8(stream).use'));
-  assert.ok(activity.includes('new ClientCommand.FileTask.Import(uri,getLocalClassName())'));
+  const pending=read('android/app/src/main/java/dev/ventry/raschet/PendingFileRequests.java');
+  assert.ok(activity.includes('pendingFiles.requestImport()'));
+  assert.ok(activity.includes('pendingFiles.consume(request,result==RESULT_OK,authorized,'));
+  assert.match(activity,/task instanceof ClientCommand\.FileTask\.Import[\s\S]*?showDialog\("Восстановить книгу\?",form,null,\(\)->task\)/);
+  assert.ok(pending.includes('pendingImport?new FileTask.Import(uri,preferences):null'));
+  assert.ok(pending.includes('if(!accepted||!authorized||uri==null||uri.isEmpty())return null;'));
+  assert.ok(pending.includes('finally{clear(request);}'));
   assert.ok(activity.includes('new ClientCommand.FileTask.RestorePoint(getLocalClassName())'));
   assert.ok(!activity.includes('ledger.importJson('));
   assert.ok(!activity.includes('openInputStream('));
@@ -50,7 +56,11 @@ test('PDF export uses user-selected file and drafts clear after saving',()=>{
   const activity=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
   const draft=read('android/app/src/main/java/dev/ventry/raschet/LedgerDrafts.java');
   const pdf=read('android/app/src/main/java/dev/ventry/raschet/CustomerStatementPdf.java');
-  assert.ok(activity.includes('pendingPdfClientId'));
+  const pending=read('android/app/src/main/java/dev/ventry/raschet/PendingFileRequests.java');
+  assert.ok(activity.includes('pendingFiles.pdf(clientId)'));
+  assert.ok(activity.includes('launchFileRequest(REQUEST_PDF,createDocument("application/pdf",'));
+  assert.ok(pending.includes('pdfClient==null?null:new FileTask.Pdf(uri,pdfClient,shop)'));
+  assert.ok(pending.includes('case REQUEST_PDF: pdfClient=null;break;'));
   assert.ok(activity.includes('Intent.ACTION_CREATE_DOCUMENT'));
   const service=read('android/app/src/main/kotlin/dev/ventry/raschet/ClientWriteService.kt');
   assert.ok(service.includes('drafts.get(clientId, kind)?.id == id'));
