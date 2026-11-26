@@ -140,6 +140,14 @@ sleep 1
 dump_ui
 grep -Fq 'Общая задолженность' android/build/native-ui.xml
 adb exec-out screencap -p > android/build/native-home.png
+# Capture the actual new card and verify its navigation on the empty book.
+tap_text 'Статистика'
+sleep 1
+reveal_text 'Общая задолженность на сегодня'
+adb exec-out screencap -p > android/build/native-analytics-empty.png
+tap_text '← Книга'
+sleep 0.5
+reveal_text 'Долговая книга'
 tap_text 'История'
 sleep 0.5
 dump_ui
