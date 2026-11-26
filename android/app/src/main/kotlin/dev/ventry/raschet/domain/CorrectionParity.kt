@@ -1,6 +1,6 @@
 package dev.ventry.raschet.domain
 
-/** The preview fails closed on native disagreement. No fallback or partial write. */
+/** Release and native-enabled debug fail closed on disagreement. No fallback or partial write. */
 object CorrectionParity {
     private const val INVALID = -1L
     private const val PAID = -2L

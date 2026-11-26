@@ -4,6 +4,7 @@ import dev.ventry.raschet.BuildConfig
 import dev.ventry.raschet.domain.CorrectionParity
 import dev.ventry.raschet.domain.LedgerArithmetic
 
+/** Release uses JNI with mandatory Kotlin parity; opt-in debug runs the same path. */
 object CorrectionEngine {
     private val libraryLoaded by lazy {
         NativeCorrection.loadAndroidLibrary()
