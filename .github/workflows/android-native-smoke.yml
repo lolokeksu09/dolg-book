@@ -59,6 +59,7 @@ jobs:
             android/build/native-intro-3.png
             android/build/native-intro-3-practice.png
             android/build/native-home.png
+            android/build/native-analytics-empty.png
             android/build/native-clients.png
             android/build/native-history.png
             android/build/native-settings.png
