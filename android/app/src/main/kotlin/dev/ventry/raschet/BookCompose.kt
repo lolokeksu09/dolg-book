@@ -416,6 +416,7 @@ internal fun BookAnalyticsEntry(onClick: () -> Unit) {
         Modifier.fillMaxWidth().testTag("book-statistics-entry")
             .clip(shape).background(ledgerPanel).border(1.dp, ledgerAccent.copy(alpha = .55f), shape)
             .clickable(role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = "Статистика" }
             .heightIn(min = 80.dp).padding(12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
