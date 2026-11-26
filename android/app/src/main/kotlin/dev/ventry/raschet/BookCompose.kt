@@ -1,6 +1,8 @@
 package dev.ventry.raschet
 
 import androidx.activity.ComponentActivity
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.clickable
@@ -14,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.TextButton
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
@@ -44,6 +47,11 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -215,7 +223,7 @@ internal fun BookContent(model: BookUiModel, payments: Boolean, hasFilter: Boole
                 }
             }
             actions.analytics?.let { open ->
-                item("analytics") { LedgerMetric("Статистика", "Динамика, должники и сравнение периодов", action = open) }
+                item("analytics") { BookAnalyticsEntry(open) }
             }
             if (model.draft != null) item("draft") { LedgerMetric("Незавершённая запись", model.draft, ledgerAccent, actions.debt) }
             item("modes") {
@@ -396,5 +404,39 @@ private fun BookEntryRow(day: BookDays.Day, e: LedgerStore.Entry, person: Ledger
                 modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = "Новый долг · " + person.name }) { Text("+ Долг") }
         }
         HorizontalDivider(color = ledgerBorder)
+    }
+}
+
+
+/** Single accessible action; the chart glyph is decorative. */
+@Composable
+internal fun BookAnalyticsEntry(onClick: () -> Unit) {
+    val shape = RoundedCornerShape(12.dp)
+    Row(
+        Modifier.fillMaxWidth().testTag("book-statistics-entry")
+            .clip(shape).background(ledgerPanel).border(1.dp, ledgerAccent.copy(alpha = .55f), shape)
+            .clickable(role = Role.Button, onClick = onClick)
+            .heightIn(min = 80.dp).padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Box(Modifier.size(44.dp).background(ledgerAccent.copy(alpha = .15f), RoundedCornerShape(10.dp)),
+            contentAlignment = Alignment.Center) {
+            Canvas(Modifier.size(25.dp)) {
+                val width = size.width / 5f
+                val heights = listOf(.36f, .60f, .88f)
+                heights.forEachIndexed { index, fraction ->
+                    val h = size.height * fraction
+                    drawRoundRect(ledgerAccent,
+                        topLeft = Offset(width * index * 1.8f, size.height - h),
+                        size = Size(width, h), cornerRadius = CornerRadius(2.dp.toPx()))
+                }
+            }
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text("Статистика", color = ledgerText, fontSize = 19.sp, fontWeight = FontWeight.SemiBold)
+            Text("Динамика, должники и сравнение периодов", color = ledgerMuted, fontSize = 12.sp)
+        }
+        Text("›", color = ledgerAccent, fontSize = 28.sp)
     }
 }
