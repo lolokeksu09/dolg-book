@@ -115,22 +115,15 @@ object AnalyticsExport {
 
     private fun rubles(cents: Long) = BigDecimal.valueOf(cents, 2).toPlainString().replace('.', ',')
 
-    /** Neutralize untrusted text cells, including formulas preceded by whitespace. */
-    private fun cell(value: String): String {
-        val first = value.trimStart().firstOrNull()
-        val safe = if (first != null && first in "=+-@" || value.firstOrNull() in listOf('\t', '\r', '\n')) "'$value" else value
-        return "\"" + safe.replace("\"", "\"\"") + "\""
-    }
-
     fun csv(lines: List<Line>): String = buildString {
         append("\uFEFFПоказатель;Значение\r\n")
         for (line in lines) {
-            append(cell(line.label)).append(';')
+            append(CsvText.cell(line.label)).append(';')
             // All numeric values are constructed from integer financial data, not user strings.
             if (line.numeric) {
                 require(line.value.matches(Regex("-?[0-9]+(,[0-9]+)?")))
                 append(line.value)
-            } else append(cell(line.value))
+            } else append(CsvText.cell(line.value))
             append("\r\n")
         }
     }

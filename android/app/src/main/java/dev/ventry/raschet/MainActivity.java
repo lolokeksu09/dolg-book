@@ -1,5 +1,7 @@
 package dev.ventry.raschet;
 
+import static dev.ventry.raschet.ActivityRequests.*;
+
 import androidx.activity.ComponentActivity;
 import androidx.lifecycle.ViewModelProvider;
 import dev.ventry.raschet.presentation.BookViewModel;
@@ -64,9 +66,7 @@ public final class MainActivity extends ComponentActivity {
     private static final int BG=LedgerTheme.BG, PANEL=LedgerTheme.PANEL, ELEVATED=LedgerTheme.ELEVATED;
     private static final int BORDER=LedgerTheme.BORDER, TEXT=LedgerTheme.TEXT, MUTED=LedgerTheme.MUTED;
     private static final int ACCENT=LedgerTheme.ACCENT, INK=LedgerTheme.INK, ALERT=LedgerTheme.ALERT, RED=LedgerTheme.RED;
-    private static final int REQUEST_IMPORT=101, REQUEST_EXPORT=102, REQUEST_PDF=103, REQUEST_REPORT=105, REQUEST_ANALYTICS=106;
     private static final String RECOVERY_PREFS="raschet_local_recovery";
-    private static final int NOTIFICATION_PERMISSION_REQUEST=104;
     public static final String EXTRA_FIRST_START = "dev.ventry.raschet.FIRST_START";
     private static final String[] TABS={"Главная","Клиенты","История","Настройки"};
     private static final int[] ICONS={R.drawable.ic_nav_home,R.drawable.ic_nav_people,R.drawable.ic_nav_history,R.drawable.ic_nav_settings};
@@ -823,8 +823,8 @@ public final class MainActivity extends ComponentActivity {
                 privacy.enabled(),privacy.hideScreens(),settingsExpanded,lastExport!=0L,lastExportText,
                 recoveryStatus,count>0,recoveryPrefs().contains("last_error"),recoveryPrefs().getBoolean("enabled",false));
         SettingsActions actions=new SettingsActions(this::showShopName,this::setLargeText,this::setReminders,
-                this::toggleSettings,()->authenticate(privacy.enabled()?BookPrivacy.DISABLE:BookPrivacy.ENABLE),
-                ()->{unlocked=false;render();authenticate(BookPrivacy.OPEN);},
+                this::toggleSettings,()->authenticate(privacy.enabled()?CREDENTIAL_DISABLE:CREDENTIAL_ENABLE),
+                ()->{unlocked=false;render();authenticate(CREDENTIAL_OPEN);},
                 ()->{if(!privacy.enabled()){privacy.setHideScreens(!privacy.hideScreens());applyPrivacyFlag();render();}},
                 this::createRecoveryPoint,this::restoreRecoveryPoint,this::setAutoRecovery,
                 ()->exportBook(false),()->exportBook(true),this::pickImport,this::showCatalog);
@@ -929,7 +929,7 @@ public final class MainActivity extends ComponentActivity {
         Intent credential=privacy.credential();
         if(credential==null){
             message("Настройте код блокировки устройства в Android.");
-            if(request==BookPrivacy.OPEN)finishAndRemoveTask();
+            if(request==CREDENTIAL_OPEN)finishAndRemoveTask();
             return;
         }
         try{
@@ -937,7 +937,7 @@ public final class MainActivity extends ComponentActivity {
             startActivityForResult(credential,request);
         }catch(ActivityNotFoundException e){
             authInFlight=false;message("Системное подтверждение недоступно.");
-            if(request==BookPrivacy.OPEN)finishAndRemoveTask();
+            if(request==CREDENTIAL_OPEN)finishAndRemoveTask();
         }
     }
     @Override protected void onStart(){
@@ -956,7 +956,7 @@ public final class MainActivity extends ComponentActivity {
         super.onResume();
         if(privacy!=null&&!unlocked&&!authInFlight&&!isFinishing()){
             if(chooser!=null)chooser.dismiss();
-            authenticate(BookPrivacy.OPEN);
+            authenticate(CREDENTIAL_OPEN);
         }
     }
     @Override protected void onStop(){
@@ -2068,14 +2068,14 @@ public final class MainActivity extends ComponentActivity {
     }
     @Override protected void onActivityResult(int request,int result,Intent data) {
         super.onActivityResult(request,result,data);
-        if(request==BookPrivacy.OPEN||request==BookPrivacy.ENABLE||request==BookPrivacy.DISABLE){
+        if(isCredential(request)){
             authInFlight=false;
             if(result!=RESULT_OK){
-                if(request==BookPrivacy.OPEN)finishAndRemoveTask();
+                if(request==CREDENTIAL_OPEN)finishAndRemoveTask();
                 return;
             }
-            if(request==BookPrivacy.ENABLE)privacy.setEnabled(true);
-            if(request==BookPrivacy.DISABLE)privacy.setEnabled(false);
+            if(request==CREDENTIAL_ENABLE)privacy.setEnabled(true);
+            if(request==CREDENTIAL_DISABLE)privacy.setEnabled(false);
             unlocked=true;stoppedAt=-1;reloadOnStart=false;applyPrivacyFlag();render();
             onClientWriteState(bookViewModel.getWriteState().getValue());return;
         }
@@ -2107,8 +2107,7 @@ public final class MainActivity extends ComponentActivity {
             form.addView(label("Текущие клиенты и операции будут полностью заменены содержимым JSON-файла. Сохраните свою копию перед продолжением.",15,ALERT,false));
             showDialog("Восстановить книгу?",form,null,()->new ClientCommand.FileTask.Import(uri,getLocalClassName()));
         }
-        if(!authorized&&result==RESULT_OK&&(request==REQUEST_EXPORT||request==REQUEST_REPORT||
-                request==REQUEST_PDF||request==REQUEST_IMPORT||request==REQUEST_ANALYTICS)){
+        if(!authorized&&result==RESULT_OK&&isFile(request)){
             message("Откройте книгу и повторите файловую операцию.");
         }
     }
