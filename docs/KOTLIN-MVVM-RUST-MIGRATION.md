@@ -288,3 +288,7 @@ Baseline fbcd206: all five workflows passed; emulator 45599694731 completed 73 i
 - Payment form uses one per-client history snapshot for current balance, recent amounts, promise progress and dated maximum. Half/full shortcuts use DatedPayments.maximum for the selected day, disable at zero, and distinguish today's full balance from historical maximum. Historical projection warns if an entered amount exceeds that day's maximum. Current promise shortcuts are hidden on historical days. The writer still independently validates the actual transaction; preview cannot authorize an overpayment.
 - Client detail opened from the journal returns to the originating book, not the generic client directory. Activity saved state tracks the origin and existing calendar selection; a write in the detail does not overwrite the selected journal date. Existing client/collection navigation remains available.
 - Added Compose header callback test and native smoke assertion for the system Back route. Historical maximum already has ledger instrumentation coverage; the newly changed payment shortcut UI has not yet been exercised on a historical date. New exact-head CI and visual verification remain required. No schema change, merge or release.
+
+## Интеграция release JNI и следующий рефакторинг
+
+[Требования, доказательства и открытые gates](RASCHET-RUST-RELEASE-REFACTOR.md). Нативный correction-модуль в релизном варианте обязателен; другие Rust-контракты пока не перенесены в Android JNI. Кандидат не считать опубликованным по факту изменения Gradle.

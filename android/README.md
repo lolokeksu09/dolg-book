@@ -296,3 +296,7 @@ Shared LedgerTheme across work screens, introduction and launch. Black workspace
 ## Ventry product identity and data boundary (development)
 
 The native app uses the Ventry forest, sand and moss palette. Catalog management is available from Settings; itemized debts support active catalog products and units (including kg with three decimal places). Catalog edits do not change existing purchase snapshots. Both portable JSON import and encrypted local recovery accept up to 10 MiB of UTF-8 JSON. Exports are compact; if a larger JSON is saved for rescue, the app warns that it cannot be imported and does not mark it as a restorable copy. Keep the original app and database. JSON remains v1–v4 and does not contain all local settings or drafts. This is not a signed release or a complete backup migration.
+
+## Release с Rust JNI — кандидат интеграции
+
+См. [требования и приёмку](../docs/RASCHET-RUST-RELEASE-REFACTOR.md). Перед сборкой release на Linux CI установить NDK 28.2.13676358 и Rust 1.85.1, выполнить `bash scripts/build-rust-android.sh`, затем `gradle -p android lintRelease assembleRelease --no-daemon`. Четыре ABI обязательны, проверка ZIP/ELF выполняется в release workflow до публикации. Debug по умолчанию остаётся Kotlin-only; `-PraschetRustPreview=true` включает аналогичный JNI-путь для instrumentation. Старые разделы о debug-only описывают предыдущие этапы.
