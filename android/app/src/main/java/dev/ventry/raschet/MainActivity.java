@@ -76,7 +76,7 @@ public final class MainActivity extends ComponentActivity {
     private AnalyticsViewModel analyticsViewModel;
     private String analyticsClientId=null, analyticsReturnTab="Клиенты";
     private boolean historyFromAnalytics;
-    private AnalyticsExport.Spec pendingAnalytics;
+    private final PendingFileRequests pendingFiles=new PendingFileRequests();
     private boolean reloadOnStart,firstStartPending;
     private Dialog pendingClientDialog;
     private TextView pendingClientError;
@@ -101,10 +101,8 @@ public final class MainActivity extends ComponentActivity {
     private String clientFilter=CollectionsInsights.ALL;
     private boolean clientsAmountFirst,clientsRecentFirst;
     private String shopName="Мой магазин";
-    private boolean pendingExport, pendingExportCsv;
-    private String pendingPdfClientId;
     private LocalDate reportFrom=LocalDate.now().withDayOfMonth(1),reportTo=LocalDate.now();
-    private LocalDate historyFrom,historyTo,pendingReportFrom,pendingReportTo;
+    private LocalDate historyFrom,historyTo;
     private int reportDaysLimit=14;
     private boolean tablet=false, largeText=false, saving=false;
     private int historyVisibleLimit=100, detailVisibleLimit=80, bookDayLimit=30;
@@ -155,10 +153,7 @@ public final class MainActivity extends ComponentActivity {
             analyticsViewModel.focus(analyticsClientId);
             analyticsViewModel.restoreFilters(state.getString("analytics_preset"),readDate(state,"analytics_range_from"),readDate(state,"analytics_range_to"),
                     state.getString("analytics_overview_section"),state.getString("analytics_personal_section"),state.getString("analytics_ranking"));
-            LocalDate analyticsFrom=readDate(state,"pending_analytics_from"), analyticsTo=readDate(state,"pending_analytics_to");
-            if(analyticsFrom!=null&&analyticsTo!=null)pendingAnalytics=new AnalyticsExport.Spec(analyticsFrom,analyticsTo,
-                    readDate(state,"pending_analytics_prev_from"),readDate(state,"pending_analytics_prev_to"),
-                    state.getString("pending_analytics_client"),state.getBoolean("pending_analytics_pdf",false));
+            pendingFiles.restore(state);
             detailVisibleLimit=state.getInt("detail_visible_limit",80);
             detailFilter=state.getString("detail_filter",ClientStatement.ALL);detailFilterClient=state.getString("detail_filter_client");
             bookDayLimit=state.getInt("book_day_limit",30);
@@ -168,13 +163,9 @@ public final class MainActivity extends ComponentActivity {
             bookCalendar=state.getBoolean("book_calendar",false);bookCalendarDay=readDate(state,"book_calendar_day");
             ArrayList<String> expanded=state.getStringArrayList("expanded_book_days");
             if(expanded!=null)expandedBookDays.addAll(expanded);
-            pendingExport=state.getBoolean("pending_export");
-            pendingExportCsv=state.getBoolean("pending_export_csv");
-            pendingPdfClientId=state.getString("pending_pdf_client");
             reportFrom=LocalDate.parse(state.getString("report_from",reportFrom.toString()));
             reportTo=LocalDate.parse(state.getString("report_to",reportTo.toString()));
             historyFrom=readDate(state,"history_from");historyTo=readDate(state,"history_to");
-            pendingReportFrom=readDate(state,"pending_report_from");pendingReportTo=readDate(state,"pending_report_to");
             reportDaysLimit=state.getInt("report_days_limit",14);
             settingsExpanded=state.getString("settings_expanded","");
         }
@@ -210,11 +201,7 @@ public final class MainActivity extends ComponentActivity {
         out.putString("analytics_overview_section",analyticsViewModel.getOverviewSection().getValue().name());
         out.putString("analytics_personal_section",analyticsViewModel.getPersonalSection().getValue().name());
         out.putString("analytics_ranking",analyticsViewModel.getRanking().getValue());
-        if(pendingAnalytics!=null){
-            saveDate(out,"pending_analytics_from",pendingAnalytics.getFrom());saveDate(out,"pending_analytics_to",pendingAnalytics.getTo());
-            saveDate(out,"pending_analytics_prev_from",pendingAnalytics.getPreviousFrom());saveDate(out,"pending_analytics_prev_to",pendingAnalytics.getPreviousTo());
-            out.putString("pending_analytics_client",pendingAnalytics.getCustomerId());out.putBoolean("pending_analytics_pdf",pendingAnalytics.getPdf());
-        }
+        pendingFiles.save(out);
         out.putInt("detail_visible_limit",detailVisibleLimit);
         out.putString("detail_filter",detailFilter);out.putString("detail_filter_client",detailFilterClient);
         out.putInt("book_day_limit",bookDayLimit);
@@ -223,12 +210,8 @@ public final class MainActivity extends ComponentActivity {
         out.putBoolean("book_payments",bookPayments);
         out.putBoolean("book_calendar",bookCalendar);saveDate(out,"book_calendar_day",bookCalendarDay);
         out.putStringArrayList("expanded_book_days",new ArrayList<>(expandedBookDays));
-        out.putBoolean("pending_export",pendingExport);
-        out.putBoolean("pending_export_csv",pendingExportCsv);
-        out.putString("pending_pdf_client",pendingPdfClientId);
         out.putString("report_from",reportFrom.toString());out.putString("report_to",reportTo.toString());
         saveDate(out,"history_from",historyFrom);saveDate(out,"history_to",historyTo);
-        saveDate(out,"pending_report_from",pendingReportFrom);saveDate(out,"pending_report_to",pendingReportTo);
         out.putInt("report_days_limit",reportDaysLimit);
         out.putString("settings_expanded",settingsExpanded);
         super.onSaveInstanceState(out);
@@ -773,13 +756,9 @@ public final class MainActivity extends ComponentActivity {
     }
     private void exportAnalytics(AnalyticsExport.Spec spec){
         if(!unlocked||bookViewModel.hasPendingWrite())return;
-        Intent save=new Intent(Intent.ACTION_CREATE_DOCUMENT);
-        save.addCategory(Intent.CATEGORY_OPENABLE);
-        save.setType(spec.getPdf()?"application/pdf":"text/csv");
-        save.putExtra(Intent.EXTRA_TITLE,"raschet-analytics-"+spec.getFrom()+"-"+spec.getTo()+(spec.getPdf()?".pdf":".csv"));
-        pendingAnalytics=spec;
-        try{startActivityForResult(save,REQUEST_ANALYTICS);}
-        catch(ActivityNotFoundException ex){pendingAnalytics=null;message("Выбор файла недоступен.");}
+        pendingFiles.analytics(spec);
+        launchFileRequest(REQUEST_ANALYTICS,createDocument(spec.getPdf()?"application/pdf":"text/csv",
+                "raschet-analytics-"+spec.getFrom()+"-"+spec.getTo()+(spec.getPdf()?".pdf":".csv")));
     }
     private View reportView(BookScreenData data){
         return ReportCompose.create(this,data,reportFrom,reportTo,reportDaysLimit,
@@ -789,12 +768,8 @@ public final class MainActivity extends ComponentActivity {
                 },this::exportReport,limit->reportDaysLimit=limit);
     }
     private void exportReport(){
-        Intent save=new Intent(Intent.ACTION_CREATE_DOCUMENT);
-        save.addCategory(Intent.CATEGORY_OPENABLE);save.setType("text/csv");
-        save.putExtra(Intent.EXTRA_TITLE,"raschet-report-"+reportFrom+"-"+reportTo+".csv");
-        pendingReportFrom=reportFrom;pendingReportTo=reportTo;
-        try{startActivityForResult(save,REQUEST_REPORT);}
-        catch(ActivityNotFoundException ex){pendingReportFrom=null;pendingReportTo=null;message("Выбор файла недоступен.");}
+        pendingFiles.report(reportFrom,reportTo);
+        launchFileRequest(REQUEST_REPORT,createDocument("text/csv","raschet-report-"+reportFrom+"-"+reportTo+".csv"));
     }
     private View historyView(BookScreenData data) {
         return HistoryCompose.create(this,data,historyClientId,historyQuery,historyFrom,historyTo,historyFilter,
@@ -1752,14 +1727,8 @@ public final class MainActivity extends ComponentActivity {
     }
     private static String amountInput(long cents){return String.format(Locale.ROOT,"%d,%02d",cents/100,cents%100);}
     private void exportCustomerPdf(String clientId) {
-        Intent save=new Intent(Intent.ACTION_CREATE_DOCUMENT);
-        save.addCategory(Intent.CATEGORY_OPENABLE);
-        save.setType("application/pdf");
-        save.putExtra(Intent.EXTRA_TITLE,"raschet-statement-"+LocalDate.now()+".pdf");
-        try{
-            pendingPdfClientId=clientId;
-            startActivityForResult(save,REQUEST_PDF);
-        }catch(Exception ex){pendingPdfClientId=null;message("Нет выбора файла PDF: "+ex.getMessage());}
+        pendingFiles.pdf(clientId);
+        launchFileRequest(REQUEST_PDF,createDocument("application/pdf","raschet-statement-"+LocalDate.now()+".pdf"));
     }
     private void shareClientSummary(LedgerStore.Client client,long amount,long overdue) {
         // Explicit user action: Sharesheet does not auto-send or access contacts.
@@ -2045,25 +2014,29 @@ public final class MainActivity extends ComponentActivity {
         }
     }
     private void pickImport() {
+        pendingFiles.requestImport();
         Intent picker=new Intent(Intent.ACTION_OPEN_DOCUMENT);
         picker.addCategory(Intent.CATEGORY_OPENABLE);picker.setType("application/json");
-        try{startActivityForResult(picker,REQUEST_IMPORT);}
-        catch(ActivityNotFoundException e){message("Системный выбор файлов недоступен.");}
+        launchFileRequest(REQUEST_IMPORT,picker);
     }
     private void exportBook(boolean csv) {
-        try {
-            Intent save=new Intent(Intent.ACTION_CREATE_DOCUMENT);
-            save.addCategory(Intent.CATEGORY_OPENABLE);
-            save.setType(csv?"text/csv":"application/json");
-            save.putExtra(Intent.EXTRA_TITLE,"raschet-"+LocalDate.now()+(csv?".csv":".json"));
-            // Keep only the format while SAF is open. The data is rendered at save time,
-            // so rotating Android cannot silently discard a prepared JSON payload.
-            pendingExport=true;
-            pendingExportCsv=csv;
-            startActivityForResult(save,REQUEST_EXPORT);
-        }catch(Exception e){
-            pendingExport=false;
-            message("Не удалось открыть выбор файла: "+e.getMessage());
+        pendingFiles.export(csv);
+        launchFileRequest(REQUEST_EXPORT,createDocument(csv?"text/csv":"application/json",
+                "raschet-"+LocalDate.now()+(csv?".csv":".json")));
+    }
+    private static Intent createDocument(String mime,String name){
+        Intent save=new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        save.addCategory(Intent.CATEGORY_OPENABLE);save.setType(mime);
+        save.putExtra(Intent.EXTRA_TITLE,name);
+        return save;
+    }
+    private void launchFileRequest(int request,Intent intent){
+        if(!unlocked||bookViewModel.hasPendingWrite()){
+            pendingFiles.clear(request);return;
+        }
+        try{startActivityForResult(intent,request);}
+        catch(RuntimeException failure){
+            pendingFiles.clear(request);message("Системный выбор файлов недоступен.");
         }
     }
     @Override protected void onActivityResult(int request,int result,Intent data) {
@@ -2079,37 +2052,19 @@ public final class MainActivity extends ComponentActivity {
             unlocked=true;stoppedAt=-1;reloadOnStart=false;applyPrivacyFlag();render();
             onClientWriteState(bookViewModel.getWriteState().getValue());return;
         }
+        if(!isFile(request))return;
         // Never start a file operation using a result returned after the credential gate expired.
         boolean authorized=unlocked&&!BookPrivacy.shouldRelock(privacy.enabled(),stoppedAt,
                 android.os.SystemClock.elapsedRealtime());
-        boolean ready=authorized&&result==RESULT_OK&&data!=null&&data.getData()!=null;
-        if(request==REQUEST_EXPORT){
-            boolean canExport=pendingExport;
-            boolean csv=pendingExportCsv;
-            pendingExport=false;
-            if(ready&&canExport)submitFile(new ClientCommand.FileTask.Export(
-                    data.getData().toString(),csv,getLocalClassName()));
-        }else if(request==REQUEST_REPORT){
-            LocalDate from=pendingReportFrom,to=pendingReportTo;
-            pendingReportFrom=null;pendingReportTo=null;
-            if(ready&&from!=null&&to!=null)submitFile(new ClientCommand.FileTask.Report(
-                    data.getData().toString(),from,to));
-        }else if(request==REQUEST_ANALYTICS){
-            AnalyticsExport.Spec spec=pendingAnalytics;pendingAnalytics=null;
-            if(ready&&spec!=null)submitFile(new ClientCommand.FileTask.Analytics(data.getData().toString(),spec));
-        }else if(request==REQUEST_PDF){
-            String id=pendingPdfClientId;
-            pendingPdfClientId=null;
-            if(ready&&id!=null)submitFile(new ClientCommand.FileTask.Pdf(data.getData().toString(),id,shopName));
-        }else if(request==REQUEST_IMPORT&&ready){
-            String uri=data.getData().toString();
+        String uri=data==null||data.getData()==null?null:data.getData().toString();
+        ClientCommand.FileTask task=pendingFiles.consume(request,result==RESULT_OK,authorized,
+                uri,getLocalClassName(),shopName);
+        if(task instanceof ClientCommand.FileTask.Import){
             LinearLayout form=stack(12);
             form.addView(label("Текущие клиенты и операции будут полностью заменены содержимым JSON-файла. Сохраните свою копию перед продолжением.",15,ALERT,false));
-            showDialog("Восстановить книгу?",form,null,()->new ClientCommand.FileTask.Import(uri,getLocalClassName()));
-        }
-        if(!authorized&&result==RESULT_OK&&isFile(request)){
-            message("Откройте книгу и повторите файловую операцию.");
-        }
+            showDialog("Восстановить книгу?",form,null,()->task);
+        }else if(task!=null)submitFile(task);
+        else if(!authorized&&result==RESULT_OK)message("Откройте книгу и повторите файловую операцию.");
     }
     @Override public void onBackPressed() {
         if(!unlocked){finishAndRemoveTask();return;}
