@@ -95,6 +95,7 @@ public final class MainActivity extends ComponentActivity {
     private String historyQuery="";
     private String collectionQuery="";
     private boolean collectionUrgent;
+    private String collectionPlanFilter="ALL";
     private int collectionLimit=60;
     private boolean returnToCollections,returnToBook;
     private String historyClientId=null;
@@ -145,6 +146,7 @@ public final class MainActivity extends ComponentActivity {
             clientsRecentFirst=state.getBoolean("clients_recent_first",false);
             historyVisibleLimit=state.getInt("history_visible_limit",100);
             collectionQuery=state.getString("collection_query","");collectionUrgent=state.getBoolean("collection_urgent",false);
+            collectionPlanFilter=state.getString("collection_plan_filter","ALL");
             collectionLimit=state.getInt("collection_limit",60);returnToCollections=state.getBoolean("return_to_collections",false);
             returnToBook=state.getBoolean("return_to_book",false);
             historyQuery=state.getString("history_query","");historyClientId=state.getString("history_client_id");
@@ -190,6 +192,7 @@ public final class MainActivity extends ComponentActivity {
         out.putBoolean("clients_recent_first",clientsRecentFirst);
         out.putInt("history_visible_limit",historyVisibleLimit);
         out.putString("collection_query",collectionQuery);out.putBoolean("collection_urgent",collectionUrgent);
+        out.putString("collection_plan_filter",collectionPlanFilter);
         out.putInt("collection_limit",collectionLimit);out.putBoolean("return_to_collections",returnToCollections);
         out.putBoolean("return_to_book",returnToBook);
         out.putString("history_query",historyQuery);out.putString("history_client_id",historyClientId);
@@ -401,7 +404,7 @@ public final class MainActivity extends ComponentActivity {
     }
 
     private void openCollections(){
-        collectionQuery="";collectionUrgent=false;collectionLimit=60;returnToCollections=false;returnToBook=false;selectedClient=null;tab="Возврат";render();
+        collectionQuery="";collectionUrgent=false;collectionPlanFilter="ALL";collectionLimit=60;returnToCollections=false;returnToBook=false;selectedClient=null;tab="Возврат";render();
     }
     private View collectionView(BookScreenData data){
         return CollectionsCompose.create(this,data,collectionQuery,collectionUrgent,collectionLimit,largeText,
@@ -409,7 +412,7 @@ public final class MainActivity extends ComponentActivity {
                 urgent->{collectionUrgent=urgent;collectionLimit=60;},
                 limit->collectionLimit=limit,this::openClientFilter,
                 id->{returnToCollections=true;returnToBook=false;tab="Клиенты";selectedClient=id;render();},
-                id->showEntryForm(id,"payment"),this::showFollowUp);
+                id->showEntryForm(id,"payment"),this::showFollowUp,collectionPlanFilter,plan->collectionPlanFilter=plan);
     }
     private void showFollowUp(LedgerStore.Client person){
         ClientDirectory.FollowUp old=directory.followUp(person.id);

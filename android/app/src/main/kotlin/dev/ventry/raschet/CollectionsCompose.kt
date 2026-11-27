@@ -57,7 +57,8 @@ import kotlin.coroutines.coroutineContext
 
 internal data class CollectionUiModel(
     val work: List<CollectionWorklist.Item>, val total: Long, val overdue: Long,
-    val upcoming: Long, val today: LocalDate
+    val upcoming: Long, val today: LocalDate,
+    val agenda: CollectionAgenda = CollectionAgenda.build(work, today)
 )
 
 internal fun projectCollections(data: BookScreenData, directory: ClientDirectory, zone: ZoneId): CollectionUiModel {
@@ -70,7 +71,7 @@ internal fun projectCollections(data: BookScreenData, directory: ClientDirectory
 internal data class CollectionActions(
     val search: (String) -> Unit, val urgent: (Boolean) -> Unit, val limit: (Int) -> Unit,
     val filter: (String) -> Unit, val open: (String) -> Unit, val pay: (String) -> Unit,
-    val plan: (LedgerStore.Client) -> Unit
+    val plan: (LedgerStore.Client) -> Unit, val selectPlan: (String) -> Unit = {}
 )
 
 object CollectionsCompose {
@@ -78,10 +79,11 @@ object CollectionsCompose {
     fun create(owner: ComponentActivity, data: BookScreenData, query: String, urgent: Boolean,
         initialLimit: Int, largeText: Boolean, onSearch: Consumer<String>, onUrgent: Consumer<Boolean>,
         onLimit: IntConsumer, onFilter: Consumer<String>, onOpen: Consumer<String>,
-        onPay: Consumer<String>, onPlan: Consumer<LedgerStore.Client>): ComposeView {
+        onPay: Consumer<String>, onPlan: Consumer<LedgerStore.Client>, initialPlan: String,
+        onPlanFilter: Consumer<String>): ComposeView {
         val app = owner.applicationContext
         val actions = CollectionActions(onSearch::accept, onUrgent::accept, onLimit::accept,
-            onFilter::accept, onOpen::accept, onPay::accept, onPlan::accept)
+            onFilter::accept, onOpen::accept, onPay::accept, onPlan::accept, onPlanFilter::accept)
         return ComposeView(owner).apply {
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindowOrReleasedFromPool)
             setContent {
@@ -101,7 +103,7 @@ object CollectionsCompose {
                     }
                     val current = model
                     when {
-                        current != null -> CollectionContent(current, query, urgent, initialLimit, largeText, actions)
+                        current != null -> CollectionContent(current, query, urgent, initialLimit, largeText, actions, initialPlan)
                         failed -> Column(Modifier.fillMaxSize().background(ledgerBg).padding(16.dp)) {
                             Text("Ошибка чтения книги", color = ledgerText)
                             OutlinedButton(onClick = { failed = false; attempt++ }) { Text("Повторить") }
@@ -118,16 +120,19 @@ object CollectionsCompose {
 
 @Composable
 internal fun CollectionContent(model: CollectionUiModel, initialQuery: String, initialUrgent: Boolean,
-    initialLimit: Int, largeText: Boolean, actions: CollectionActions) {
+    initialLimit: Int, largeText: Boolean, actions: CollectionActions, initialPlan: String = "ALL") {
     var query by remember { mutableStateOf(initialQuery) }
     var urgent by remember { mutableStateOf(initialUrgent) }
     var limit by remember { mutableIntStateOf(initialLimit) }
-    var visible by remember(model, query, urgent) { mutableStateOf<List<CollectionWorklist.Item>?>(null) }
-    var failed by remember(model, query, urgent) { mutableStateOf(false) }
+    var planFilter by remember { mutableStateOf(runCatching { CollectionPlanFilter.valueOf(initialPlan) }.getOrDefault(CollectionPlanFilter.ALL)) }
+    var visible by remember(model, query, urgent, planFilter) { mutableStateOf<List<CollectionWorklist.Item>?>(null) }
+    var failed by remember(model, query, urgent, planFilter) { mutableStateOf(false) }
     var attempt by remember { mutableIntStateOf(0) }
-    LaunchedEffect(model, query, urgent, attempt) {
+    LaunchedEffect(model, query, urgent, planFilter, attempt) {
         try {
-            val result = withContext(Dispatchers.Default) { CollectionWorklist.select(model.work, query, urgent) }
+            val result = withContext(Dispatchers.Default) {
+                CollectionWorklist.select(model.work, query, urgent).filter { planFilter.matches(it, model.today) }
+            }
             coroutineContext.ensureActive()
             visible = result
         } catch (cancelled: CancellationException) { throw cancelled }
@@ -186,7 +191,13 @@ internal fun CollectionContent(model: CollectionUiModel, initialQuery: String, i
                         val modifier = Modifier.weight(1f).heightIn(min = 48.dp).semantics {
                             selected = urgent == value; contentDescription = label
                         }
-                        val click = { if (urgent != value) { urgent = value; limit = 60; actions.urgent(value) } }
+                        val click = {
+                            if (urgent != value || planFilter != CollectionPlanFilter.ALL) {
+                                planFilter = CollectionPlanFilter.ALL
+                                actions.selectPlan(planFilter.name)
+                                urgent = value; limit = 60; actions.urgent(value); actions.limit(limit)
+                            }
+                        }
                         Column(modifier.clickable(onClick = click), horizontalAlignment = Alignment.CenterHorizontally) {
                             Box(Modifier.fillMaxWidth().heightIn(min = 46.dp), contentAlignment = Alignment.Center) {
                                 Text(label, color = if (urgent == value) ledgerText else ledgerMuted, fontSize = 13.sp,
@@ -195,6 +206,42 @@ internal fun CollectionContent(model: CollectionUiModel, initialQuery: String, i
                             Box(Modifier.fillMaxWidth().height(2.dp).background(if (urgent == value) ledgerAccent else ledgerBorder.copy(alpha = .45f)))
                         }
                     }
+                }
+            }
+            item("agenda") {
+                Column(Modifier.fillMaxWidth().background(ledgerPanel, RoundedCornerShape(12.dp)).padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Планы возврата", color = ledgerText, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                    if (model.agenda.promised > 0L) {
+                        Text("Осталось по обещаниям: " + ledgerMoney(model.agenda.remaining),
+                            color = ledgerText, fontWeight = FontWeight.Medium, fontSize = 16.sp)
+                        Text("Получено " + ledgerMoney(model.agenda.received) + " из " + ledgerMoney(model.agenda.promised),
+                            color = ledgerMuted, fontSize = 12.sp)
+                    }
+                    Text("Текущие планы, отдельно от общего долга.", color = ledgerMuted, fontSize = 12.sp)
+                    val filters = CollectionPlanFilter.entries.filter { it != CollectionPlanFilter.ALL }
+                    fun choose(filter: CollectionPlanFilter) {
+                        planFilter = if (planFilter == filter) CollectionPlanFilter.ALL else filter
+                        actions.selectPlan(planFilter.name)
+                        if (urgent) { urgent = false; actions.urgent(false) }
+                        limit = 60; actions.limit(limit)
+                    }
+                    filters.chunked(if (stacked) 1 else 2).forEach { group ->
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            group.forEach { filter ->
+                                val modifier = Modifier.weight(1f).heightIn(min = 48.dp)
+                                    .testTag("collection_plan_" + filter.name)
+                                    .semantics { selected = planFilter == filter }
+                                val caption = filter.caption + " · " + model.agenda.count(filter)
+                                if (planFilter == filter) Button(onClick = { choose(filter) }, modifier = modifier) { Text(caption, fontSize = 12.sp) }
+                                else OutlinedButton(onClick = { choose(filter) }, modifier = modifier) { Text(caption, fontSize = 12.sp) }
+                            }
+                        }
+                    }
+                    Text(result?.let { "Должников по фильтру: " + it.size } ?: "Обновление списка…",
+                        color = ledgerMuted, fontSize = 12.sp, modifier = Modifier.testTag("collection_result_count"))
+                    if (planFilter != CollectionPlanFilter.ALL) TextButton(onClick = { choose(planFilter) },
+                        modifier = Modifier.fillMaxWidth().testTag("collection_plan_clear")) { Text("Сбросить фильтр планов") }
                 }
             }
             when {
@@ -206,7 +253,8 @@ internal fun CollectionContent(model: CollectionUiModel, initialQuery: String, i
                     Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
                 }
                 result.isEmpty() -> item("empty") {
-                    Text(if (model.work.isEmpty()) "Непогашенных долгов нет." else "Нет должников по выбранным условиям.", color = ledgerMuted)
+                    Text(if (model.work.isEmpty()) "Непогашенных долгов нет." else if (planFilter != CollectionPlanFilter.ALL)
+                        "Нет должников по выбранному плану и поиску." else "Нет должников по выбранным условиям.", color = ledgerMuted)
                 }
                 else -> {
                     val shown = result.take(limit)
