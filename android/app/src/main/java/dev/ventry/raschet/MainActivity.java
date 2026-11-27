@@ -803,6 +803,8 @@ public final class MainActivity extends ComponentActivity {
                 ()->{if(!privacy.enabled()){privacy.setHideScreens(!privacy.hideScreens());applyPrivacyFlag();render();}},
                 this::createRecoveryPoint,this::restoreRecoveryPoint,this::setAutoRecovery,
                 ()->exportBook(false),()->exportBook(true),this::pickImport,this::showCatalog);
+        if(BuildConfig.LICENSE_REQUIRED) return SettingsCompose.createLicensed(this,state,actions,
+                ()->startActivity(new Intent(this,dev.ventry.raschet.license.LicenseActivity.class)));
         return SettingsCompose.create(this,state,actions);
     }
     private void toggleSettings(String section){
@@ -929,6 +931,7 @@ public final class MainActivity extends ComponentActivity {
     }
     @Override protected void onResume(){
         super.onResume();
+        if(BuildConfig.LICENSE_REQUIRED) dev.ventry.raschet.license.LicenseManager.refreshInBackground(this);
         if(privacy!=null&&!unlocked&&!authInFlight&&!isFinishing()){
             if(chooser!=null)chooser.dismiss();
             authenticate(CREDENTIAL_OPEN);

@@ -59,15 +59,26 @@ object SettingsCompose {
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindowOrReleasedFromPool)
             setContent { LedgerMaterialTheme { SettingsContent(state, actions) } }
         }
+
+    @JvmStatic
+    fun createLicensed(owner: ComponentActivity, state: SettingsSnapshot, actions: SettingsActions, license: Runnable): ComposeView =
+        ComposeView(owner).apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindowOrReleasedFromPool)
+            setContent { LedgerMaterialTheme { SettingsContent(state, actions, license) } }
+        }
 }
 
 @Composable
-internal fun SettingsContent(state: SettingsSnapshot, actions: SettingsActions) {
+internal fun SettingsContent(state: SettingsSnapshot, actions: SettingsActions, license: Runnable? = null) {
     Box(Modifier.fillMaxSize().background(ledgerBg), contentAlignment = Alignment.TopCenter) {
         Column(Modifier.widthIn(max = 800.dp).fillMaxSize().verticalScroll(rememberScrollState())
             .testTag("settings-list").padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("Настройки", color = ledgerText, fontSize = if (state.largeText) 28.sp else 24.sp,
                 fontWeight = FontWeight.SemiBold)
+            if (license != null) {
+                SettingsSection("Подписка Ventry", state.largeText)
+                SettingsPanel { LedgerMetric("Лицензия", "Активация и обновление доступа", action = license::run) }
+            }
             SettingsSection("Безопасность и данные", state.largeText)
             SettingsPanel {
                 LedgerMetric("Резервные копии", if (state.externalBackupConfirmed) "Экспорт и восстановление"

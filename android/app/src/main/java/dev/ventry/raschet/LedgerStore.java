@@ -53,10 +53,11 @@ public final class LedgerStore extends SQLiteOpenHelper {
     public static final class Balance {
         public long amount, overdue;
     }
+    private final Context appContext;
     public LedgerStore(Context context) { this(context,"raschet-ledger.db"); }
     // Package-private for instrumentation: a distinct database name prevents any
     // test from overwriting or deleting real customer records.
-    LedgerStore(Context context,String databaseName) { super(context,databaseName,null,3); }
+    LedgerStore(Context context,String databaseName) { super(context,databaseName,null,3); appContext=context.getApplicationContext(); }
     @Override public void onCreate(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE clients (id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, phone TEXT NOT NULL)");
         db.execSQL("CREATE TABLE entries (seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE, client_id TEXT NOT NULL REFERENCES clients(id), type TEXT NOT NULL, amount INTEGER NOT NULL, date TEXT NOT NULL, due TEXT NOT NULL, note TEXT NOT NULL, reverses TEXT NOT NULL, purchase TEXT NOT NULL DEFAULT '')");
@@ -375,6 +376,7 @@ public final class LedgerStore extends SQLiteOpenHelper {
         if(amount<=0||amount>MAX_AMOUNT)throw new IllegalArgumentException("Неверная сумма.");
         if(note==null||note.length()>200)throw new IllegalArgumentException("Комментарий слишком длинный.");
         if("debt".equals(type)) {
+            dev.ventry.raschet.license.LicenseManager.requireNewDebt(appContext);
             if(due!=null&&!due.isEmpty()) { try { LocalDate.parse(due); } catch(Exception ex) {throw new IllegalArgumentException("Неверный срок.");} }
         } else due="";
             boolean exists=false;
