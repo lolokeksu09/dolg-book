@@ -3,7 +3,8 @@ package dev.ventry.raschet.license
 import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -23,7 +24,9 @@ class LicenseActivity:ComponentActivity(){
         super.onCreate(savedInstanceState)
         if(!BuildConfig.LICENSE_REQUIRED){finish();return}
         window.setFlags(WindowManager.LayoutParams.FLAG_SECURE,WindowManager.LayoutParams.FLAG_SECURE)
-        setContent{
+        val view=ComposeView(this)
+        view.setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+        view.setContent{
             LedgerMaterialTheme{
                 val context=applicationContext
                 var code by remember{mutableStateOf("")}
@@ -69,5 +72,6 @@ class LicenseActivity:ComponentActivity(){
                     dismissButton={TextButton(onClick={confirm=false}){Text("Отмена")}})
             }
         }
+        setContentView(view)
     }
 }
