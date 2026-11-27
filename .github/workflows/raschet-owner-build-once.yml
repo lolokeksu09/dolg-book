@@ -1,0 +1,48 @@
+name: Raschet owner TLS build
+on:
+  push:
+    branches:
+      - 'build/raschet-owner-tls-20261127'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  owner-apk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Compile owner-only APK
+        env:
+          PUBLIC_KEY: '6baddce4896553d9f94d1408fa9486e049dd016256a3ab89fd65d764f9c8abcc'
+          CA_DER: 'MIIEPjCCAqagAwIBAgIUGgTgJ1PbYNv117nwBMTSX5eQf2MwDQYJKoZIhvcNAQELBQAwJTEjMCEGA1UEAwwaVmVudHJ5IERlbGl2ZXJ5IFByaXZhdGUgQ0EwHhcNMjYxMTI3MTAzNjMxWhcNMjgxMTI2MTAzNjMxWjAlMSMwIQYDVQQDDBpWZW50cnkgRGVsaXZlcnkgUHJpdmF0ZSBDQTCCAaIwDQYJKoZIhvcNAQEBBQADggGPADCCAYoCggGBAJ/bQ9RInNRR/UYt5HZAUzyfPj5uClAsHAh67gDteOPd3XUNrUcfHyshoDZqEfWuYrbVWVadZlixB6GsvExaZ/gB327W+RyIGJQwGc0YapyRXBMBuuWBwOrWmXeR4EdpdunsrOZcXwbVUG84S1wYiVHmwtmOZaxeLyo3ugIFkkjPyAoZ54cu/0tOG6wACGUIty3g678zQxFOvgIQnvbUjMdMwmZnHD5qPafxo7NsTY7cp9gfs6z+Ek6Hz0pOAQGMGyZdeNhc4p1AmpGfGOTcCnwGsTAYVSNI/f/3iuMDixzt+uMYZeERayLlg2GGPNYPr8rD7e739Z2Z41YhM4kOCCNpeoNV6jPhQdM69CicMgqDVOh5RxICm+snsLtbJkp/nJnNzUw7cCJfcDA1mlWWJSXzE6fFrnLOnQXL/znGBSWrhX1fGy8j0KELod0OYEWbuP42petoe0kebnSTOsJU50ibA6epg/3UqhwO9q6HxtCU+48OFERm2xCbDxzLqVhtVQIDAQABo2YwZDAdBgNVHQ4EFgQUMNsg+NEQBJU5GoYLjl71Iwhc0fkwHwYDVR0jBBgwFoAUMNsg+NEQBJU5GoYLjl71Iwhc0fkwEgYDVR0TAQH/BAgwBgEB/wIBADAOBgNVHQ8BAf8EBAMCAQYwDQYJKoZIhvcNAQELBQADggGBAGRX/yA7EoBEkqF41+249L3TNpXdUrcsX/hPuH4khNBCb1U796t/vImOpxnOtzsx1Hq9S3KSYT5ccyxr/HazPzVv7EdBfX8uIk5gMSWjk5h/VGyzSG29yr1UJ4WsfTkB9yyo/ejonKDmb4OTj3rxioEoT20qcj4Hl8gRqfTOe3y6PZwNa87jwI+cBuAdz6FmhDGwJauEU9rdcIcdBXTjuKUxXha4TZhs5olA+UgfWmL49dMmubpqwqfKYzhCCQfBM+mkkUGavQYgnOfgB5T7lz1hFFHcHzIeHnRr5VhrLGSGn58cadR/YLsoz8yVfXdD5ffzxc/kEHJ/QEGouzYCYhtLCGiZ0CRw2+VUg6SRtYmdH/xvskMJYsJDScvgtjB5iRlLuCw6ZyjcGdAtkmS9rKpLvCkaUv0BIc6yCgpC/fYqdWxwoNSsDBaTkKzzEg//TiGSIZwx0vwhA8l5XZpQClSoyK9qWIq4THmQihiCfyjQEwldCSxew6yqnQ12LUEJMQ=='
+        run: |
+          set -euo pipefail
+          [[ "$PUBLIC_KEY" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$CA_DER" =~ ^[A-Za-z0-9+/]+={0,2}$ ]]
+          sdkmanager_bin="${ANDROID_HOME:-/usr/local/lib/android/sdk}/cmdline-tools/latest/bin/sdkmanager"
+          "$sdkmanager_bin" --install 'platforms;android-35' 'build-tools;35.0.0'
+          gradle -p android -PraschetLicensePublicKey="$PUBLIC_KEY" -PraschetLicenseOrigin=https://127.0.0.1:18444 -PraschetLicenseCaDer="$CA_DER" testDebugUnitTest lintDebug assembleDebug --no-daemon
+          apk=android/app/build/outputs/apk/debug/app-debug.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$apk"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$apk" | grep -F "package: name='dev.ventry.raschet.licensedstaging'"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump permissions "$apk" | grep -F 'android.permission.INTERNET'
+          mkdir -p "$RUNNER_TEMP/owner-apk"
+          cp "$apk" "$RUNNER_TEMP/owner-apk/Raschet-owner-staging.apk"
+          (cd "$RUNNER_TEMP/owner-apk" && sha256sum Raschet-owner-staging.apk > SHA256SUMS)
+          printf '%s\n' "$GITHUB_SHA" > "$RUNNER_TEMP/owner-apk/REVISION"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Raschet-owner-staging
+          path: ${{ runner.temp }}/owner-apk/
+          if-no-files-found: error
+          retention-days: 7
