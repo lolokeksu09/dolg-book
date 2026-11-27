@@ -68,6 +68,16 @@ object LicenseManager {
             Overview(title,detail,c.subscription,allowed)
         }catch(_:Exception){Overview("Требуется проверка","Лицензия не читается. Данные книги не изменены.")}
     }
+    internal class CloudCredential(val installation:String,val refresh:String){
+        override fun toString()="CloudCredential(redacted)"
+    }
+    internal fun cloudCredential(context:Context):CloudCredential=synchronized(lock){
+        require(BuildConfig.LICENSE_PUBLIC_PROFILE){"Облако недоступно в этой сборке."}
+        val r=LicenseVault(context).read()?:throw IllegalArgumentException("Сначала активируйте лицензию.")
+        require(r.pendingCode==null && claims(r)!=null){"Сначала завершите проверку лицензии."}
+        // Expired signed claims are valid for authenticated read; server decides write access.
+        CloudCredential(r.installation,r.refresh)
+    }
     internal fun hasPending(context:Context)=synchronized(lock){runCatching{LicenseVault(context).read()?.pendingCode!=null}.getOrDefault(false)}
     internal class Denied:Exception()
     internal class Unavailable:Exception()

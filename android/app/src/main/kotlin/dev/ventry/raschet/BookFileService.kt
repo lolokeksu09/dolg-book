@@ -113,6 +113,22 @@ internal object BookFileService {
                 is FileTask.RestorePoint -> {
                     vault.openLatest().use { restore(app, ledger, it, task.preferencesName, vault) }
                 }
+                is FileTask.Cloud.Put -> {
+                    try {
+                        dev.ventry.raschet.cloud.CloudBookService.save(app,ledger,task)
+                        receipt("Зашифрованная облачная копия сохранена.")
+                    } finally { task.clearSecret() }
+                }
+                is FileTask.Cloud.Restore -> {
+                    try {
+                        val bytes=dev.ventry.raschet.cloud.CloudBookService.open(app,task)
+                        try {
+                            BackupSize.openUtf8(bytes.inputStream()).use {
+                                restore(app,ledger,it,task.preferencesName,vault)
+                            }
+                        } finally { bytes.fill(0) }
+                    } finally { task.clearSecret() }
+                }
                 FileTask.CreatePoint -> {
                     vault.create(ledger)
                     receipt("Защищённая точка создана.")

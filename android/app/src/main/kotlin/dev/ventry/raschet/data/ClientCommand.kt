@@ -13,6 +13,13 @@ sealed interface ClientCommand {
         data class Import(val uri: String, val preferencesName: String) : FileTask
         data class RestorePoint(val preferencesName: String) : FileTask
         data object CreatePoint : FileTask
+        // Never a data class: the passphrase must not be included in toString or saved state.
+        sealed class Cloud(val passphrase:CharArray):FileTask {
+            class Put(val slot:Int,val expected:String?,passphrase:CharArray):Cloud(passphrase)
+            class Restore(val slot:Int,val version:String,val size:Int,val sha256:String,val preferencesName:String,passphrase:CharArray):Cloud(passphrase)
+            fun clearSecret(){passphrase.fill('\u0000')}
+            final override fun toString()="CloudBackup(redacted)"
+        }
     }
     data class Create(val id: String, val name: String, val phone: String, val allowDuplicate: Boolean) : ClientCommand
     data class Edit(val id: String, val name: String, val phone: String) : ClientCommand
