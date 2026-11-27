@@ -1,7 +1,22 @@
+import java.net.URI
+
 plugins {
     id("com.android.application") version "8.10.1"
     id("org.jetbrains.kotlin.android") version "2.2.21"
     id("org.jetbrains.kotlin.plugin.compose") version "2.2.21"
+}
+
+// Opt-in isolated licensed staging; ordinary debug/release remain compatible with
+// current public RC. Production enforcement needs a separate reviewed key rollout.
+val licensePin = providers.gradleProperty("raschetLicensePublicKey").orNull
+val licenseOrigin = providers.gradleProperty("raschetLicenseOrigin").orNull
+require((licensePin == null) == (licenseOrigin == null)) { "Both license staging properties are required" }
+if (licensePin != null) {
+    require(licensePin.matches(Regex("[0-9a-f]{64}"))) { "Expected raw Ed25519 public key hex" }
+    val origin = URI(licenseOrigin!!)
+    require(origin.scheme == "http" && origin.host == "127.0.0.1" &&
+        origin.port in 1..65535 && origin.rawUserInfo == null && origin.rawQuery == null &&
+        origin.rawFragment == null && origin.rawPath.isNullOrEmpty()) { "Staging must use explicit loopback HTTP" }
 }
 
 android {
@@ -10,6 +25,9 @@ android {
     buildFeatures { buildConfig = true; compose = true }
     defaultConfig {
         buildConfigField("boolean", "RUST_PREVIEW", "false")
+        buildConfigField("boolean", "LICENSE_REQUIRED", "false")
+        buildConfigField("String", "LICENSE_PUBLIC_KEY", "\"\"")
+        buildConfigField("String", "LICENSE_ORIGIN", "\"\"")
         applicationId = "dev.ventry.raschet"
         minSdk = 26
         targetSdk = 35
@@ -20,6 +38,12 @@ android {
     buildTypes {
         getByName("debug") {
             applicationIdSuffix = ".nativev031"
+            if (licensePin != null) {
+                applicationIdSuffix = ".licensedstaging"
+                buildConfigField("boolean", "LICENSE_REQUIRED", "true")
+                buildConfigField("String", "LICENSE_PUBLIC_KEY", "\"$licensePin\"")
+                buildConfigField("String", "LICENSE_ORIGIN", "\"$licenseOrigin\"")
+            }
         }
         getByName("release") {
             // Release corrections must use the packaged Rust JNI engine.
@@ -39,6 +63,11 @@ kotlin {
 }
 
 android.sourceSets.getByName("test").resources.srcDir(rootProject.projectDir.parentFile.resolve("tests/contracts"))
+if (licensePin != null) {
+    android.sourceSets.getByName("debug").manifest.srcFile("src/licensedStaging/AndroidManifest.xml")
+    android.sourceSets.getByName("debug").res.srcDir("src/licensedStaging/res")
+    android.sourceSets.getByName("androidTest").java.srcDir("src/licensedStagingAndroidTest/kotlin")
+}
 
 // Every release includes Rust. Debug remains Kotlin-only unless explicitly selected,
 // keeping host unit tests independent of Android ELF libraries.
@@ -81,6 +110,8 @@ dependencies {
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
     implementation("androidx.activity:activity:1.10.1")
+    // Lightweight Ed25519 verification works below the platform EdDSA API level.
+    implementation("org.bouncycastle:bcprov-jdk15to18:1.87")
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.7")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
