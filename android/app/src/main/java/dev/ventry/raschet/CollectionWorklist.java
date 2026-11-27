@@ -43,9 +43,14 @@ final class CollectionWorklist {
     }
     static List<Item> build(List<CollectionsInsights.CustomerStatus> statuses,ClientDirectory directory,LocalDate today){return build(statuses,directory,today,java.util.Collections.emptyMap());}
     static List<Item> build(List<CollectionsInsights.CustomerStatus> statuses,ClientDirectory directory,LocalDate today,java.util.Map<String,PaymentPromises.Progress> promises){
+        java.util.Map<String,ClientDirectory.FollowUp> plans=new java.util.HashMap<>();
+        for(CollectionsInsights.CustomerStatus s:statuses){ClientDirectory.FollowUp plan=directory.followUp(s.client.id);if(plan!=null)plans.put(s.client.id,plan);}
+        return build(statuses,directory,today,promises,plans);
+    }
+    static List<Item> build(List<CollectionsInsights.CustomerStatus> statuses,ClientDirectory directory,LocalDate today,java.util.Map<String,PaymentPromises.Progress> promises,java.util.Map<String,ClientDirectory.FollowUp> plans){
         List<Item> result=new ArrayList<>();
         for(CollectionsInsights.CustomerStatus s:statuses)
-            if(s.balance>0)result.add(new Item(s,directory.followUp(s.client.id),directory.debtLimit(s.client.id),today,promises.get(s.client.id)));
+            if(s.balance>0)result.add(new Item(s,plans.get(s.client.id),directory.debtLimit(s.client.id),today,promises.get(s.client.id)));
         result.sort(Comparator.comparingInt((Item i)->i.priority)
                 .thenComparing(i->i.followUp==null?LocalDate.MAX:i.followUp.date)
                 .thenComparing(Comparator.comparingLong((Item i)->i.status.overdue).reversed())

@@ -54,21 +54,43 @@ public final class LedgerStore extends SQLiteOpenHelper {
         public long amount, overdue;
     }
     private final Context appContext;
-    public LedgerStore(Context context) { this(context,"raschet-ledger.db"); }
+    private final ClientDirectory legacyDirectory;
+    public LedgerStore(Context context) { this(context,"raschet-ledger.db",new ClientDirectory(context)); }
     // Package-private for instrumentation: a distinct database name prevents any
     // test from overwriting or deleting real customer records.
-    LedgerStore(Context context,String databaseName) { super(context,databaseName,null,3); appContext=context.getApplicationContext(); }
+    LedgerStore(Context context,String databaseName) { this(context,databaseName,null); }
+    LedgerStore(Context context,String databaseName,ClientDirectory legacyDirectory) {
+        super(context,databaseName,null,4);
+        appContext=context.getApplicationContext();this.legacyDirectory=legacyDirectory;
+    }
     @Override public void onCreate(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE clients (id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, phone TEXT NOT NULL)");
         db.execSQL("CREATE TABLE entries (seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE, client_id TEXT NOT NULL REFERENCES clients(id), type TEXT NOT NULL, amount INTEGER NOT NULL, date TEXT NOT NULL, due TEXT NOT NULL, note TEXT NOT NULL, reverses TEXT NOT NULL, purchase TEXT NOT NULL DEFAULT '')");
         db.execSQL("CREATE INDEX entries_client_seq ON entries(client_id, seq)");
         createCatalog(db);
+        FollowUpJournal.create(db);
     }
     @Override public void onUpgrade(SQLiteDatabase db,int oldVersion,int newVersion) {
-        if(oldVersion<1||newVersion!=3)throw new IllegalStateException("Unsupported migration");
+        if(oldVersion<1||oldVersion>3||newVersion!=4)throw new IllegalStateException("Unsupported migration");
         if(oldVersion==1)db.execSQL("ALTER TABLE entries ADD COLUMN purchase TEXT NOT NULL DEFAULT ''");
-        if(oldVersion<=2){createCatalog(db);return;}
-        throw new IllegalStateException("Database migration missing; keep existing customer data");
+        if(oldVersion<=2)createCatalog(db);
+        FollowUpJournal.create(db);
+        if(legacyDirectory!=null)FollowUpJournal.migrate(db,legacyDirectory);
+    }
+    public synchronized List<FollowUpJournal.Record> followUpHistory(){
+        return FollowUpJournal.read(getReadableDatabase());
+    }
+    public synchronized FollowUpJournal.Record currentPlan(String client){
+        return FollowUpJournal.current(getReadableDatabase(),client);
+    }
+    public synchronized void saveFollowUp(dev.ventry.raschet.data.ClientCommand.FollowUp command){
+        SQLiteDatabase db=getWritableDatabase();db.beginTransaction();
+        try{
+            if(!hasClientId(command.getClientId()))throw new IllegalArgumentException("Клиент не найден.");
+            FollowUpJournal.save(db,command.getClientId(),command.getExpectedId(),command.getDay(),
+                command.getNote(),command.getAmount(),command.getRestart(),entriesForClient(command.getClientId()),LocalDate.now());
+            db.setTransactionSuccessful();
+        }finally{db.endTransaction();}
     }
     private static void createCatalog(SQLiteDatabase db){
         db.execSQL("CREATE TABLE products (id TEXT PRIMARY KEY NOT NULL,name TEXT NOT NULL,category TEXT NOT NULL,unit TEXT NOT NULL,price INTEGER NOT NULL,favorite INTEGER NOT NULL,archived INTEGER NOT NULL)");
@@ -146,7 +168,7 @@ public final class LedgerStore extends SQLiteOpenHelper {
         db.beginTransactionNonExclusive();
         try {
             dev.ventry.raschet.data.LedgerSnapshot snapshot=
-                    new dev.ventry.raschet.data.LedgerSnapshot(clients(),entries());
+                    new dev.ventry.raschet.data.LedgerSnapshot(clients(),entries(),followUpHistory());
             db.setTransactionSuccessful();
             return snapshot;
         }finally{db.endTransaction();}
@@ -276,6 +298,10 @@ public final class LedgerStore extends SQLiteOpenHelper {
             int rank=journalRank(db,"payment",command.getDay(),ZoneId.systemDefault());
             boolean settled=balance(entriesForClient(command.getClientId()),command.getClientId())==command.getAmount();
             addDraftPayment(command.getClientId(),command.getAmount(),command.getNote(),command.getId(),command.getDay());
+            if(settled){
+                FollowUpJournal.Record plan=FollowUpJournal.current(db,command.getClientId());
+                if(plan!=null&&plan.amount==0L)FollowUpJournal.close(db,plan,command.getId(),LocalDate.now(),"settled");
+            }
             dev.ventry.raschet.data.WriteReceipt receipt=new dev.ventry.raschet.data.WriteReceipt(
                     command.getDestination(),"payment",command.getClientId(),command.getDay(),rank,settled);
             db.setTransactionSuccessful();
@@ -538,13 +564,23 @@ public final class LedgerStore extends SQLiteOpenHelper {
             }
             output.write(']');
             List<Product> catalog=products();
-            if(!catalog.isEmpty()||version==4){
+            List<FollowUpJournal.Record> plans=followUpHistory();
+            if(!catalog.isEmpty()||version==4||!plans.isEmpty()){
                 version=4;
                 output.write(",\"products\":[");
                 first=true;
                 for(Product product:catalog){
                     if(!first)output.write(',');first=false;
                     output.write(product.json().toString());
+                }
+                output.write(']');
+            }
+            if(!plans.isEmpty()){
+                version=5;
+                output.write(",\"plans\":[");
+                first=true;
+                for(FollowUpJournal.Record plan:plans){
+                    if(!first)output.write(',');first=false;output.write(plan.json().toString());
                 }
                 output.write(']');
             }
@@ -571,7 +607,7 @@ public final class LedgerStore extends SQLiteOpenHelper {
         db.beginTransaction();
         try{
             db.execSQL("CREATE TEMP TABLE raschet_import_stage (seq INTEGER PRIMARY KEY,kind TEXT NOT NULL,row_json TEXT NOT NULL)");
-            int version=0,clientCount=-1,entryCount=-1,productCount=-1;
+            int version=0,clientCount=-1,entryCount=-1,productCount=-1,planCount=-1;
             Set<String> fields=new HashSet<>();
             android.util.JsonReader reader=new android.util.JsonReader(new ImportJsonGuard(source));
             reader.beginObject();
@@ -584,15 +620,16 @@ public final class LedgerStore extends SQLiteOpenHelper {
                     switch(key){
                         case "version":
                             if(reader.peek()!=android.util.JsonToken.NUMBER)
-                                throw new IllegalArgumentException("Поддерживаются копии v1–v4.");
+                                throw new IllegalArgumentException("Поддерживаются копии v1–v5.");
                             String raw=reader.nextString();
-                            if(!raw.matches("[1-4]"))
-                                throw new IllegalArgumentException("Поддерживаются копии v1–v4.");
+                            if(!raw.matches("[1-5]"))
+                                throw new IllegalArgumentException("Поддерживаются копии v1–v5.");
                             version=Integer.parseInt(raw);
                             break;
                         case "clients": clientCount=stageRows(reader,stage,key,MAX_CLIENTS);break;
                         case "entries": entryCount=stageRows(reader,stage,key,MAX_ENTRIES);break;
                         case "products": productCount=stageRows(reader,stage,key,Product.MAX_PRODUCTS);break;
+                        case "plans": planCount=stageRows(reader,stage,key,FollowUpJournal.MAX_PLANS);break;
                         default: reader.skipValue();
                     }
                 }
@@ -600,10 +637,10 @@ public final class LedgerStore extends SQLiteOpenHelper {
             reader.endObject();
             if(reader.peek()!=android.util.JsonToken.END_DOCUMENT)
                 throw new IllegalArgumentException("Лишние данные после JSON.");
-            if(version<1||version>4||clientCount<0||entryCount<0)
+            if(version<1||version>5||clientCount<0||entryCount<0)
                 throw new IllegalArgumentException("Неполная книга или неподдерживаемая версия.");
-            if((version==4)!=(productCount>=0))
-                throw new IllegalArgumentException("Каталог требует JSON v4.");
+            if((version>=4)!=(productCount>=0)||(version==5)!=(planCount>=0))
+                throw new IllegalArgumentException("Некорректный каталог или история планов для версии JSON.");
 
             List<Product> newProducts=new ArrayList<>();
             Set<String> productIds=new HashSet<>(),productKeys=new HashSet<>();
@@ -631,6 +668,7 @@ public final class LedgerStore extends SQLiteOpenHelper {
             // All changes below are uncommitted until validation of the last entry succeeds.
             db.delete("products",null,null);
             for(Product p:newProducts)db.insertOrThrow("products",null,productValues(p));
+            db.delete("collection_plans",null,null);
             db.delete("entries",null,null);
             db.delete("clients",null,null);
             for(Client c:newClients){
@@ -673,6 +711,15 @@ public final class LedgerStore extends SQLiteOpenHelper {
                     history.accept(cid,id,type,amount,reverses,note);
                     Entry e=new Entry(id,cid,type,amount,date,due,note,reverses,purchase);
                     db.insertOrThrow("entries",null,values(e));
+                }
+            }
+            if(planCount>=0){
+                FollowUpJournal.ImportCheck check=new FollowUpJournal.ImportCheck(db,ids);
+                try(Cursor rows=stagedRows(db,"plans")){
+                    while(rows.moveToNext()){
+                        FollowUpJournal.Record plan=FollowUpJournal.Record.parse(new JSONObject(rows.getString(0)));
+                        check.accept(plan);FollowUpJournal.insert(db,plan);
+                    }
                 }
             }
             db.execSQL("DROP TABLE raschet_import_stage");

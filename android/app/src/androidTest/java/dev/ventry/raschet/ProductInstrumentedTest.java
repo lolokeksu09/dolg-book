@@ -61,13 +61,15 @@ public class ProductInstrumentedTest {
                 book.addPurchase(book.clients().get(0).id,new Purchase(Collections.singletonList(
                         new Purchase.Item("Старый товар",1000,12345)),0),"","");
                 SQLiteDatabase sql=book.getWritableDatabase();
+                sql.execSQL("DROP TABLE collection_plans");
                 sql.execSQL("DROP TABLE products");
                 sql.setVersion(2);
             }
             try(LedgerStore book=new LedgerStore(context,db)){
                 assertEquals(12345,book.entries().get(0).purchase.total);
                 assertTrue(book.products().isEmpty());
-                assertEquals(3,book.getReadableDatabase().getVersion());
+                assertEquals(4,book.getReadableDatabase().getVersion());
+                assertTrue(book.followUpHistory().isEmpty());
             }
         }finally{context.deleteDatabase(db);}
     }

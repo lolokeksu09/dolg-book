@@ -82,8 +82,9 @@ internal fun projectBook(data: BookScreenData, payments: Boolean, from: LocalDat
     pending: QuickDebtDrafts.Draft?, backupMissing: Boolean, zone: ZoneId): BookUiModel {
     val entries = data.snapshot.entries
     val people = data.snapshot.clients.associateBy { it.id }
-    val promises = PaymentPromises.project(data.statuses, directory, entries, data.today, zone)
-    val work = CollectionWorklist.build(data.statuses, directory, data.today, promises)
+    val plans = data.snapshot.currentFollowUps()
+    val promises = PaymentPromises.project(data.statuses, plans, entries, data.today, zone)
+    val work = CollectionWorklist.build(data.statuses, directory, data.today, promises, plans)
     val allDays = if (payments) BookDays.groupPayments(entries, zone) else BookDays.group(entries, zone)
     val days = BookDays.select(allDays, people, from, to, query, onlyUnpaid && !payments)
     val draft = pending?.takeIf { it.id !in people && entries.none { entry -> entry.id == it.id } }

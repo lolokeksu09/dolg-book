@@ -58,14 +58,17 @@ import kotlin.coroutines.coroutineContext
 internal data class CollectionUiModel(
     val work: List<CollectionWorklist.Item>, val total: Long, val overdue: Long,
     val upcoming: Long, val today: LocalDate,
-    val agenda: CollectionAgenda = CollectionAgenda.build(work, today)
+    val agenda: CollectionAgenda = CollectionAgenda.build(work, today),
+    val history: List<PromiseHistory.Row> = emptyList()
 )
 
 internal fun projectCollections(data: BookScreenData, directory: ClientDirectory, zone: ZoneId): CollectionUiModel {
-    val promises = PaymentPromises.project(data.statuses, directory, data.snapshot.entries, data.today, zone)
-    val work = CollectionWorklist.build(data.statuses, directory, data.today, promises)
+    val plans = data.snapshot.currentFollowUps()
+    val promises = PaymentPromises.project(data.statuses, plans, data.snapshot.entries, data.today, zone)
+    val work = CollectionWorklist.build(data.statuses, directory, data.today, promises, plans)
     return CollectionUiModel(work, work.sumOf { it.status.balance },
-        work.sumOf { it.status.overdue }, work.sumOf { it.status.upcoming }, data.today)
+        work.sumOf { it.status.overdue }, work.sumOf { it.status.upcoming }, data.today,
+        history = PromiseHistory.project(data.snapshot, data.today, zone))
 }
 
 internal data class CollectionActions(
@@ -121,6 +124,7 @@ object CollectionsCompose {
 @Composable
 internal fun CollectionContent(model: CollectionUiModel, initialQuery: String, initialUrgent: Boolean,
     initialLimit: Int, largeText: Boolean, actions: CollectionActions, initialPlan: String = "ALL") {
+    var historyMode by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf(initialQuery) }
     var urgent by remember { mutableStateOf(initialUrgent) }
     var limit by remember { mutableIntStateOf(initialLimit) }
@@ -139,6 +143,10 @@ internal fun CollectionContent(model: CollectionUiModel, initialQuery: String, i
         catch (_: Exception) { coroutineContext.ensureActive(); failed = true }
     }
 
+    if (historyMode) {
+        PromiseHistoryContent(model.history, model.today, onBack = { historyMode = false })
+        return
+    }
     BoxWithConstraints(Modifier.fillMaxSize().background(ledgerBg), contentAlignment = Alignment.TopCenter) {
         val stacked = largeText || maxWidth < 340.dp || LocalDensity.current.fontScale > 1.2f
         val result = visible
@@ -147,6 +155,7 @@ internal fun CollectionContent(model: CollectionUiModel, initialQuery: String, i
             item("title") {
                 Text("Возврат долгов", color = ledgerText, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
                 Text("План работы с непогашенными долгами", color = ledgerMuted, fontSize = 13.sp)
+                TextButton(onClick = { historyMode = true }, modifier = Modifier.testTag("open_promise_history")) { Text("История обещаний") }
             }
             item("total") {
                 Column(Modifier.fillMaxWidth().background(ledgerPanel, RoundedCornerShape(12.dp)).padding(14.dp),

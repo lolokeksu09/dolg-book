@@ -415,7 +415,8 @@ public final class MainActivity extends ComponentActivity {
                 id->showEntryForm(id,"payment"),this::showFollowUp,collectionPlanFilter,plan->collectionPlanFilter=plan);
     }
     private void showFollowUp(LedgerStore.Client person){
-        ClientDirectory.FollowUp old=directory.followUp(person.id);
+        FollowUpJournal.Record current=ledger.currentPlan(person.id);
+        ClientDirectory.FollowUp old=current==null?null:current.plan();
         LocalDate[] day={old==null?LocalDate.now():old.date};
         LinearLayout form=stack(6);
         form.addView(label(person.name,16,TEXT,true));
@@ -434,26 +435,19 @@ public final class MainActivity extends ComponentActivity {
         if(old!=null&&old.amount>0)form.addView(restartPromise);
         EditText note=field("О чём договорились",old==null?null:old.note);
         form.addView(formGroup("Комментарий (необязательно)",note));
-        form.addView(label("Без суммы это обычный план контакта. Оплаты после создания обещания учитываются автоматически. Изменение суммы начинает новый отсчёт. План не меняет долг или срок возврата и хранится локально.",12,MUTED,false));
+        form.addView(label("Без суммы — план контакта. Изменение суммы или новый отсчёт закрывают прежнее обещание в истории. План не меняет сумму долга; сохраняется в книге и JSON-копии.",12,MUTED,false));
         if(old!=null)addButton(form,"Удалить план",false,()->{
-            try{directory.setFollowUp(person.id,null,"");if(chooser!=null)chooser.dismiss();render();}catch(Exception e){message(e.getMessage());}
+            try{
+                if(bookViewModel.submitClient(new ClientCommand.FollowUp(person.id,current.id,null,"",0L,true))){
+                    if(chooser!=null)chooser.dismiss();render();
+                }
+            }catch(Exception e){message(e.getMessage());}
         },1);
-        showDialog("План возврата",form,()->{
-            List<LedgerStore.Entry> entries=ledger.entries();
-            long balance=LedgerStore.balance(entries,person.id);
+        showDialog("План возврата",form,null,()->{
             String raw=promised.getText().toString().trim();
             long target=raw.isEmpty()?0L:LedgerStore.parseAmount(raw);
-            String comment=note.getText().toString().trim();
-            if(target==0){
-                if(balance<=0)throw new IllegalArgumentException("Долг уже погашен.");
-                directory.setFollowUp(person.id,day[0],comment);return true;
-            }
-            boolean keep=!restartPromise.isChecked()&&old!=null&&old.amount==target&&!old.anchor.isEmpty()&&PaymentPromises.calculate(entries,person.id,old,LocalDate.now(),ZoneId.systemDefault()).valid;
-            if(!keep&&(target>balance||day[0].isBefore(LocalDate.now())))
-                throw new IllegalArgumentException("Новое обещание: сумма не выше остатка, дата не раньше сегодняшней.");
-            String anchor=keep?old.anchor:PaymentPromises.lastEntryId(entries,person.id);
-            if(anchor.isEmpty())throw new IllegalArgumentException("Нет исходной операции.");
-            directory.setFollowUp(person.id,day[0],comment,target,anchor);return true;
+            return new ClientCommand.FollowUp(person.id,current==null?null:current.id,day[0],
+                note.getText().toString().trim(),target,restartPromise.isChecked());
         });
     }
     private boolean hasBookFilter(){return bookFrom!=null||!bookQuery.trim().isEmpty()||bookOnlyUnpaid;}
@@ -614,7 +608,7 @@ public final class MainActivity extends ComponentActivity {
             clientMenuAction(menu,"Долг по товарам",()->showPurchaseForm(id));
             clientMenuAction(menu,"Изменить клиента",()->showClientForm(client));
             clientMenuAction(menu,"Лимит задолженности",()->showDebtLimit(client));
-            if(amount>0||directory.followUp(id)!=null)clientMenuAction(menu,"План возврата",()->showFollowUp(client));
+            if(amount>0||ledger.currentPlan(id)!=null)clientMenuAction(menu,"План возврата",()->showFollowUp(client));
             if(ledger.lastActive(id)!=null){
                 clientMenuAction(menu,"Исправить последнюю запись",()->showCorrection(id));
                 clientMenuAction(menu,"Отменить запись",()->showReversal(id));
@@ -1637,7 +1631,8 @@ public final class MainActivity extends ComponentActivity {
             },1);
             fullButton[0]=(TextView)amounts.getChildAt(1);
             content.addView(amounts,margin(-1,dp(controlHeight()),0));
-            ClientDirectory.FollowUp promise=directory.followUp(clientId);
+            FollowUpJournal.Record agreement=ledger.currentPlan(clientId);
+            ClientDirectory.FollowUp promise=agreement==null?null:agreement.plan();
             if(promise!=null&&promise.amount>0){
                 PaymentPromises.Progress progress=PaymentPromises.calculate(clientEntries,clientId,promise,LocalDate.now(),ZoneId.systemDefault());
                 long outstanding=Math.min(available,Math.max(0L,promise.amount-progress.paid));

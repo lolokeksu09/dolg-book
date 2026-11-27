@@ -2,12 +2,14 @@ package dev.ventry.raschet.data
 
 import android.content.Context
 import dev.ventry.raschet.LedgerStore
+import dev.ventry.raschet.FollowUpJournal
 import java.util.Collections
 
 /** A coherent read of one committed book; lists cannot be mutated by UI callers. */
-class LedgerSnapshot(clients: List<LedgerStore.Client>, entries: List<LedgerStore.Entry>) {
+class LedgerSnapshot @JvmOverloads constructor(clients: List<LedgerStore.Client>, entries: List<LedgerStore.Entry>, plans: List<FollowUpJournal.Record> = emptyList()) {
     val clients: List<LedgerStore.Client> = Collections.unmodifiableList(ArrayList(clients))
     val entries: List<LedgerStore.Entry> = Collections.unmodifiableList(ArrayList(entries))
+    val plans: List<FollowUpJournal.Record> = Collections.unmodifiableList(ArrayList(plans))
 }
 
 /** Blocking data boundary. State holders call it on a worker dispatcher. */
