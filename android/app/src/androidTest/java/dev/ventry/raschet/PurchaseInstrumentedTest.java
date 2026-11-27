@@ -55,7 +55,8 @@ public class PurchaseInstrumentedTest {
                 assertEquals(80000,LedgerStore.balance(book.entries(),"a"));
                 assertNull(book.entries().get(0).purchase);
                 assertEquals("old",book.entries().get(0).note);
-                assertEquals(3,book.getReadableDatabase().getVersion());
+                assertEquals(4,book.getReadableDatabase().getVersion());
+                assertTrue(book.followUpHistory().isEmpty());
                 assertTrue(book.products().isEmpty());
             }
         }finally{ctx.deleteDatabase(db);}
