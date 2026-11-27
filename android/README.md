@@ -300,3 +300,7 @@ The native app uses the Ventry forest, sand and moss palette. Catalog management
 ## Release с Rust JNI — кандидат интеграции
 
 См. [требования и приёмку](../docs/RASCHET-RUST-RELEASE-REFACTOR.md). Перед сборкой release на Linux CI установить NDK 28.2.13676358 и Rust 1.85.1, выполнить `bash scripts/build-rust-android.sh`, затем `gradle -p android lintRelease assembleRelease --no-daemon`. Четыре ABI обязательны, проверка ZIP/ELF выполняется в release workflow до публикации. Debug по умолчанию остаётся Kotlin-only; `-PraschetRustPreview=true` включает аналогичный JNI-путь для instrumentation. Старые разделы о debug-only описывают предыдущие этапы.
+
+## 0.30.0-beta.1 — Rust JNI и файловые операции
+
+ВерсияCode 35, кандидат `raschet-v0.30.0-beta.1-rc.1`. Первый релизный вариант с обязательными четырьмя JNI ABI. Релизный запрос `android/release-request.json` изменяется только при явно согласованном выпуске через PR. Push этого файла в main запускает существующие проверки, подписанную сборку и smoke; публикация prerelease отдельным job происходит только после их успеха. Старые теги и файлы не перезаписываются. Проверка физического обновления RC2 и переноса всех метаданных остаётся открытой.
