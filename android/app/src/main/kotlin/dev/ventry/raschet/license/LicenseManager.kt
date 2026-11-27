@@ -86,11 +86,15 @@ object LicenseManager {
         require(BuildConfig.LICENSE_REQUIRED && token.token())
         val connection=URL(BuildConfig.LICENSE_ORIGIN+path).openConnection() as HttpURLConnection
         try{
-            if(connection is HttpsURLConnection){
+            if(BuildConfig.LICENSE_PUBLIC_PROFILE){
+                require(connection is HttpsURLConnection && BuildConfig.LICENSE_CA_DER.isEmpty()
+                    && BuildConfig.LICENSE_ORIGIN=="https://license.ventrylab.top")
+                // Platform trust and hostname verifier only; never trust a private or user CA here.
+            }else if(connection is HttpsURLConnection){
                 require(BuildConfig.LICENSE_CA_DER.isNotEmpty())
                 connection.sslSocketFactory=privateTls
                 // Default hostname verifier remains enabled; IP SAN must match 127.0.0.1.
-            }else require(BuildConfig.LICENSE_CA_DER.isEmpty())
+            }else require(BuildConfig.LICENSE_CA_DER.isEmpty() && connection.url.host=="127.0.0.1")
             connection.instanceFollowRedirects=false;connection.connectTimeout=8000;connection.readTimeout=15000
             connection.useCaches=false;connection.requestMethod="POST";connection.doOutput=true
             connection.setRequestProperty("Authorization","Bearer "+token)
