@@ -38,12 +38,17 @@ final class PaymentPromises {
         return new Progress(plan.amount,paid,onTime,found,found&&paid<plan.amount&&today.isAfter(plan.date));
     }
     static Map<String,Progress> project(List<CollectionsInsights.CustomerStatus> statuses,ClientDirectory directory,List<LedgerStore.Entry> entries,LocalDate today,ZoneId zone){
+        Map<String,ClientDirectory.FollowUp> plans=new HashMap<>();
+        for(CollectionsInsights.CustomerStatus s:statuses){ClientDirectory.FollowUp plan=directory.followUp(s.client.id);if(plan!=null)plans.put(s.client.id,plan);}
+        return project(statuses,plans,entries,today,zone);
+    }
+    static Map<String,Progress> project(List<CollectionsInsights.CustomerStatus> statuses,Map<String,ClientDirectory.FollowUp> plans,List<LedgerStore.Entry> entries,LocalDate today,ZoneId zone){
         Map<String,List<LedgerStore.Entry>> byClient=new HashMap<>();
         for(LedgerStore.Entry e:entries)byClient.computeIfAbsent(e.clientId,k->new ArrayList<>()).add(e);
         Set<String> canceled=LedgerStore.canceled(entries);
         Map<String,Progress> result=new HashMap<>();
         for(CollectionsInsights.CustomerStatus s:statuses){
-            ClientDirectory.FollowUp plan=directory.followUp(s.client.id);
+            ClientDirectory.FollowUp plan=plans.get(s.client.id);
             if(plan!=null&&plan.amount>0)result.put(s.client.id,calculate(byClient.getOrDefault(s.client.id,java.util.Collections.emptyList()),s.client.id,plan,today,zone,canceled));
         }
         return result;

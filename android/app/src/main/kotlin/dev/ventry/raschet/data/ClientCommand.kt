@@ -32,6 +32,7 @@ sealed interface ClientCommand {
         val due: String, val note: String, val reason: String
     ) : ClientCommand
     data class Reversal(val clientId: String, val expectedId: String, val reason: String) : ClientCommand
+    data class FollowUp(val clientId: String, val expectedId: String?, val day: LocalDate?, val note: String, val amount: Long, val restart: Boolean) : ClientCommand
     data class Payment(
         val id: String, val clientId: String, val amount: Long, val day: LocalDate,
         val note: String, val destination: WriteDestination

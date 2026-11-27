@@ -62,8 +62,9 @@ internal data class CollectionUiModel(
 )
 
 internal fun projectCollections(data: BookScreenData, directory: ClientDirectory, zone: ZoneId): CollectionUiModel {
-    val promises = PaymentPromises.project(data.statuses, directory, data.snapshot.entries, data.today, zone)
-    val work = CollectionWorklist.build(data.statuses, directory, data.today, promises)
+    val plans = data.snapshot.currentFollowUps()
+    val promises = PaymentPromises.project(data.statuses, plans, data.snapshot.entries, data.today, zone)
+    val work = CollectionWorklist.build(data.statuses, directory, data.today, promises, plans)
     return CollectionUiModel(work, work.sumOf { it.status.balance },
         work.sumOf { it.status.overdue }, work.sumOf { it.status.upcoming }, data.today)
 }

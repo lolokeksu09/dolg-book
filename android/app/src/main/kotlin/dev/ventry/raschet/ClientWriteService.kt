@@ -31,13 +31,17 @@ object ClientWriteService {
                 is ClientCommand.ItemizedDebt -> repository.savePurchase(command, application)
                 is ClientCommand.Correction -> repository.correct(command)
                 is ClientCommand.Reversal -> repository.reverse(command)
+                is ClientCommand.FollowUp -> {
+                    store.saveFollowUp(command)
+                    WriteReceipt(WriteDestination.KEEP, "follow_up", command.clientId, null, 0, false)
+                }
             }
         }
         // Post-commit housekeeping must never turn a committed operation into a retryable failure.
         try {
             when (command) {
                 is ClientCommand.Create -> clearQuick(application, command.id)
-                is ClientCommand.FileTask, is ClientCommand.Edit, is ClientCommand.Catalog, is ClientCommand.Correction, is ClientCommand.Reversal -> Unit
+                is ClientCommand.FileTask, is ClientCommand.Edit, is ClientCommand.Catalog, is ClientCommand.Correction, is ClientCommand.Reversal, is ClientCommand.FollowUp -> Unit
                 is ClientCommand.ItemizedDebt -> PurchaseDrafts(application).clearCommitted(command.clientId, command.id)
                 is ClientCommand.Debt -> {
                     if (command.quick) clearQuick(application, command.id)
@@ -45,11 +49,6 @@ object ClientWriteService {
                 }
                 is ClientCommand.Payment -> {
                     clearOperation(application, command.clientId, "payment", command.id)
-                    if (receipt.settled) {
-                        val directory = ClientDirectory(application)
-                        val plan = directory.followUp(command.clientId)
-                        if (plan != null && plan.amount == 0L) directory.setFollowUp(command.clientId, null, "")
-                    }
                 }
             }
         } catch (_: Exception) {

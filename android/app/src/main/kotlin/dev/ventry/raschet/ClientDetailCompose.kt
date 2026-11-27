@@ -110,7 +110,7 @@ internal fun detailProjection(
         if (amount > limit) "Превышение " + rubles(amount - limit)
         else "Доступно " + rubles(DebtLimits.remaining(limit, amount)),
         if (amount >= limit) amber else dim)
-    val plan = directory.followUp(id)
+    val plan = snapshot.snapshot.currentFollowUps()[id]
     if (plan != null && plan.amount > 0) {
         val progress = PaymentPromises.calculate(all, id, plan, snapshot.today, zone)
         notices += DetailNotice("Обещано " + rubles(plan.amount) + " до " + dateFormat.format(plan.date), ink)
