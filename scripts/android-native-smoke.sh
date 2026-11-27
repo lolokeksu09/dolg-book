@@ -173,7 +173,7 @@ find_visible() {
     adb shell input swipe 540 1500 540 740 280
     sleep 0.35
   done
-  echo "Missing settings text: $target" >&2
+  echo "Missing visible text: $target" >&2
   return 1
 }
 tap_text 'Резервные копии'
@@ -711,19 +711,16 @@ sleep 0.4
 tap_text 'Сегодня'
 tap_text 'Сохранить'
 sleep 0.5
-dump_ui
-grep -Fq 'Связаться сегодня или раньше' android/build/native-ui.xml
-grep -Fq '123,00' android/build/native-ui.xml
+find_visible 'Связаться сегодня или раньше'
+find_visible '123,00'
 tap_text 'Требуют внимания'
 sleep 0.4
-dump_ui
-grep -Fq 'DraftBuyer' android/build/native-ui.xml
+find_visible 'DraftBuyer'
 tap_text 'Изменить план'
 sleep 0.4
 tap_text 'Удалить план'
 sleep 0.4
-dump_ui
-grep -Fq 'Нет должников по выбранным условиям.' android/build/native-ui.xml
+find_visible 'Нет должников по выбранным условиям.'
 tap_text 'Книга'
 
 # Promise for DraftBuyer: partial receipt, then complete promised amount.
@@ -738,23 +735,20 @@ sleep 0.4
 fill_form_input 0 100
 tap_text 'Сохранить'
 sleep 0.5
-dump_ui
-grep -Fq 'Обещано 100,00' android/build/native-ui.xml
-grep -Fq 'Осталось по обещанию: 100,00' android/build/native-ui.xml
+find_visible 'Обещано 100,00'
+find_visible 'Осталось по обещанию: 100,00'
 tap_text 'Принять оплату'
 sleep 0.4
 fill_form_input 0 40
 tap_text 'Сохранить'
 sleep 0.5
-dump_ui
-grep -Fq 'Осталось по обещанию: 60,00' android/build/native-ui.xml
+find_visible 'Осталось по обещанию: 60,00'
 tap_text 'Принять оплату'
 sleep 0.4
 tap_text 'По обещанию: 60,00 ₽'
 tap_text 'Сохранить'
 sleep 0.5
-dump_ui
-grep -Fq 'Выполнено · получено 100,00' android/build/native-ui.xml
+find_visible 'Выполнено · получено 100,00'
 tap_text 'Книга'
 
 # A payment draft must not post on close, and reopening keeps the entered amount.

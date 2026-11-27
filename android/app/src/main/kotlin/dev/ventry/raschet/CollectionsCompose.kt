@@ -178,41 +178,6 @@ internal fun CollectionContent(model: CollectionUiModel, initialQuery: String, i
                     }
                 }
             }
-            item("agenda") {
-                Column(Modifier.fillMaxWidth().background(ledgerPanel, RoundedCornerShape(12.dp)).padding(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Планы возврата", color = ledgerText, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
-                    Text("Текущие планы должников; не история всех обещаний.", color = ledgerMuted, fontSize = 12.sp)
-                    if (model.agenda.promised > 0L) {
-                        LedgerTotal("Осталось по обещаниям", model.agenda.remaining,
-                            "Получено " + ledgerMoney(model.agenda.received) + " из " + ledgerMoney(model.agenda.promised))
-                        Text("Сумма обещаний не прибавляется к общему долгу.", color = ledgerMuted, fontSize = 12.sp)
-                    }
-                    val filters = CollectionPlanFilter.entries.filter { it != CollectionPlanFilter.ALL }
-                    fun choose(filter: CollectionPlanFilter) {
-                        planFilter = if (planFilter == filter) CollectionPlanFilter.ALL else filter
-                        actions.selectPlan(planFilter.name)
-                        if (urgent) { urgent = false; actions.urgent(false) }
-                        limit = 60; actions.limit(limit)
-                    }
-                    filters.chunked(if (stacked) 1 else 2).forEach { group ->
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            group.forEach { filter ->
-                                val modifier = Modifier.weight(1f).heightIn(min = 48.dp)
-                                    .testTag("collection_plan_" + filter.name)
-                                    .semantics { selected = planFilter == filter }
-                                val caption = filter.caption + " · " + model.agenda.count(filter)
-                                if (planFilter == filter) Button(onClick = { choose(filter) }, modifier = modifier) { Text(caption, fontSize = 12.sp) }
-                                else OutlinedButton(onClick = { choose(filter) }, modifier = modifier) { Text(caption, fontSize = 12.sp) }
-                            }
-                        }
-                    }
-                    Text(result?.let { "Должников по фильтру: " + it.size } ?: "Обновление списка…",
-                        color = ledgerMuted, fontSize = 12.sp, modifier = Modifier.testTag("collection_result_count"))
-                    if (planFilter != CollectionPlanFilter.ALL) TextButton(onClick = { choose(planFilter) },
-                        modifier = Modifier.fillMaxWidth().testTag("collection_plan_clear")) { Text("Сбросить фильтр планов") }
-                }
-            }
             item("search") {
                 OutlinedTextField(value = query, onValueChange = {
                     query = it; limit = 60; actions.search(it)
@@ -241,6 +206,42 @@ internal fun CollectionContent(model: CollectionUiModel, initialQuery: String, i
                             Box(Modifier.fillMaxWidth().height(2.dp).background(if (urgent == value) ledgerAccent else ledgerBorder.copy(alpha = .45f)))
                         }
                     }
+                }
+            }
+            item("agenda") {
+                Column(Modifier.fillMaxWidth().background(ledgerPanel, RoundedCornerShape(12.dp)).padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Планы возврата", color = ledgerText, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                    if (model.agenda.promised > 0L) {
+                        Text("Осталось по обещаниям: " + ledgerMoney(model.agenda.remaining),
+                            color = ledgerText, fontWeight = FontWeight.Medium, fontSize = 16.sp)
+                        Text("Получено " + ledgerMoney(model.agenda.received) + " из " + ledgerMoney(model.agenda.promised),
+                            color = ledgerMuted, fontSize = 12.sp)
+                    }
+                    Text("Текущие планы, отдельно от общего долга.", color = ledgerMuted, fontSize = 12.sp)
+                    val filters = CollectionPlanFilter.entries.filter { it != CollectionPlanFilter.ALL }
+                    fun choose(filter: CollectionPlanFilter) {
+                        planFilter = if (planFilter == filter) CollectionPlanFilter.ALL else filter
+                        actions.selectPlan(planFilter.name)
+                        if (urgent) { urgent = false; actions.urgent(false) }
+                        limit = 60; actions.limit(limit)
+                    }
+                    filters.chunked(if (stacked) 1 else 2).forEach { group ->
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            group.forEach { filter ->
+                                val modifier = Modifier.weight(1f).heightIn(min = 48.dp)
+                                    .testTag("collection_plan_" + filter.name)
+                                    .semantics { selected = planFilter == filter }
+                                val caption = filter.caption + " · " + model.agenda.count(filter)
+                                if (planFilter == filter) Button(onClick = { choose(filter) }, modifier = modifier) { Text(caption, fontSize = 12.sp) }
+                                else OutlinedButton(onClick = { choose(filter) }, modifier = modifier) { Text(caption, fontSize = 12.sp) }
+                            }
+                        }
+                    }
+                    Text(result?.let { "Должников по фильтру: " + it.size } ?: "Обновление списка…",
+                        color = ledgerMuted, fontSize = 12.sp, modifier = Modifier.testTag("collection_result_count"))
+                    if (planFilter != CollectionPlanFilter.ALL) TextButton(onClick = { choose(planFilter) },
+                        modifier = Modifier.fillMaxWidth().testTag("collection_plan_clear")) { Text("Сбросить фильтр планов") }
                 }
             }
             when {
