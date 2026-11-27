@@ -10,6 +10,12 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.io.ByteArrayOutputStream
 import java.time.Instant
+import java.security.KeyStore
+import java.security.cert.CertificateFactory
+import java.security.cert.X509Certificate
+import javax.net.ssl.HttpsURLConnection
+import javax.net.ssl.SSLContext
+import javax.net.ssl.TrustManagerFactory
 
 object LicenseManager {
     private val lock=Any()
@@ -43,10 +49,26 @@ object LicenseManager {
     internal fun hasPending(context:Context)=synchronized(lock){runCatching{LicenseVault(context).read()?.pendingCode!=null}.getOrDefault(false)}
     internal class Denied:Exception()
     internal class Unavailable:Exception()
+    private val privateTls by lazy {
+        val raw=android.util.Base64.decode(BuildConfig.LICENSE_CA_DER,android.util.Base64.NO_WRAP)
+        val ca=CertificateFactory.getInstance("X.509").generateCertificate(raw.inputStream()) as X509Certificate
+        require(ca.encoded.contentEquals(raw) && ca.basicConstraints>=0)
+        ca.checkValidity()
+        val trust=KeyStore.getInstance(KeyStore.getDefaultType()).apply {
+            load(null,null);setCertificateEntry("ventry-ca",ca)
+        }
+        val tm=TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm()).apply{init(trust)}
+        SSLContext.getInstance("TLS").apply{init(null,tm.trustManagers,null)}.socketFactory
+    }
     private fun post(path:String,token:String,body:JSONObject):String{
         require(BuildConfig.LICENSE_REQUIRED && token.token())
         val connection=URL(BuildConfig.LICENSE_ORIGIN+path).openConnection() as HttpURLConnection
         try{
+            if(connection is HttpsURLConnection){
+                require(BuildConfig.LICENSE_CA_DER.isNotEmpty())
+                connection.sslSocketFactory=privateTls
+                // Default hostname verifier remains enabled; IP SAN must match 127.0.0.1.
+            }else require(BuildConfig.LICENSE_CA_DER.isEmpty())
             connection.instanceFollowRedirects=false;connection.connectTimeout=8000;connection.readTimeout=15000
             connection.useCaches=false;connection.requestMethod="POST";connection.doOutput=true
             connection.setRequestProperty("Authorization","Bearer "+token)

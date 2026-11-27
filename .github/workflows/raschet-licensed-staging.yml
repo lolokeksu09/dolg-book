@@ -7,12 +7,22 @@ on:
       - '.github/workflows/raschet-licensed-staging.yml'
       - 'scripts/test-licensed-staging.sh'
   workflow_dispatch:
+    inputs:
+      public_key:
+        description: 'Owner server raw Ed25519 public key (64 hex, not the private seed)'
+        required: false
+        type: string
+      ca_der:
+        description: 'Public server CA certificate DER, single-line base64'
+        required: false
+        type: string
 
 permissions:
   contents: read
 
 jobs:
   integration:
+    if: github.event_name == 'pull_request' || (inputs.public_key == '' && inputs.ca_der == '')
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     steps:
@@ -22,7 +32,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: lolokeksu09/Ventry
-          ref: 769726510cebba89f85754e135a317c095f69a62
+          ref: 0bb0acc86794cc9f15cca3ce5efd3da898063c0b
           path: delivery-staging
           persist-credentials: false
       - uses: actions/setup-java@v4
@@ -36,30 +46,19 @@ jobs:
         run: |
           sdkmanager_bin="${ANDROID_HOME:-/usr/local/lib/android/sdk}/cmdline-tools/latest/bin/sdkmanager"
           "$sdkmanager_bin" --install 'platforms;android-35' 'build-tools;35.0.0'
-      - name: Build actual Ventry Delivery
-        working-directory: delivery-staging/delivery/service
-        run: |
-          rustup toolchain install 1.94.0 --profile minimal
-          cargo +1.94.0 build --locked
-      - name: Start isolated real Delivery and derive staging public key
-        working-directory: delivery-staging
+      - name: Start exact private TLS Delivery
+        working-directory: delivery-staging/delivery/deploy
         run: |
           set -euo pipefail
-          bash admin-android/ci/start-service.sh
-          python3 - <<'PY'
-          import os, subprocess
-          from pathlib import Path
-          p=Path(os.environ["RUNNER_TEMP"])
-          seed=bytes.fromhex((p/"ventry-admin-signing-key").read_text().strip())
-          key=bytes.fromhex("302e020100300506032b657004220420")+seed
-          pub=subprocess.run(["openssl","pkey","-inform","DER","-pubout","-outform","DER"],input=key,capture_output=True,check=True).stdout
-          assert len(pub)==44 and pub.startswith(bytes.fromhex("302a300506032b6570032100"))
-          with open(os.environ["GITHUB_ENV"],"a") as out:out.write("RASCHET_STAGING_PIN="+pub[-32:].hex()+"\n")
-          PY
+          state="$RUNNER_TEMP/raschet-private-state"
+          bash provision-private.sh --state "$state"
+          bash start-private.sh "$state"
+          printf 'RASCHET_STAGING_PIN=%s\n' "$(cat "$state/license-public-key.hex")" >> "$GITHUB_ENV"
+          printf 'RASCHET_STAGING_CA=%s\n' "$(openssl x509 -in "$state/tls/ca.pem" -outform DER | base64 -w0)" >> "$GITHUB_ENV"
       - name: Compile isolated licensed APK and tests
         run: |
           set -euo pipefail
-          gradle -p android -PraschetLicensePublicKey="$RASCHET_STAGING_PIN" -PraschetLicenseOrigin=http://127.0.0.1:18082 testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest --no-daemon
+          gradle -p android -PraschetLicensePublicKey="$RASCHET_STAGING_PIN" -PraschetLicenseOrigin=https://127.0.0.1:18444 -PraschetLicenseCaDer="$RASCHET_STAGING_CA" testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest --no-daemon
           apk=android/app/build/outputs/apk/debug/app-debug.apk
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify "$apk"
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$apk" | grep -F "package: name='dev.ventry.raschet.licensedstaging'"
@@ -81,6 +80,49 @@ jobs:
       - name: Stop isolated environment
         if: always()
         run: |
-          if [ -f "$RUNNER_TEMP/ventry-admin-service.pid" ]; then kill "$(cat "$RUNNER_TEMP/ventry-admin-service.pid")" 2>/dev/null || true; fi
-          docker rm -f ventry-admin-ci || true
-          rm -f "$RUNNER_TEMP/ventry-admin-db.conf" "$RUNNER_TEMP/ventry-admin-token" "$RUNNER_TEMP/ventry-admin-signing-key"
+          state="$RUNNER_TEMP/raschet-private-state"
+          if [ -f "$state/compose.env" ]; then
+            docker compose --env-file "$state/compose.env" -f delivery-staging/delivery/deploy/compose.yaml down -v || true
+          fi
+          rm -rf "$state"
+
+  owner-apk:
+    if: github.event_name == 'workflow_dispatch' && (inputs.public_key != '' || inputs.ca_der != '')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Compile owner-only APK
+        env:
+          PUBLIC_KEY: ${{ inputs.public_key }}
+          CA_DER: ${{ inputs.ca_der }}
+        run: |
+          set -euo pipefail
+          [[ "$PUBLIC_KEY" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$CA_DER" =~ ^[A-Za-z0-9+/]+={0,2}$ ]]
+          sdkmanager_bin="${ANDROID_HOME:-/usr/local/lib/android/sdk}/cmdline-tools/latest/bin/sdkmanager"
+          "$sdkmanager_bin" --install 'platforms;android-35' 'build-tools;35.0.0'
+          gradle -p android -PraschetLicensePublicKey="$PUBLIC_KEY" -PraschetLicenseOrigin=https://127.0.0.1:18444 -PraschetLicenseCaDer="$CA_DER" testDebugUnitTest lintDebug assembleDebug --no-daemon
+          apk=android/app/build/outputs/apk/debug/app-debug.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$apk"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$apk" | grep -F "package: name='dev.ventry.raschet.licensedstaging'"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump permissions "$apk" | grep -F 'android.permission.INTERNET'
+          mkdir -p "$RUNNER_TEMP/owner-apk"
+          cp "$apk" "$RUNNER_TEMP/owner-apk/Raschet-owner-staging.apk"
+          (cd "$RUNNER_TEMP/owner-apk" && sha256sum Raschet-owner-staging.apk > SHA256SUMS)
+          printf '%s\n' "$GITHUB_SHA" > "$RUNNER_TEMP/owner-apk/REVISION"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Raschet-owner-staging
+          path: ${{ runner.temp }}/owner-apk/
+          if-no-files-found: error
+          retention-days: 7
