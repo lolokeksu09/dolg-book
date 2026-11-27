@@ -91,6 +91,9 @@ class LicensedStagingTest {
             vault.write(active.copy(envelope=broken.toString()))
             assertFalse(LicenseManager.permits(context))
             denied{book.addEntry(id,"debt",100,"","")}
+            runBlocking{LicenseManager.refresh(context)}
+            assertTrue(LicenseManager.permits(context))
+            assertEquals(backup,book.exportJson())
             vault.write(active.copy(anchor=a.copy(boot=a.boot+1)))
             assertFalse(LicenseManager.permits(context))
             vault.write(active)

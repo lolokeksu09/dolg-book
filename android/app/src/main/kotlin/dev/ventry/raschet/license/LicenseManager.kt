@@ -77,7 +77,9 @@ object LicenseManager {
     }
     private fun accept(context:Context,r:Record,raw:String,replacement:Boolean=false){
         val next=verifier().verify(raw,r.installation)
-        val previous=claims(r)
+        // A corrupt cached envelope is not a trusted revision baseline; a fresh
+        // response must still pass the pinned signature and clock checks.
+        val previous=runCatching{claims(r)}.getOrNull()
         require(previous==null || (next.issued>=previous.issued &&
             (if(next.subscription==previous.subscription) next.revision>=previous.revision else replacement)))
         val now=LicenseVault.now(context)
