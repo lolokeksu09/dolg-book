@@ -36,6 +36,11 @@ class LicensedStagingTest {
             val id=book.clients().single().id
             denied{book.addEntry(id,"debt",10000,"","")}
             assertTrue(book.entriesForClient(id).isEmpty())
+            compose.waitUntil(30_000){
+                compose.onAllNodesWithTag("license_code").fetchSemanticsNodes().any{
+                    !it.config.contains(androidx.compose.ui.semantics.SemanticsProperties.Disabled)
+                }
+            }
             compose.onNodeWithTag("license_code").performTextInput(code)
             compose.onNodeWithTag("license_activate").performScrollTo().performClick()
             compose.onNodeWithTag("license_confirm").performClick()
