@@ -801,7 +801,8 @@ public final class MainActivity extends ComponentActivity {
                 this::createRecoveryPoint,this::restoreRecoveryPoint,this::setAutoRecovery,
                 ()->exportBook(false),()->exportBook(true),this::pickImport,this::showCatalog);
         if(BuildConfig.LICENSE_REQUIRED) return SettingsCompose.createLicensed(this,state,actions,
-                ()->startActivity(new Intent(this,dev.ventry.raschet.license.LicenseActivity.class)));
+                ()->startActivity(new Intent(this,dev.ventry.raschet.license.LicenseActivity.class)),
+                BuildConfig.LICENSE_PUBLIC_PROFILE?this::submitCloudFile:null);
         return SettingsCompose.create(this,state,actions);
     }
     private void toggleSettings(String section){
@@ -863,6 +864,14 @@ public final class MainActivity extends ComponentActivity {
     }
     private android.content.SharedPreferences recoveryPrefs() {
         return getSharedPreferences(RECOVERY_PREFS,MODE_PRIVATE);
+    }
+    private void submitCloudFile(ClientCommand.FileTask command){
+        if(!unlocked||bookViewModel.hasPendingWrite()||!bookViewModel.submitClient(command)){
+            if(command instanceof ClientCommand.FileTask.Cloud)((ClientCommand.FileTask.Cloud)command).clearSecret();
+            message("Откройте книгу и дождитесь завершения операции.");
+            return;
+        }
+        render();
     }
     private void submitFile(ClientCommand.FileTask command){
         if(!unlocked||bookViewModel.hasPendingWrite())return;

@@ -39,6 +39,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.util.function.Consumer
+import dev.ventry.raschet.data.ClientCommand
+import dev.ventry.raschet.cloud.CloudBackupPanel
 
 /** A read-only presentation snapshot; security, preferences and actual backups remain Activity-owned. */
 data class SettingsSnapshot(
@@ -66,20 +68,20 @@ object SettingsCompose {
         }
 
     @JvmStatic
-    fun createLicensed(owner: ComponentActivity, state: SettingsSnapshot, actions: SettingsActions, license: Runnable): ComposeView =
+    fun createLicensed(owner: ComponentActivity, state: SettingsSnapshot, actions: SettingsActions, license: Runnable, cloud: Consumer<ClientCommand.FileTask>?): ComposeView =
         ComposeView(owner).apply {
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindowOrReleasedFromPool)
             setContent { LedgerMaterialTheme {
                 val summary by produceState(initialValue="Проверка доступа…"){
                     value=withContext(Dispatchers.IO){LicenseManager.overview(owner.applicationContext).title}
                 }
-                SettingsContent(state, actions, license, summary)
+                SettingsContent(state, actions, license, summary, cloud, owner.localClassName)
             } }
         }
 }
 
 @Composable
-internal fun SettingsContent(state: SettingsSnapshot, actions: SettingsActions, license: Runnable? = null, licenseSummary: String = "Активация и обновление доступа") {
+internal fun SettingsContent(state: SettingsSnapshot, actions: SettingsActions, license: Runnable? = null, licenseSummary: String = "Активация и обновление доступа", cloud: Consumer<ClientCommand.FileTask>? = null, preferencesName: String = "") {
     Box(Modifier.fillMaxSize().background(ledgerBg), contentAlignment = Alignment.TopCenter) {
         Column(Modifier.widthIn(max = 800.dp).fillMaxSize().verticalScroll(rememberScrollState())
             .testTag("settings-list").padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -90,6 +92,10 @@ internal fun SettingsContent(state: SettingsSnapshot, actions: SettingsActions, 
                 SettingsPanel { LedgerMetric("Лицензия", licenseSummary, action = license::run) }
             }
             SettingsSection("Безопасность и данные", state.largeText)
+            if(cloud!=null){
+                SettingsPanel { LedgerMetric("Облачные копии", "Шифрование и перенос книги") { actions.expand.accept("cloud") } }
+                if(state.expanded=="cloud")CloudBackupPanel(cloud,preferencesName)
+            }
             SettingsPanel {
                 LedgerMetric("Резервные копии", if (state.externalBackupConfirmed) "Экспорт и восстановление"
                     else "Нет подтверждённой внешней копии",
