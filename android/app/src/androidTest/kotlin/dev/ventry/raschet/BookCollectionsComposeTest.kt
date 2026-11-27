@@ -115,13 +115,16 @@ class BookCollectionsComposeTest {
                 LedgerStore.Entry("d5","e","debt",10000L,"2026-11-20T12:00:00Z","","",""),
                 LedgerStore.Entry("p5","e","payment",6000L,"2026-11-23T12:00:00Z","","",""),
                 LedgerStore.Entry("d6","f","debt",4000L,"2026-11-20T12:00:00Z","","",""))
-            directory.setFollowUp("a",today,"Связаться")
-            directory.setFollowUp("b",today.plusDays(2),"Позвонить")
-            directory.setFollowUp("c",today.minusDays(1),"Обещано",5000L,"d3")
-            directory.setFollowUp("d",today,"Потерянная запись",4000L,"missing")
-            directory.setFollowUp("e",today.minusDays(1),"Выполнено",5000L,"d5")
-            directory.setFollowUp("f",today.plusDays(7),"Будущий платёж",2000L,"d6")
-            val data = BookScreenData(LedgerSnapshot(clients,entries),today,CollectionsInsights.analyze(clients,entries,today))
+            fun record(id:String,due:LocalDate,note:String,amount:Long,anchor:String) =
+                FollowUpJournal.Record(UUID.randomUUID().toString(),id,due,due,note,amount,anchor,"",null,null,"")
+            val plans = listOf(
+                record("a",today,"Связаться",0,"p1"),
+                record("b",today.plusDays(2),"Позвонить",0,"d2"),
+                record("c",today.minusDays(1),"Обещано",5000,"d3"),
+                record("d",today,"Потерянная запись",4000,""),
+                record("e",today.minusDays(1),"Выполнено",5000,"d5"),
+                record("f",today.plusDays(7),"Будущий платёж",2000,"d6"))
+            val data = BookScreenData(LedgerSnapshot(clients,entries,plans),today,CollectionsInsights.analyze(clients,entries,today))
             val model = projectCollections(data,directory,ZoneOffset.UTC)
             assertEquals(32000L,model.total)
             assertEquals(12000L,model.agenda.promised)
@@ -151,6 +154,15 @@ class BookCollectionsComposeTest {
             compose.waitUntil(15_000){compose.onAllNodesWithText("Должников по фильтру: 6").fetchSemanticsNodes().isNotEmpty()}
             compose.onNodeWithTag("collections-list").performScrollToNode(hasText("Алиса"))
             compose.onNodeWithText("Алиса").assertExists()
+            compose.onNodeWithTag("collections-list").performScrollToNode(hasTestTag("open_promise_history"))
+            compose.onNodeWithTag("open_promise_history").performClick()
+            compose.onNodeWithTag("promise_history").assertExists()
+            compose.onNodeWithTag("promise_history").performScrollToNode(hasTestTag("promise_period_all"))
+            compose.onNodeWithTag("promise_period_all").performClick()
+            compose.waitUntil(15_000){compose.onAllNodesWithText("Обещаний: 4").fetchSemanticsNodes().isNotEmpty()}
+            compose.onNodeWithTag("promise_history").performScrollToNode(hasTestTag("promise_history_back"))
+            compose.onNodeWithTag("promise_history_back").performClick()
+            compose.onNodeWithTag("collections-list").assertExists()
         } finally { context.deleteSharedPreferences(storage) }
     }
 }

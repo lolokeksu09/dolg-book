@@ -3,7 +3,6 @@ package dev.ventry.raschet.data
 import android.content.Context
 import dev.ventry.raschet.LedgerStore
 import dev.ventry.raschet.FollowUpJournal
-import dev.ventry.raschet.ClientDirectory
 import java.util.Collections
 
 /** A coherent read of one committed book; lists cannot be mutated by UI callers. */
@@ -11,7 +10,6 @@ class LedgerSnapshot @JvmOverloads constructor(clients: List<LedgerStore.Client>
     val clients: List<LedgerStore.Client> = Collections.unmodifiableList(ArrayList(clients))
     val entries: List<LedgerStore.Entry> = Collections.unmodifiableList(ArrayList(entries))
     val plans: List<FollowUpJournal.Record> = Collections.unmodifiableList(ArrayList(plans))
-    internal fun currentFollowUps(): Map<String, ClientDirectory.FollowUp> = plans.filter { it.active() }.associate { it.clientId to it.plan() }
 }
 
 /** Blocking data boundary. State holders call it on a worker dispatcher. */
