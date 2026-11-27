@@ -6,6 +6,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import dev.ventry.raschet.license.*
 import org.json.JSONObject
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Assume.assumeTrue
 import org.junit.Rule
@@ -46,10 +47,36 @@ class LicensedStagingTest {
             assertTrue(c.validUntil!!-c.issued in 604770..604800)
             assertTrue(c.leaseUntil-c.issued<=MAX_LEASE)
             assertNull(active.pendingCode)
+            assertNull(active.pendingRefresh)
             assertTrue(LicenseManager.permits(context))
             book.addEntry(id,"debt",10000,"","")
             assertEquals(10000L,LedgerStore.balance(book.entriesForClient(id),id))
             val backup=book.exportJson()
+            // A typo or an invalid replacement must not destroy valid access.
+            compose.onNodeWithTag("license_code").performTextInput("0".repeat(64))
+            compose.onNodeWithTag("license_activate").performScrollTo().performClick()
+            compose.onNodeWithTag("license_confirm").performClick()
+            compose.waitUntil(30_000){compose.onAllNodesWithText("Код или привязка недоступны. Обратитесь в Ventry.").fetchSemanticsNodes().isNotEmpty()}
+            val afterWrong=checkNotNull(vault.read())
+            assertEquals(active.refresh,afterWrong.refresh)
+            assertEquals(active.envelope,afterWrong.envelope)
+            assertNull(afterWrong.pendingCode)
+            assertTrue(LicenseManager.permits(context))
+            assertEquals(backup,book.exportJson())
+            // Persist only the pending credential as if the process died after
+            // the first activation committed but before saving the response.
+            // The unusable code ensures recovery must use the refresh endpoint.
+            vault.write(active.copy(pendingCode="1".repeat(64),pendingRefresh=active.refresh,envelope=null,anchor=null))
+            assertFalse(LicenseManager.permits(context))
+            runBlocking{LicenseManager.activate(context,null)}
+            val recovered=checkNotNull(vault.read())
+            assertEquals(active.refresh,recovered.refresh)
+            assertNull(recovered.pendingCode)
+            assertNull(recovered.pendingRefresh)
+            assertEquals(c.subscription,verifier.verify(checkNotNull(recovered.envelope),recovered.installation).subscription)
+            assertEquals(c.validUntil,verifier.verify(checkNotNull(recovered.envelope),recovered.installation).validUntil)
+            assertTrue(LicenseManager.permits(context))
+            assertEquals(backup,book.exportJson())
             // Simulate offline lease expiry using only the isolated test vault.
             val a=checkNotNull(active.anchor)
             vault.write(active.copy(anchor=a.copy(elapsedMs=a.elapsedMs-73*3600*1000L,wallSec=a.wallSec-73*3600L)))
@@ -64,6 +91,9 @@ class LicensedStagingTest {
             vault.write(active.copy(envelope=broken.toString()))
             assertFalse(LicenseManager.permits(context))
             denied{book.addEntry(id,"debt",100,"","")}
+            runBlocking{LicenseManager.refresh(context)}
+            assertTrue(LicenseManager.permits(context))
+            assertEquals(backup,book.exportJson())
             vault.write(active.copy(anchor=a.copy(boot=a.boot+1)))
             assertFalse(LicenseManager.permits(context))
             vault.write(active)

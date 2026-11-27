@@ -17,7 +17,7 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
 internal data class Record(val installation:String,val refresh:String,val pendingCode:String?=null,
-    val envelope:String?=null,val anchor:Anchor?=null)
+    val envelope:String?=null,val anchor:Anchor?=null,val pendingRefresh:String?=null)
 internal class LicenseVault(private val context:Context) {
     private val file=AtomicFile(File(context.noBackupFilesDir,"ventry-entitlement-v1.bin"))
     private val alias="ventry-entitlement-v1"
@@ -45,11 +45,15 @@ internal class LicenseVault(private val context:Context) {
         val env=if(j.isNull("envelope"))null else j.getString("envelope")
         val a=if(j.isNull("anchor"))null else j.getJSONObject("anchor").let{Anchor(it.getInt("boot"),it.getLong("elapsed"),it.getLong("wall"))}
         require((env==null)==(a==null))
-        return Record(installation,refresh,pending,env,a)
+        // Legacy v1 pending record stored the same secret in refresh. Preserve it.
+        val next=if(j.isNull("pending_refresh"))pending?.let{refresh} else j.getString("pending_refresh").also{require(it.token())}
+        require((pending==null)==(next==null))
+        return Record(installation,refresh,pending,env,a,next)
     }
     fun write(r:Record) {
         val j=JSONObject().apply{
             put("installation",r.installation);put("refresh",r.refresh);put("pending",r.pendingCode?:JSONObject.NULL)
+            put("pending_refresh",r.pendingRefresh?:JSONObject.NULL)
             put("envelope",r.envelope?:JSONObject.NULL)
             put("anchor",r.anchor?.let{a->JSONObject().put("boot",a.boot).put("elapsed",a.elapsedMs).put("wall",a.wallSec)}?:JSONObject.NULL)
         }
@@ -64,7 +68,13 @@ internal class LicenseVault(private val context:Context) {
     companion object{
         fun now(context:Context)=Anchor(Settings.Global.getInt(context.contentResolver,Settings.Global.BOOT_COUNT,-1),
             SystemClock.elapsedRealtime(),System.currentTimeMillis()/1000)
-        fun fresh(installation:String?=null,code:String)=Record(installation?:UUID.randomUUID().toString(),
-            ByteArray(32).also{SecureRandom().nextBytes(it)}.hex(),code)
+        fun fresh(installation:String?=null,code:String):Record {
+            val secret=ByteArray(32).also{SecureRandom().nextBytes(it)}.hex()
+            return Record(installation?:UUID.randomUUID().toString(),secret,code,pendingRefresh=secret)
+        }
+        fun replacement(old:Record?,code:String):Record {
+            val candidate=fresh(old?.installation,code)
+            return old?.copy(pendingCode=code,pendingRefresh=candidate.refresh)?:candidate
+        }
     }
 }

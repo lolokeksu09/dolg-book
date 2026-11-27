@@ -46,6 +46,7 @@ class LicenseActivity:ComponentActivity(){
                             if(activate)LicenseManager.activate(context,entered) else LicenseManager.refresh(context)
                             message="Ответ сервера проверен."
                         }catch(e:CancellationException){throw e}
+                        catch(e:LicenseManager.PendingExists){message="Сначала повторите незавершённую активацию."}
                         catch(e:LicenseManager.Denied){message="Код или привязка недоступны. Обратитесь в Ventry."}
                         catch(e:Exception){message="Не удалось подтвердить доступ. Проверьте соединение и часы. Существующая книга не изменена."}
                         finally{status=LicenseManager.description(context);pending=LicenseManager.hasPending(context);busy=false}
@@ -57,8 +58,8 @@ class LicenseActivity:ComponentActivity(){
                         Text(status)
                         Text("Просмотр, погашение долгов, исправления и резервные копии остаются доступны. Новые долги требуют активной лицензии. После перезагрузки нужна онлайн-проверка.")
                         if(busy)LinearProgressIndicator(Modifier.fillMaxWidth())
-                        OutlinedTextField(code,{code=it.take(64)},Modifier.fillMaxWidth().testTag("license_code"),label={Text("Код активации")},enabled=!busy,singleLine=true,visualTransformation=PasswordVisualTransformation())
-                        Button(onClick={confirm=true},enabled=!busy && code.trim().token(),modifier=Modifier.fillMaxWidth().testTag("license_activate")){Text("Активировать")}
+                        OutlinedTextField(code,{code=it.take(64)},Modifier.fillMaxWidth().testTag("license_code"),label={Text("Код активации")},enabled=!busy && !pending,singleLine=true,visualTransformation=PasswordVisualTransformation())
+                        Button(onClick={confirm=true},enabled=!busy && !pending && code.trim().token(),modifier=Modifier.fillMaxWidth().testTag("license_activate")){Text("Активировать")}
                         if(pending)OutlinedButton(onClick={run(true,true)},enabled=!busy,modifier=Modifier.fillMaxWidth()){Text("Повторить активацию")}
                         OutlinedButton(onClick={run(false)},enabled=!busy && !pending,modifier=Modifier.fillMaxWidth().testTag("license_refresh")){Text("Обновить подписку")}
                         if(message.isNotEmpty())Text(message)
@@ -67,7 +68,7 @@ class LicenseActivity:ComponentActivity(){
                     }
                 }
                 if(confirm)AlertDialog(onDismissRequest={confirm=false},title={Text("Активировать новый код?")},
-                    text={Text("Предыдущее локальное разрешение будет заменено. Данные долговой книги останутся без изменений.")},
+                    text={Text("Действующая лицензия заменится только после проверки подписанного ответа. Данные долговой книги останутся без изменений.")},
                     confirmButton={TextButton(onClick={confirm=false;run(true)},modifier=Modifier.testTag("license_confirm")){Text("Активировать")}},
                     dismissButton={TextButton(onClick={confirm=false}){Text("Отмена")}})
             }
