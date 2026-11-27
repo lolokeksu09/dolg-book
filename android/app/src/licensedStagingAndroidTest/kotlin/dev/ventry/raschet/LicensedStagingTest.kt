@@ -40,6 +40,9 @@ class LicensedStagingTest {
             compose.onNodeWithTag("license_activate").performScrollTo().performClick()
             compose.onNodeWithTag("license_confirm").performClick()
             compose.waitUntil(30_000){compose.onAllNodesWithText("Ответ сервера проверен.").fetchSemanticsNodes().isNotEmpty()}
+            compose.onNodeWithText("Доступ активен").assertExists()
+            assertNotNull(LicenseManager.overview(context).subscription)
+            compose.onNodeWithTag("share_subscription").assertExists()
             val active=checkNotNull(vault.read())
             val verifier=EntitlementVerifier(BuildConfig.LICENSE_PUBLIC_KEY.unhex(32))
             val c=verifier.verify(checkNotNull(active.envelope),active.installation)
@@ -81,6 +84,7 @@ class LicensedStagingTest {
             val a=checkNotNull(active.anchor)
             vault.write(active.copy(anchor=a.copy(elapsedMs=a.elapsedMs-73*3600*1000L,wallSec=a.wallSec-73*3600L)))
             assertFalse(LicenseManager.permits(context))
+            assertEquals("Требуется онлайн-проверка",LicenseManager.overview(context).title)
             denied{book.addEntry(id,"debt",100,"","")}
             assertEquals(backup,book.exportJson())
             book.addEntry(id,"payment",3000,"","")
