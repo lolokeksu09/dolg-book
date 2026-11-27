@@ -10,6 +10,9 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.io.ByteArrayOutputStream
 import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 import java.security.KeyStore
 import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
@@ -36,15 +39,34 @@ object LicenseManager {
             LicensePolicy.permits(c,a,LicenseVault.now(context))
         }catch(_:Exception){false}
     }
-    internal fun description(context:Context):String=synchronized(lock){
-        try{
-            val r=LicenseVault(context).read()?:return@synchronized "Не активирована. Введите код Ventry."
-            val waiting=if(r.pendingCode!=null)"Есть незавершённая активация. Повторите сохранённый запрос.\n" else ""
-            val c=claims(r)?:return@synchronized waiting+"Требуется обновить лицензию."
-            val end=c.validUntil?.let{Instant.ofEpochSecond(it).toString()}?:"—"
-            waiting+(if(permits(context))"Новые долги доступны" else "Новые долги недоступны; обновите подписку")+"\nПодписка до: "+end+
-                "\nОфлайн-разрешение до: "+Instant.ofEpochSecond(c.leaseUntil)
-        }catch(_:Exception){"Лицензия не читается. Данные книги не изменены."}
+    internal data class Overview(val title:String,val detail:String,val subscription:String?=null,val allowed:Boolean=false)
+    private fun localTime(seconds:Long)=Instant.ofEpochSecond(seconds).atZone(ZoneId.systemDefault())
+        .format(DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm",Locale("ru")))
+    // All information comes from the same verified envelope as the write guard.
+    // No unsigned claims, network calls or secrets are exposed by this projection.
+    internal fun overview(context:Context):Overview=synchronized(lock){
+        try {
+            val r=LicenseVault(context).read()?:return@synchronized Overview("Не активирована","Введите код Ventry, чтобы начать записывать долги.")
+            val pending=r.pendingCode!=null
+            val note=if(pending)"\nЕсть незавершённая активация. Повторите сохранённый запрос." else ""
+            val c=claims(r)?:return@synchronized Overview("Требуется проверка","Обновите лицензию."+note)
+            val now=LicenseVault.now(context)
+            val allowed=r.anchor?.let{LicensePolicy.permits(c,it,now)}==true
+            val title=when {
+                allowed -> "Доступ активен"
+                c.validUntil!=null && now.wallSec>=c.validUntil -> "Срок доступа истёк"
+                !c.allowed -> "Новые долги недоступны"
+                else -> "Требуется онлайн-проверка"
+            }
+            val detail=buildString{
+                append(if(allowed)"Новые долги доступны" else "Новые долги недоступны")
+                append("\nСрок доступа: "+(c.validUntil?.let(::localTime)?:"—"))
+                if(allowed)append("\nОфлайн-доступ до: "+localTime(minOf(c.leaseUntil,checkNotNull(c.validUntil))))
+                else append("\nОбновите подписку или обратитесь в Ventry.")
+                append(note)
+            }
+            Overview(title,detail,c.subscription,allowed)
+        }catch(_:Exception){Overview("Требуется проверка","Лицензия не читается. Данные книги не изменены.")}
     }
     internal fun hasPending(context:Context)=synchronized(lock){runCatching{LicenseVault(context).read()?.pendingCode!=null}.getOrDefault(false)}
     internal class Denied:Exception()
