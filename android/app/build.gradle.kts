@@ -1,4 +1,7 @@
 import java.net.URI
+import java.util.Base64
+import java.security.cert.CertificateFactory
+import java.security.cert.X509Certificate
 
 plugins {
     id("com.android.application") version "8.10.1"
@@ -10,13 +13,25 @@ plugins {
 // current public RC. Production enforcement needs a separate reviewed key rollout.
 val licensePin = providers.gradleProperty("raschetLicensePublicKey").orNull
 val licenseOrigin = providers.gradleProperty("raschetLicenseOrigin").orNull
+val licenseCa = providers.gradleProperty("raschetLicenseCaDer").orNull
+require(licenseCa == null || licensePin != null) { "CA requires licensed staging" }
 require((licensePin == null) == (licenseOrigin == null)) { "Both license staging properties are required" }
 if (licensePin != null) {
     require(licensePin.matches(Regex("[0-9a-f]{64}"))) { "Expected raw Ed25519 public key hex" }
     val origin = URI(licenseOrigin!!)
-    require(origin.scheme == "http" && origin.host == "127.0.0.1" &&
+    require(origin.host == "127.0.0.1" &&
         origin.port in 1..65535 && origin.rawUserInfo == null && origin.rawQuery == null &&
-        origin.rawFragment == null && origin.rawPath.isNullOrEmpty()) { "Staging must use explicit loopback HTTP" }
+        origin.rawFragment == null && origin.rawPath.isNullOrEmpty()) { "Staging must use explicit loopback origin" }
+    require(if (licenseCa == null) origin.scheme == "http" else origin.scheme == "https") {
+        "HTTPS requires the trusted CA; HTTP is only for local synthetic tests"
+    }
+    if (licenseCa != null) {
+        require(licenseCa.length in 4..12000 && licenseCa.matches(Regex("[A-Za-z0-9+/]+={0,2}")))
+        val bytes = Base64.getDecoder().decode(licenseCa)
+        val ca = CertificateFactory.getInstance("X.509").generateCertificate(bytes.inputStream()) as X509Certificate
+        require(ca.encoded.contentEquals(bytes) && ca.basicConstraints >= 0)
+        ca.checkValidity()
+    }
 }
 
 android {
@@ -28,6 +43,7 @@ android {
         buildConfigField("boolean", "LICENSE_REQUIRED", "false")
         buildConfigField("String", "LICENSE_PUBLIC_KEY", "\"\"")
         buildConfigField("String", "LICENSE_ORIGIN", "\"\"")
+        buildConfigField("String", "LICENSE_CA_DER", "\"\"")
         applicationId = "dev.ventry.raschet"
         minSdk = 26
         targetSdk = 35
@@ -43,6 +59,9 @@ android {
                 buildConfigField("boolean", "LICENSE_REQUIRED", "true")
                 buildConfigField("String", "LICENSE_PUBLIC_KEY", "\"$licensePin\"")
                 buildConfigField("String", "LICENSE_ORIGIN", "\"$licenseOrigin\"")
+                buildConfigField("String", "LICENSE_CA_DER", "\"${licenseCa.orEmpty()}\"")
+                manifestPlaceholders["licenseNetworkConfig"] = if (licenseCa == null) "@xml/license_staging_network" else "@xml/license_tls_network"
+                if (licenseCa != null) versionNameSuffix = "-owner-tls"
             }
         }
         getByName("release") {
