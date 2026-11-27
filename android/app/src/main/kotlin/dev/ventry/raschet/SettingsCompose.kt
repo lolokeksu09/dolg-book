@@ -22,6 +22,11 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.getValue
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import dev.ventry.raschet.license.LicenseManager
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
@@ -64,12 +69,17 @@ object SettingsCompose {
     fun createLicensed(owner: ComponentActivity, state: SettingsSnapshot, actions: SettingsActions, license: Runnable): ComposeView =
         ComposeView(owner).apply {
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindowOrReleasedFromPool)
-            setContent { LedgerMaterialTheme { SettingsContent(state, actions, license) } }
+            setContent { LedgerMaterialTheme {
+                val summary by produceState(initialValue="Проверка доступа…"){
+                    value=withContext(Dispatchers.IO){LicenseManager.overview(owner.applicationContext).title}
+                }
+                SettingsContent(state, actions, license, summary)
+            } }
         }
 }
 
 @Composable
-internal fun SettingsContent(state: SettingsSnapshot, actions: SettingsActions, license: Runnable? = null) {
+internal fun SettingsContent(state: SettingsSnapshot, actions: SettingsActions, license: Runnable? = null, licenseSummary: String = "Активация и обновление доступа") {
     Box(Modifier.fillMaxSize().background(ledgerBg), contentAlignment = Alignment.TopCenter) {
         Column(Modifier.widthIn(max = 800.dp).fillMaxSize().verticalScroll(rememberScrollState())
             .testTag("settings-list").padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -77,7 +87,7 @@ internal fun SettingsContent(state: SettingsSnapshot, actions: SettingsActions, 
                 fontWeight = FontWeight.SemiBold)
             if (license != null) {
                 SettingsSection("Подписка Ventry", state.largeText)
-                SettingsPanel { LedgerMetric("Лицензия", "Активация и обновление доступа", action = license::run) }
+                SettingsPanel { LedgerMetric("Лицензия", licenseSummary, action = license::run) }
             }
             SettingsSection("Безопасность и данные", state.largeText)
             SettingsPanel {
