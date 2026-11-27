@@ -6,6 +6,10 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.test.platform.app.InstrumentationRegistry
 import dev.ventry.raschet.data.LedgerSnapshot
 import dev.ventry.raschet.presentation.BookScreenData
@@ -92,6 +96,56 @@ class BookCollectionsComposeTest {
             compose.onNodeWithText("К возврату всего").assertExists()
             compose.onNodeWithContentDescription("Просрочено").performClick()
             assertEquals(CollectionsInsights.LATE, filter.get())
+        } finally { context.deleteSharedPreferences(storage) }
+    }
+
+    @Test fun promiseAgendaExcludesInvalidAndCompletedPlansFromActionQueue() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val storage = "qa_collection_agenda_" + UUID.randomUUID()
+        try {
+            val directory = ClientDirectory(context, storage)
+            val base = fixture()
+            val clients = base.snapshot.clients + listOf(
+                LedgerStore.Client("c", "Вера", ""), LedgerStore.Client("d", "Глеб", ""),
+                LedgerStore.Client("e", "Дина", ""), LedgerStore.Client("f", "Егор", ""))
+            val entries = base.snapshot.entries + listOf(
+                LedgerStore.Entry("d3","c","debt",10000L,"2026-11-20T12:00:00Z","","",""),
+                LedgerStore.Entry("p3","c","payment",3000L,"2026-11-23T12:00:00Z","","",""),
+                LedgerStore.Entry("d4","d","debt",8000L,"2026-11-20T12:00:00Z","","",""),
+                LedgerStore.Entry("d5","e","debt",10000L,"2026-11-20T12:00:00Z","","",""),
+                LedgerStore.Entry("p5","e","payment",6000L,"2026-11-23T12:00:00Z","","",""),
+                LedgerStore.Entry("d6","f","debt",4000L,"2026-11-20T12:00:00Z","","",""))
+            directory.setFollowUp("a",today,"Связаться")
+            directory.setFollowUp("b",today.plusDays(2),"Позвонить")
+            directory.setFollowUp("c",today.minusDays(1),"Обещано",5000L,"d3")
+            directory.setFollowUp("d",today,"Потерянная запись",4000L,"missing")
+            directory.setFollowUp("e",today.minusDays(1),"Выполнено",5000L,"d5")
+            directory.setFollowUp("f",today.plusDays(7),"Будущий платёж",2000L,"d6")
+            val data = BookScreenData(LedgerSnapshot(clients,entries),today,CollectionsInsights.analyze(clients,entries,today))
+            val model = projectCollections(data,directory,ZoneOffset.UTC)
+            assertEquals(32000L,model.total)
+            assertEquals(12000L,model.agenda.promised)
+            assertEquals(8000L,model.agenda.received)
+            assertEquals(4000L,model.agenda.remaining)
+            fun ids(filter: CollectionPlanFilter) = model.work.filter { filter.matches(it,today) }.map { it.status.client.id }.toSet()
+            assertEquals(setOf("a","c"),ids(CollectionPlanFilter.DUE))
+            assertEquals(setOf("c"),ids(CollectionPlanFilter.MISSED))
+            assertEquals(setOf("b","f"),ids(CollectionPlanFilter.FUTURE))
+            assertEquals(setOf("d"),ids(CollectionPlanFilter.REVIEW))
+            assertEquals(2,model.agenda.count(CollectionPlanFilter.DUE))
+            val actions = CollectionActions({}, {}, {}, {}, {}, {}, {})
+            compose.setContent {
+                LedgerMaterialTheme { CollectionContent(model,"",false,60,false,actions) }
+            }
+            compose.onNodeWithTag("collections-list").performScrollToNode(hasTestTag("collection_plan_MISSED"))
+            compose.onNodeWithTag("collection_plan_MISSED").performClick()
+            compose.onNodeWithTag("collections-list").performScrollToNode(hasText("Вера"))
+            compose.onNodeWithText("Вера").assertExists()
+            compose.onNodeWithText("Алиса").assertDoesNotExist()
+            compose.onNodeWithTag("collections-list").performScrollToNode(hasTestTag("collection_plan_clear"))
+            compose.onNodeWithTag("collection_plan_clear").performClick()
+            compose.onNodeWithTag("collections-list").performScrollToNode(hasText("Алиса"))
+            compose.onNodeWithText("Алиса").assertExists()
         } finally { context.deleteSharedPreferences(storage) }
     }
 }
