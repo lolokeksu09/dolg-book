@@ -133,17 +133,22 @@ class BookCollectionsComposeTest {
             assertEquals(setOf("b","f"),ids(CollectionPlanFilter.FUTURE))
             assertEquals(setOf("d"),ids(CollectionPlanFilter.REVIEW))
             assertEquals(2,model.agenda.count(CollectionPlanFilter.DUE))
-            val actions = CollectionActions({}, {}, {}, {}, {}, {}, {})
+            val selectedPlan = AtomicReference("ALL")
+            val actions = CollectionActions({}, {}, {}, {}, {}, {}, {}, { selectedPlan.set(it) })
             compose.setContent {
                 LedgerMaterialTheme { CollectionContent(model,"",false,60,false,actions) }
             }
             compose.onNodeWithTag("collections-list").performScrollToNode(hasTestTag("collection_plan_MISSED"))
             compose.onNodeWithTag("collection_plan_MISSED").performClick()
+            assertEquals("MISSED",selectedPlan.get())
+            compose.waitUntil(15_000){compose.onAllNodesWithText("Должников по фильтру: 1").fetchSemanticsNodes().isNotEmpty()}
             compose.onNodeWithTag("collections-list").performScrollToNode(hasText("Вера"))
             compose.onNodeWithText("Вера").assertExists()
             compose.onNodeWithText("Алиса").assertDoesNotExist()
             compose.onNodeWithTag("collections-list").performScrollToNode(hasTestTag("collection_plan_clear"))
             compose.onNodeWithTag("collection_plan_clear").performClick()
+            assertEquals("ALL",selectedPlan.get())
+            compose.waitUntil(15_000){compose.onAllNodesWithText("Должников по фильтру: 6").fetchSemanticsNodes().isNotEmpty()}
             compose.onNodeWithTag("collections-list").performScrollToNode(hasText("Алиса"))
             compose.onNodeWithText("Алиса").assertExists()
         } finally { context.deleteSharedPreferences(storage) }
