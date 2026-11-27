@@ -71,7 +71,11 @@ object LicenseManager {
         val now=LicenseVault.now(context)
         // Reject delayed/replayed signed responses instead of resetting the offline lease.
         require(kotlin.math.abs(now.wallSec-next.issued)<=300)
-        synchronized(lock){LicenseVault(context).write(r.copy(pendingCode=null,envelope=raw,anchor=now))}
+        synchronized(lock){
+            // A same-second retry cannot reset an old monotonic anchor.
+            val anchor=if(previous!=null && next.issued==previous.issued && r.anchor!=null) r.anchor else now
+            LicenseVault(context).write(r.copy(pendingCode=null,envelope=raw,anchor=anchor))
+        }
     }
     internal suspend fun activate(context:Context,code:String?)=withContext(Dispatchers.IO){
         network.withLock{

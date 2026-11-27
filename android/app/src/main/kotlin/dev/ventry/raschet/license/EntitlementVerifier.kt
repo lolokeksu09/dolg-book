@@ -25,7 +25,7 @@ internal object LicensePolicy {
         // Monotonic time prevents a wall-clock rollback from extending the lease during this boot.
         val elapsed=(now.elapsedMs-a.elapsedMs)/1000
         val wallAdvance=(now.wallSec-a.wallSec).coerceAtLeast(0)
-        val effective=c.issued+maxOf(elapsed,wallAdvance)
+        val effective=maxOf(now.wallSec,c.issued+maxOf(elapsed,wallAdvance))
         return effective<c.leaseUntil && effective<c.validUntil
     }
 }

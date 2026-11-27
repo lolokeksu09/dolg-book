@@ -1,3 +1,5 @@
+import java.net.URI
+
 plugins {
     id("com.android.application") version "8.10.1"
     id("org.jetbrains.kotlin.android") version "2.2.21"
@@ -11,7 +13,7 @@ val licenseOrigin = providers.gradleProperty("raschetLicenseOrigin").orNull
 require((licensePin == null) == (licenseOrigin == null)) { "Both license staging properties are required" }
 if (licensePin != null) {
     require(licensePin.matches(Regex("[0-9a-f]{64}"))) { "Expected raw Ed25519 public key hex" }
-    val origin = java.net.URI(licenseOrigin!!)
+    val origin = URI(licenseOrigin!!)
     require(origin.scheme == "http" && origin.host == "127.0.0.1" &&
         origin.port in 1..65535 && origin.rawUserInfo == null && origin.rawQuery == null &&
         origin.rawFragment == null && origin.rawPath.isNullOrEmpty()) { "Staging must use explicit loopback HTTP" }

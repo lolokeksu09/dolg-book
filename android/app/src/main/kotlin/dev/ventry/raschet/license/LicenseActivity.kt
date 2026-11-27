@@ -10,6 +10,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import dev.ventry.raschet.BuildConfig
@@ -53,10 +54,10 @@ class LicenseActivity:ComponentActivity(){
                         Text(status)
                         Text("Просмотр, погашение долгов, исправления и резервные копии остаются доступны. Новые долги требуют активной лицензии. После перезагрузки нужна онлайн-проверка.")
                         if(busy)LinearProgressIndicator(Modifier.fillMaxWidth())
-                        OutlinedTextField(code,{code=it.take(64)},Modifier.fillMaxWidth(),label={Text("Код активации")},enabled=!busy,singleLine=true,visualTransformation=PasswordVisualTransformation())
-                        Button(onClick={confirm=true},enabled=!busy && code.trim().token(),modifier=Modifier.fillMaxWidth()){Text("Активировать")}
+                        OutlinedTextField(code,{code=it.take(64)},Modifier.fillMaxWidth().testTag("license_code"),label={Text("Код активации")},enabled=!busy,singleLine=true,visualTransformation=PasswordVisualTransformation())
+                        Button(onClick={confirm=true},enabled=!busy && code.trim().token(),modifier=Modifier.fillMaxWidth().testTag("license_activate")){Text("Активировать")}
                         if(pending)OutlinedButton(onClick={run(true,true)},enabled=!busy,modifier=Modifier.fillMaxWidth()){Text("Повторить активацию")}
-                        OutlinedButton(onClick={run(false)},enabled=!busy && !pending,modifier=Modifier.fillMaxWidth()){Text("Обновить подписку")}
+                        OutlinedButton(onClick={run(false)},enabled=!busy && !pending,modifier=Modifier.fillMaxWidth().testTag("license_refresh")){Text("Обновить подписку")}
                         if(message.isNotEmpty())Text(message)
                         Text("Тестовая сборка: закрытый сервер, не для коммерческой выдачи.")
                         TextButton(onClick={finish()},enabled=!busy){Text("Вернуться к книге")}
@@ -64,7 +65,7 @@ class LicenseActivity:ComponentActivity(){
                 }
                 if(confirm)AlertDialog(onDismissRequest={confirm=false},title={Text("Активировать новый код?")},
                     text={Text("Предыдущее локальное разрешение будет заменено. Данные долговой книги останутся без изменений.")},
-                    confirmButton={TextButton(onClick={confirm=false;run(true)}){Text("Активировать")}},
+                    confirmButton={TextButton(onClick={confirm=false;run(true)},modifier=Modifier.testTag("license_confirm")){Text("Активировать")}},
                     dismissButton={TextButton(onClick={confirm=false}){Text("Отмена")}})
             }
         }

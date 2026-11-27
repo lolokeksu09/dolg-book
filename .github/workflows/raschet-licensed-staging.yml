@@ -1,0 +1,85 @@
+name: Raschet licensed staging
+
+on:
+  pull_request:
+    paths:
+      - 'android/**'
+      - '.github/workflows/raschet-licensed-staging.yml'
+      - 'scripts/test-licensed-staging.sh'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  integration:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: lolokeksu09/Ventry
+          ref: 769726510cebba89f85754e135a317c095f69a62
+          path: delivery-staging
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Install Android SDK
+        run: |
+          sdkmanager_bin="${ANDROID_HOME:-/usr/local/lib/android/sdk}/cmdline-tools/latest/bin/sdkmanager"
+          "$sdkmanager_bin" --install 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Build actual Ventry Delivery
+        working-directory: delivery-staging/delivery/service
+        run: |
+          rustup toolchain install 1.94.0 --profile minimal
+          cargo +1.94.0 build --locked
+      - name: Start isolated real Delivery and derive staging public key
+        working-directory: delivery-staging
+        run: |
+          set -euo pipefail
+          bash admin-android/ci/start-service.sh
+          python3 - <<'PY'
+          import os, subprocess
+          from pathlib import Path
+          p=Path(os.environ["RUNNER_TEMP"])
+          seed=bytes.fromhex((p/"ventry-admin-signing-key").read_text().strip())
+          key=bytes.fromhex("302e020100300506032b657004220420")+seed
+          pub=subprocess.run(["openssl","pkey","-inform","DER","-pubout","-outform","DER"],input=key,capture_output=True,check=True).stdout
+          assert len(pub)==44 and pub.startswith(bytes.fromhex("302a300506032b6570032100"))
+          with open(os.environ["GITHUB_ENV"],"a") as out:out.write("RASCHET_STAGING_PIN="+pub[-32:].hex()+"\n")
+          PY
+      - name: Compile isolated licensed APK and tests
+        run: |
+          set -euo pipefail
+          gradle -p android -PraschetLicensePublicKey="$RASCHET_STAGING_PIN" -PraschetLicenseOrigin=http://127.0.0.1:18082 testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest --no-daemon
+          apk=android/app/build/outputs/apk/debug/app-debug.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify "$apk"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$apk" | grep -F "package: name='dev.ventry.raschet.licensedstaging'"
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -no-snapshot -noaudio -no-boot-anim -gpu swiftshader
+          script: bash scripts/test-licensed-staging.sh
+      - name: Stop isolated environment
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/ventry-admin-service.pid" ]; then kill "$(cat "$RUNNER_TEMP/ventry-admin-service.pid")" 2>/dev/null || true; fi
+          docker rm -f ventry-admin-ci || true
+          rm -f "$RUNNER_TEMP/ventry-admin-db.conf" "$RUNNER_TEMP/ventry-admin-token" "$RUNNER_TEMP/ventry-admin-signing-key"
