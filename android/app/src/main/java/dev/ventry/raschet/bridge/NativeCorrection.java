@@ -1,8 +1,7 @@
 package dev.ventry.raschet.bridge;
 
 /**
- * JNI ABI v1 for the Rust correction engine. Not used by the application until
- * Android ABI packaging and runtime parity have been verified.
+ * JNI ABI v1 for the Rust correction engine in release and native-enabled debug builds.
  */
 public final class NativeCorrection {
     private NativeCorrection() {}
@@ -13,7 +12,7 @@ public final class NativeCorrection {
     public static final long RANGE = -3L;
     public static final long INTERNAL = -4L;
 
-    /** Explicit loading for the opt-in Android preview; never called by ordinary builds. */
+    /** Explicit loading at the financial correction boundary. */
     public static void loadAndroidLibrary() {
         System.loadLibrary("raschet_jni");
     }

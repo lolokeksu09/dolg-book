@@ -42,10 +42,16 @@ jobs:
           rustup toolchain install 1.85.1 --profile minimal
       - name: Build four Android Rust ABIs
         run: ANDROID_NDK_HOME="$ANDROID_HOME/ndk/28.2.13676358" bash scripts/build-rust-android.sh
-      - name: Assemble and verify preview APK
+      - name: Assemble and verify native-enabled debug APK
         run: |
           gradle -p android -PraschetRustPreview=true :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon
           apk=android/app/build/outputs/apk/debug/app-debug.apk
+          python3 scripts/verify-rust-preview-apk.py "$apk"
+          "$ANDROID_HOME/build-tools/35.0.0/zipalign" -c -P 16 4 "$apk"
+      - name: Verify native library is mandatory in unsigned release
+        run: |
+          gradle -p android :app:assembleRelease --no-daemon
+          apk=android/app/build/outputs/apk/release/app-release-unsigned.apk
           python3 scripts/verify-rust-preview-apk.py "$apk"
           "$ANDROID_HOME/build-tools/35.0.0/zipalign" -c -P 16 4 "$apk"
       - name: Enable KVM

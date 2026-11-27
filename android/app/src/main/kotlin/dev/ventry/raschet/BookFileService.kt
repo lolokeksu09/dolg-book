@@ -14,6 +14,7 @@ import java.io.Reader
 import java.time.ZoneId
 import java.time.LocalDate
 import dev.ventry.raschet.domain.AnalyticsExport
+import dev.ventry.raschet.domain.CsvText
 import dev.ventry.raschet.domain.AnalyticsProjection
 import dev.ventry.raschet.domain.AnalyticsSeries
 
@@ -155,8 +156,5 @@ internal object BookFileService {
         stream.use { write(it); it.flush() }
     }
 
-    internal fun csvCell(value: String): String {
-        val safe = if (value.isNotEmpty() && value[0] in "=+-@\t\r") "'$value" else value
-        return "\"" + safe.replace("\"", "\"\"") + "\""
-    }
+    internal fun csvCell(value: String): String = CsvText.cell(value)
 }

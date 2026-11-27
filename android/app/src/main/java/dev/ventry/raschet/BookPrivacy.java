@@ -7,7 +7,6 @@ import android.content.SharedPreferences;
 
 /** Local UI gate. Uses the system credential, not a new application password. */
 final class BookPrivacy {
-    static final int OPEN=106, ENABLE=107, DISABLE=108;
     static final long RELOCK_MS=60_000L;
     private final Context context;
     private final SharedPreferences prefs;
