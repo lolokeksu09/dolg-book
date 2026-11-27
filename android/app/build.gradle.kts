@@ -34,16 +34,15 @@ android {
         versionCode = 35
         versionName = "0.30.0-beta.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        manifestPlaceholders["licenseNetworkConfig"] = "@xml/license_network"
     }
     buildTypes {
         getByName("debug") {
-            applicationIdSuffix = if (licensePin == null) ".nativev031" else ".licensedstaging"
+            applicationIdSuffix = ".nativev031"
             if (licensePin != null) {
+                applicationIdSuffix = ".licensedstaging"
                 buildConfigField("boolean", "LICENSE_REQUIRED", "true")
                 buildConfigField("String", "LICENSE_PUBLIC_KEY", "\"$licensePin\"")
                 buildConfigField("String", "LICENSE_ORIGIN", "\"$licenseOrigin\"")
-                manifestPlaceholders["licenseNetworkConfig"] = "@xml/license_staging_network"
             }
         }
         getByName("release") {
@@ -64,6 +63,11 @@ kotlin {
 }
 
 android.sourceSets.getByName("test").resources.srcDir(rootProject.projectDir.parentFile.resolve("tests/contracts"))
+if (licensePin != null) {
+    android.sourceSets.getByName("debug").manifest.srcFile("src/licensedStaging/AndroidManifest.xml")
+    android.sourceSets.getByName("debug").res.srcDir("src/licensedStaging/res")
+    android.sourceSets.getByName("androidTest").java.srcDir("src/licensedStagingAndroidTest/kotlin")
+}
 
 // Every release includes Rust. Debug remains Kotlin-only unless explicitly selected,
 // keeping host unit tests independent of Android ELF libraries.

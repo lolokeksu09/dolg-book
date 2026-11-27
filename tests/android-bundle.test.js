@@ -415,3 +415,14 @@ test('financial commands revalidate consent and preserve existing transactional 
   assert.ok(repository.includes('store.recordCheckedPayment(command)'));
   assert.ok(service.includes('drafts.get(clientId, kind)?.id == id'));
 });
+
+test('licensed staging adds network permission and an isolated package only when explicitly selected',()=>{
+  const gradle=read('android/app/build.gradle.kts');
+  const manifest=read('android/app/src/licensedStaging/AndroidManifest.xml');
+  assert.ok(gradle.includes('if (licensePin != null) {'));
+  assert.ok(gradle.includes('applicationIdSuffix = ".licensedstaging"'));
+  assert.ok(gradle.includes('src/licensedStaging/AndroidManifest.xml'));
+  assert.ok(manifest.includes('android.permission.INTERNET'));
+  assert.match(manifest,/<activity android:name="\.license\.LicenseActivity" android:exported="false"\s*\/>/);
+  assert.ok(!read('android/app/src/main/AndroidManifest.xml').includes('android.permission.INTERNET'));
+});
