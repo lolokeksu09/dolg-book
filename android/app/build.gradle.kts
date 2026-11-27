@@ -14,6 +14,14 @@ plugins {
 val licensePin = providers.gradleProperty("raschetLicensePublicKey").orNull
 val licenseOrigin = providers.gradleProperty("raschetLicenseOrigin").orNull
 val licenseCa = providers.gradleProperty("raschetLicenseCaDer").orNull
+// Explicit public candidate, not an automatic release or a replacement for existing RC.
+val publicPin = providers.gradleProperty("raschetPublicLicenseKey").orNull
+val publicVersionName = "0.31.0-beta.1"
+val publicVersionCode = 36
+if (publicPin != null) {
+    require(licensePin == null && licenseOrigin == null && licenseCa == null) { "Public and private staging profiles cannot be mixed" }
+    require(publicPin.matches(Regex("[0-9a-f]{64}")) && publicPin != "0".repeat(64)) { "Expected nonzero raw Ed25519 public key hex" }
+}
 require(licenseCa == null || licensePin != null) { "CA requires licensed staging" }
 require((licensePin == null) == (licenseOrigin == null)) { "Both license staging properties are required" }
 if (licensePin != null) {
@@ -41,6 +49,7 @@ android {
     defaultConfig {
         buildConfigField("boolean", "RUST_PREVIEW", "false")
         buildConfigField("boolean", "LICENSE_REQUIRED", "false")
+        buildConfigField("boolean", "LICENSE_PUBLIC_PROFILE", "false")
         buildConfigField("String", "LICENSE_PUBLIC_KEY", "\"\"")
         buildConfigField("String", "LICENSE_ORIGIN", "\"\"")
         buildConfigField("String", "LICENSE_CA_DER", "\"\"")
@@ -49,6 +58,10 @@ android {
         targetSdk = 35
         versionCode = 35
         versionName = "0.30.0-beta.1"
+        if (publicPin != null) {
+            versionCode = publicVersionCode
+            versionName = publicVersionName
+        }
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildTypes {
@@ -67,6 +80,12 @@ android {
         getByName("release") {
             // Release corrections must use the packaged Rust JNI engine.
             buildConfigField("boolean", "RUST_PREVIEW", "true")
+            if (publicPin != null) {
+                buildConfigField("boolean", "LICENSE_REQUIRED", "true")
+                buildConfigField("boolean", "LICENSE_PUBLIC_PROFILE", "true")
+                buildConfigField("String", "LICENSE_PUBLIC_KEY", "\"$publicPin\"")
+                buildConfigField("String", "LICENSE_ORIGIN", "\"https://license.ventrylab.top\"")
+            }
         }
     }
     compileOptions {
@@ -95,6 +114,10 @@ val nativeRoot = layout.buildDirectory.dir("generated/rustPreview")
 val nativeLibs = nativeRoot.map { it.dir("jniLibs") }
 val nativeAssets = nativeRoot.map { it.dir("testAssets") }
 android.sourceSets.getByName("release").jniLibs.srcDir(nativeLibs)
+if (publicPin != null) {
+    android.sourceSets.getByName("release").manifest.srcFile("src/licensedRelease/AndroidManifest.xml")
+    android.sourceSets.getByName("release").res.srcDir("src/licensedRelease/res")
+}
 val verifyRustLibraries = tasks.register("verifyRustLibraries") {
     doLast {
         for (abi in listOf("arm64-v8a", "armeabi-v7a", "x86", "x86_64")) {
