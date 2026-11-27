@@ -6,6 +6,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import dev.ventry.raschet.license.*
 import org.json.JSONObject
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Assume.assumeTrue
 import org.junit.Rule
@@ -46,6 +47,7 @@ class LicensedStagingTest {
             assertTrue(c.validUntil!!-c.issued in 604770..604800)
             assertTrue(c.leaseUntil-c.issued<=MAX_LEASE)
             assertNull(active.pendingCode)
+            assertNull(active.pendingRefresh)
             assertTrue(LicenseManager.permits(context))
             book.addEntry(id,"debt",10000,"","")
             assertEquals(10000L,LedgerStore.balance(book.entriesForClient(id),id))
@@ -59,6 +61,20 @@ class LicensedStagingTest {
             assertEquals(active.refresh,afterWrong.refresh)
             assertEquals(active.envelope,afterWrong.envelope)
             assertNull(afterWrong.pendingCode)
+            assertTrue(LicenseManager.permits(context))
+            assertEquals(backup,book.exportJson())
+            // Persist only the pending credential as if the process died after
+            // the first activation committed but before saving the response.
+            // The unusable code ensures recovery must use the refresh endpoint.
+            vault.write(active.copy(pendingCode="1".repeat(64),pendingRefresh=active.refresh,envelope=null,anchor=null))
+            assertFalse(LicenseManager.permits(context))
+            runBlocking{LicenseManager.activate(context,null)}
+            val recovered=checkNotNull(vault.read())
+            assertEquals(active.refresh,recovered.refresh)
+            assertNull(recovered.pendingCode)
+            assertNull(recovered.pendingRefresh)
+            assertEquals(c.subscription,verifier.verify(checkNotNull(recovered.envelope),recovered.installation).subscription)
+            assertEquals(c.validUntil,verifier.verify(checkNotNull(recovered.envelope),recovered.installation).validUntil)
             assertTrue(LicenseManager.permits(context))
             assertEquals(backup,book.exportJson())
             // Simulate offline lease expiry using only the isolated test vault.

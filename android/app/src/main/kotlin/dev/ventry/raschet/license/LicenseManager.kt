@@ -33,10 +33,10 @@ object LicenseManager {
     internal fun description(context:Context):String=synchronized(lock){
         try{
             val r=LicenseVault(context).read()?:return@synchronized "Не активирована. Введите код Ventry."
-            if(r.pendingCode!=null)return@synchronized "Активация не завершена. Повторите сохранённый запрос."
-            val c=claims(r)?:return@synchronized "Требуется обновить лицензию."
+            val waiting=if(r.pendingCode!=null)"Есть незавершённая активация. Повторите сохранённый запрос.\n" else ""
+            val c=claims(r)?:return@synchronized waiting+"Требуется обновить лицензию."
             val end=c.validUntil?.let{Instant.ofEpochSecond(it).toString()}?:"—"
-            (if(permits(context))"Новые долги доступны" else "Новые долги недоступны; обновите подписку")+"\nПодписка до: "+end+
+            waiting+(if(permits(context))"Новые долги доступны" else "Новые долги недоступны; обновите подписку")+"\nПодписка до: "+end+
                 "\nОфлайн-разрешение до: "+Instant.ofEpochSecond(c.leaseUntil)
         }catch(_:Exception){"Лицензия не читается. Данные книги не изменены."}
     }
@@ -55,8 +55,14 @@ object LicenseManager {
             connection.setFixedLengthStreamingMode(bytes.size)
             connection.outputStream.use{it.write(bytes)}
             val code=connection.responseCode
-            if(code==404)throw Denied()
-            if(code!=200 || connection.contentType?.startsWith("application/json")!=true)throw Unavailable()
+            val json=connection.contentType?.substringBefore(';')?.trim()=="application/json"
+            if(code==404 && json){
+                // Only the explicit application denial may invalidate an entitlement.
+                // A missing route / reverse proxy 404 is a temporary failure.
+                val error=connection.errorStream?.use{it.readNBytesCompat(1024)}
+                if(error!=null && runCatching{JSONObject(error).optString("error")=="activation_unavailable"}.getOrDefault(false))throw Denied()
+            }
+            if(code!=200 || !json)throw Unavailable()
             return connection.inputStream.use{stream->
                 val out=ByteArrayOutputStream();val b=ByteArray(4096)
                 while(true){val n=stream.read(b);if(n<0)break;require(out.size()+n<=16384);out.write(b,0,n)}
@@ -64,19 +70,27 @@ object LicenseManager {
             }
         }finally{connection.disconnect()}
     }
-    private fun accept(context:Context,r:Record,raw:String){
+    private fun java.io.InputStream.readNBytesCompat(limit:Int):String {
+        val out=ByteArrayOutputStream();val buffer=ByteArray(1024)
+        while(true){val n=read(buffer);if(n<0)break;if(out.size()+n>limit)throw Unavailable();out.write(buffer,0,n)}
+        return out.toString("UTF-8")
+    }
+    private fun accept(context:Context,r:Record,raw:String,replacement:Boolean=false){
         val next=verifier().verify(raw,r.installation)
         val previous=claims(r)
-        require(previous==null || (next.subscription==previous.subscription && next.revision>=previous.revision && next.issued>=previous.issued))
+        require(previous==null || (next.issued>=previous.issued &&
+            (if(next.subscription==previous.subscription) next.revision>=previous.revision else replacement)))
         val now=LicenseVault.now(context)
         // Reject delayed/replayed signed responses instead of resetting the offline lease.
         require(kotlin.math.abs(now.wallSec-next.issued)<=300)
         synchronized(lock){
             // A same-second retry cannot reset an old monotonic anchor.
             val anchor=if(previous!=null && next.issued==previous.issued && r.anchor!=null) r.anchor else now
-            LicenseVault(context).write(r.copy(pendingCode=null,envelope=raw,anchor=anchor))
+            val secret=if(replacement)checkNotNull(r.pendingRefresh)else r.refresh
+            LicenseVault(context).write(r.copy(refresh=secret,pendingCode=null,pendingRefresh=null,envelope=raw,anchor=anchor))
         }
     }
+    internal class PendingExists:Exception()
     internal suspend fun activate(context:Context,code:String?)=withContext(Dispatchers.IO){
         network.withLock{
             val vault=LicenseVault(context)
@@ -84,16 +98,31 @@ object LicenseManager {
                 val old=vault.read()
                 val entered=code?.trim()?.takeIf{it.isNotEmpty()}
                 require(entered==null || entered.token())
-                if(old?.pendingCode!=null && (entered==null || entered==old.pendingCode))old
-                else {
+                if(old?.pendingCode!=null){
+                    if(entered!=null && entered!=old.pendingCode)throw PendingExists()
+                    old
+                }else{
                     require(entered!=null)
-                    // Explicit new activation replaces local entitlement; never touch the ledger.
-                    LicenseVault.fresh(old?.installation,entered).also(vault::write)
+                    // Retain the prior verified lease and refresh secret until a signed
+                    // replacement is verified. Persist the candidate before network I/O.
+                    LicenseVault.replacement(old,entered).also(vault::write)
                 }
             }
             val activation=checkNotNull(r.pendingCode)
-            val data=JSONObject().put("installation_id",r.installation).put("product",PRODUCT).put("refresh_secret",r.refresh)
-            accept(context,r,post("/api/v1/activate",activation,data))
+            val candidate=checkNotNull(r.pendingRefresh)
+            val identity=JSONObject().put("installation_id",r.installation).put("product",PRODUCT)
+            // A previous activation may already be committed, even after its code expires.
+            // Recover it with the independently persisted refresh credential first.
+            val raw=try{post("/api/v1/entitlement",candidate,identity)}
+                catch(_:Denied){
+                    try{post("/api/v1/activate",activation,JSONObject(identity.toString()).put("refresh_secret",candidate))}
+                    catch(e:Denied){
+                        // No proof of a new activation. Keep the prior entitlement.
+                        synchronized(lock){vault.write(r.copy(pendingCode=null,pendingRefresh=null))}
+                        throw e
+                    }
+                }
+            accept(context,r,raw,replacement=true)
         }
     }
     internal suspend fun refresh(context:Context)=withContext(Dispatchers.IO){
