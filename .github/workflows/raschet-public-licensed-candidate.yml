@@ -1,4 +1,5 @@
 name: Raschet public licensed candidate
+
 on:
   pull_request:
     paths:
@@ -6,15 +7,21 @@ on:
       - 'rust-core/**'
       - 'scripts/build-rust-android.sh'
       - 'scripts/verify-rust-preview-apk.py'
+      - 'tests/android-bundle.test.js'
       - '.github/workflows/raschet-public-licensed-candidate.yml'
+  push:
+    branches: [main]
+    paths: ['android/release-profile.properties']
   workflow_dispatch:
     inputs:
       public_key:
-        description: 'Existing Delivery raw Ed25519 PUBLIC key, not private seed'
-        required: true
+        description: 'Optional check against the current Delivery public verification key'
+        required: false
         type: string
+
 permissions:
   contents: read
+
 jobs:
   candidate:
     if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
@@ -31,6 +38,20 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.11.1'
+      - name: Read the release profile
+        env:
+          OWNER_PIN: ${{ inputs.public_key }}
+        run: |
+          set -euo pipefail
+          profile=android/release-profile.properties
+          code="$(sed -n 's/^versionCode=//p' "$profile")"
+          name="$(sed -n 's/^versionName=//p' "$profile")"
+          pin="$(sed -n 's/^deliveryPublicKey=//p' "$profile")"
+          [[ "$code" =~ ^[1-9][0-9]*$ && "$name" =~ ^[0-9]+[.][0-9]+[.][0-9]+-beta[.][0-9]+$ ]]
+          [[ "$pin" =~ ^[0-9a-f]{64}$ && "$pin" != "$(printf '%064d' 0)" ]]
+          [[ -z "$OWNER_PIN" || "$OWNER_PIN" == "$pin" ]]
+          printf 'RASCHET_RELEASE_CODE=%s\nRASCHET_RELEASE_NAME=%s\nRASCHET_PUBLIC_PIN=%s\n' \
+            "$code" "$name" "$pin" >> "$GITHUB_ENV"
       - name: Install SDK and Rust
         run: |
           set -euo pipefail
@@ -38,43 +59,17 @@ jobs:
           "$sdkmanager_bin" --install 'platforms;android-35' 'build-tools;35.0.0' 'ndk;28.2.13676358'
           rustup toolchain install 1.85.1 --profile minimal
           ANDROID_NDK_HOME="$ANDROID_HOME/ndk/28.2.13676358" bash scripts/build-rust-android.sh
-      - name: Resolve public pin (synthetic on PR)
-        env:
-          OWNER_PIN: ${{ inputs.public_key }}
-          EVENT: ${{ github.event_name }}
+      - name: Validate the ledger and reject a different Delivery key
         run: |
           set -euo pipefail
-          if [[ "$EVENT" = pull_request ]]; then
-            # RFC 8032 public test vector; never sign/publish this PR artifact.
-            pin=d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a
-          else pin="$OWNER_PIN"; fi
-          [[ "$pin" =~ ^[0-9a-f]{64}$ && "$pin" != "$(printf '%064d' 0)" ]]
-          printf 'RASCHET_PUBLIC_PIN=%s\n' "$pin" >> "$GITHUB_ENV"
-      - name: Reject invalid or mixed build profiles
-        run: |
-          set -euo pipefail
+          node --test tests/ledger.test.js tests/android-bundle.test.js tests/android-onboarding.test.js tests/android-collections.test.js tests/android-daily-ops.test.js
           if gradle -p android -PraschetPublicLicenseKey=invalid help --no-daemon; then exit 1; fi
           if gradle -p android -PraschetPublicLicenseKey="$RASCHET_PUBLIC_PIN" -PraschetLicensePublicKey="$RASCHET_PUBLIC_PIN" -PraschetLicenseOrigin=http://127.0.0.1:18444 help --no-daemon; then exit 1; fi
-      - name: Verify ordinary ledger and public variant
-        run: |
-          set -euo pipefail
-          python3 scripts/test-release-request.py
-          gradle -p android -PraschetPublicLicenseKey="$RASCHET_PUBLIC_PIN" testDebugUnitTest lintRelease assembleRelease --no-daemon
-          apk=android/app/build/outputs/apk/release/app-release-unsigned.apk
-          tools="$ANDROID_HOME/build-tools/35.0.0"
-          python3 scripts/verify-rust-preview-apk.py "$apk"
-          "$tools/zipalign" -c -P 16 4 "$apk"
-          "$tools/aapt" dump badging "$apk" | grep -F "package: name='dev.ventry.raschet' versionCode='36' versionName='0.31.0-beta.1'"
-          "$tools/aapt" dump permissions "$apk" | grep -F android.permission.INTERNET
-          "$tools/aapt" dump xmltree "$apk" AndroidManifest.xml | grep -F '.license.LicenseActivity'
-          python3 - <<'PY'
-          from pathlib import Path
-          import os
-          roots=list(Path("android/app/build/generated").rglob("BuildConfig.java"))
-          assert any('LICENSE_REQUIRED = true' in p.read_text() and 'LICENSE_PUBLIC_PROFILE = true' in p.read_text() and 'https://license.ventrylab.top' in p.read_text() and os.environ["RASCHET_PUBLIC_PIN"] in p.read_text() for p in roots)
-          PY
-      - name: Prepare existing release signing material (main dispatch only)
-        if: github.event_name == 'workflow_dispatch'
+      - name: Build the unsigned unified release for pull request checks
+        if: github.event_name == 'pull_request'
+        run: gradle -p android testDebugUnitTest lintRelease assembleRelease --no-daemon
+      - name: Prepare existing release signing material
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         env:
           STORE: ${{ secrets.RASCHET_SIGNING_KEYSTORE_BASE64 }}
         run: |
@@ -82,27 +77,55 @@ jobs:
           umask 077
           test -n "$STORE"
           printf '%s' "$STORE" | base64 --decode > "$RUNNER_TEMP/raschet-signing.jks"
-      - name: Build signed owner acceptance candidate (never publish)
-        if: github.event_name == 'workflow_dispatch'
+      - name: Build the signed owner acceptance candidate
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         env:
           RASCHET_SIGNING_STORE_FILE: ${{ runner.temp }}/raschet-signing.jks
           RASCHET_SIGNING_STORE_PASSWORD: ${{ secrets.RASCHET_SIGNING_STORE_PASSWORD }}
           RASCHET_SIGNING_KEY_ALIAS: ${{ secrets.RASCHET_SIGNING_KEY_ALIAS }}
           RASCHET_SIGNING_KEY_PASSWORD: ${{ secrets.RASCHET_SIGNING_KEY_PASSWORD }}
-          EXPECTED_CERT: ${{ vars.RASCHET_SIGNING_CERT_SHA256 }}
         run: |
           set -euo pipefail
           for name in RASCHET_SIGNING_STORE_PASSWORD RASCHET_SIGNING_KEY_ALIAS RASCHET_SIGNING_KEY_PASSWORD; do test -n "${!name:-}"; done
-          [[ "$EXPECTED_CERT" =~ ^[0-9a-fA-F]{64}$ ]]
-          gradle -p android -PraschetPublicLicenseKey="$RASCHET_PUBLIC_PIN" assembleRelease --no-daemon
+          gradle -p android testDebugUnitTest lintRelease assembleRelease --no-daemon
+      - name: Verify release identity, native code and cloud components
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          aptools="$ANDROID_HOME/build-tools/35.0.0"
           apk=android/app/build/outputs/apk/release/app-release.apk
-          tools="$ANDROID_HOME/build-tools/35.0.0"
+          if [[ "$EVENT" == 'pull_request' ]]; then
+            apk=android/app/build/outputs/apk/release/app-release-unsigned.apk
+          fi
           python3 scripts/verify-rust-preview-apk.py "$apk"
-          "$tools/zipalign" -c -P 16 4 "$apk"
-          "$tools/apksigner" verify --verbose --print-certs "$apk" > "$RUNNER_TEMP/cert.txt"
+          "$aptools/zipalign" -c -P 16 4 "$apk"
+          "$aptools/aapt" dump badging "$apk" > "$RUNNER_TEMP/release-badging.txt"
+          grep -F "package: name='dev.ventry.raschet' versionCode='$RASCHET_RELEASE_CODE' versionName='$RASCHET_RELEASE_NAME'" "$RUNNER_TEMP/release-badging.txt"
+          "$aptools/aapt" dump permissions "$apk" > "$RUNNER_TEMP/release-permissions.txt"
+          grep -F android.permission.INTERNET "$RUNNER_TEMP/release-permissions.txt"
+          "$aptools/aapt" dump xmltree "$apk" AndroidManifest.xml > "$RUNNER_TEMP/release-manifest.txt"
+          grep -F '.license.LicenseActivity' "$RUNNER_TEMP/release-manifest.txt"
+          grep -F '.cloud.CloudBackupJob' "$RUNNER_TEMP/release-manifest.txt"
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+          configs = (p.read_text() for p in Path("android/app/build/generated").rglob("BuildConfig.java"))
+          expected = ("LICENSE_REQUIRED = true", "LICENSE_PUBLIC_PROFILE = true",
+                      "https://license.ventrylab.top", os.environ["RASCHET_PUBLIC_PIN"])
+          assert any(all(value in config for value in expected) for config in configs)
+          PY
+      - name: Verify the existing certificate and package the candidate
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        env:
+          EXPECTED_CERT: ${{ vars.RASCHET_SIGNING_CERT_SHA256 }}
+        run: |
+          set -euo pipefail
+          [[ "$EXPECTED_CERT" =~ ^[0-9a-fA-F]{64}$ ]]
+          apk=android/app/build/outputs/apk/release/app-release.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$apk" > "$RUNNER_TEMP/cert.txt"
           actual="$(awk -F': ' '/^Signer #1 certificate SHA-256 digest: /{print tolower($2)}' "$RUNNER_TEMP/cert.txt")"
-          [[ "$actual" == "${EXPECTED_CERT,,}" ]]
-          "$tools/aapt" dump badging "$apk" | grep -F "package: name='dev.ventry.raschet' versionCode='36' versionName='0.31.0-beta.1'"
+          [[ "$actual" == "${EXPECTED_CERT,,}" ]] || { echo 'Release signer mismatch'; exit 1; }
           out="$RUNNER_TEMP/licensed-candidate"
           mkdir -p "$out"
           cp "$apk" "$out/Raschet-licensed-candidate.apk"
@@ -111,7 +134,7 @@ jobs:
           printf '%s\n' "$RASCHET_PUBLIC_PIN" > "$out/LICENSE_PUBLIC_KEY"
           (cd "$out" && sha256sum Raschet-licensed-candidate.apk > SHA256SUMS)
       - uses: actions/upload-artifact@v4
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         with:
           name: Raschet-licensed-candidate
           path: ${{ runner.temp }}/licensed-candidate/

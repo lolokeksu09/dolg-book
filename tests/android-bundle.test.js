@@ -10,7 +10,7 @@ test('Android UI is native and does not contain web UI runtime',()=>{
   const gradle=read('android/app/build.gradle.kts');
   const activity=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
   const manifest=read('android/app/src/main/AndroidManifest.xml');
-  assert.ok(gradle.includes('versionName = "0.30.0-beta.1"'));
+  assert.ok(gradle.includes("versionName = releaseVersionName"));
   assert.ok(gradle.includes('applicationIdSuffix = ".nativev031"'));
   assert.ok(!gradle.includes('webkit')&&!gradle.includes('syncOfflineBook'));
   assert.ok(!gradle.includes('index.html')&&!gradle.includes('app.js'));
@@ -48,17 +48,22 @@ test('release signing is opt-in and test package does not change',()=>{
   assert.ok(!gradle.includes('storePassword = "'));
 });
 
-test('RC signing is isolated from PR and verifies the fixed certificate and candidate',()=>{
-  const workflow=read('.github/workflows/android-release-candidate.yml');
-  const smoke=read('scripts/android-native-smoke.sh');
-  assert.ok(workflow.includes("'raschet-v*-rc.*'"));
-  assert.ok(workflow.includes('vars.RASCHET_SIGNING_CERT_SHA256'));
+test('unified release includes cloud backups and uses the pinned signer',()=>{
+  const gradle=read('android/app/build.gradle.kts');
+  const profile=read('android/release-profile.properties');
+  const workflow=read('.github/workflows/raschet-public-licensed-candidate.yml');
+  assert.match(profile,/^versionCode=[1-9][0-9]*$/m);
+  assert.match(profile,/^deliveryPublicKey=[0-9a-f]{64}$/m);
+  assert.ok(gradle.includes('versionCode = releaseVersionCode'));
+  assert.ok(gradle.includes('LICENSE_PUBLIC_PROFILE", "true"'));
+  assert.ok(gradle.includes('.manifest.srcFile("src/licensedRelease/AndroidManifest.xml")'));
+  assert.ok(workflow.includes("github.event_name != 'pull_request' && github.ref == 'refs/heads/main'"));
+  assert.ok(workflow.includes("paths: ['android/release-profile.properties']"));
+  assert.ok(workflow.includes("vars.RASCHET_SIGNING_CERT_SHA256"));
   assert.ok(workflow.includes('Release signer mismatch'));
-  assert.ok(workflow.includes("github.event_name == 'pull_request'"));
-  assert.ok(workflow.includes('signed-smoke:'));
-  assert.ok(workflow.includes('sha256sum -c SHA256SUMS'));
-  assert.ok(smoke.includes('RASCHET_SIGNED_APK'));
-  assert.ok(smoke.includes('PACKAGE=dev.ventry.raschet\n'));
+  assert.ok(workflow.includes('.cloud.CloudBackupJob'));
+  assert.ok(workflow.includes('sha256sum Raschet-licensed-candidate.apk'));
+  assert.ok(!workflow.includes('gh release create'));
 });
 
 test('itemized debts use an additive migration and versioned validated purchase export',()=>{

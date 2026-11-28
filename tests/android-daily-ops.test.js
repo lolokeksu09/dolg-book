@@ -81,8 +81,7 @@ test('tablet adaptation and bounded history belong to 0.5 beta',()=>{
   assert.ok(detail.includes('model.rows.take(visibleLimit)'));
   assert.ok(detail.includes('visibleLimit = minOf(100000, visibleLimit + 80)'));
   const gradle=read('android/app/build.gradle.kts');
-  assert.ok(gradle.includes('versionCode = 35'));
-  assert.ok(gradle.includes('versionName = "0.30.0-beta.1"'));
+  assert.ok(gradle.includes('versionCode = releaseVersionCode'));
 });
 
 // A weighted horizontal LinearLayout must not baseline-measure a lazy Compose child with UNSPECIFIED height.
