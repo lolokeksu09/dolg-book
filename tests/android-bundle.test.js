@@ -253,7 +253,10 @@ test('payment journal is separate from unpaid debt and shortcuts only prefill th
   assert.ok(ui.includes("if(historicalMaximum[0]>0)amount.setText(amountInput(historicalMaximum[0]));"));
   assert.ok(ui.includes("historicalMaximum[0]=DatedPayments.maximum(clientEntries,clientId,entryDay[0],today,ZoneId.systemDefault());"));
   assert.ok(ui.includes("else if(payment&&cents>historicalMaximum[0])"));
-  assert.ok(ui.includes('"payment".equals(receipt.getKind())&&receipt.getDestination()==WriteDestination.BOOK'));
+  const filters=read('android/app/src/main/kotlin/dev/ventry/raschet/presentation/BookFiltersViewModel.kt');
+  assert.ok(filters.includes('receipt.kind == "payment" && receipt.destination == WriteDestination.BOOK'));
+  assert.ok(ui.includes('filters.onWrite(receipt,bookNavigation.getState().getClientOrigin())'));
+  assert.ok(filters.includes('payments = showPayment'));
   assert.ok(days.includes('if(!"payment".equals(e.type))continue;'));
 });
 
