@@ -98,7 +98,7 @@ internal object LedgerWrites {
             }
             date
         } else ""
-        require(LedgerSql.hasClient(db, clientId)) { "Клиент не найден." }
+        require(clientId != null && LedgerSql.hasClient(db, clientId)) { "Клиент не найден." }
         require(DatabaseUtils.queryNumEntries(db, "entries") < MAX_ENTRIES) { "Достигнут лимит операций." }
         val available = LedgerStore.balance(entries(db, clientId), clientId)
         require(type != "payment" || amount <= available) { "Оплата превышает остаток долга." }

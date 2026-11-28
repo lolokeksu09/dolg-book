@@ -9,7 +9,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 /** Immutable purchase snapshot; prices and discounts are integer kopecks. */
-final class Purchase {
+public final class Purchase {
     static final int MAX_ITEMS=8;
     static final class Item {
         final String name,unit;
