@@ -5,6 +5,7 @@ import static dev.ventry.raschet.ActivityRequests.*;
 import androidx.activity.ComponentActivity;
 import androidx.lifecycle.ViewModelProvider;
 import dev.ventry.raschet.presentation.BookViewModel;
+import dev.ventry.raschet.presentation.BookFiltersViewModel;
 import dev.ventry.raschet.presentation.BookNavigationViewModel;
 import dev.ventry.raschet.presentation.BookNavigationViewModel.Screen;
 import dev.ventry.raschet.presentation.AnalyticsViewModel;
@@ -77,6 +78,7 @@ public final class MainActivity extends ComponentActivity {
     private BookViewModel bookViewModel;
     private AnalyticsViewModel analyticsViewModel;
     private BookNavigationViewModel bookNavigation;
+    private BookFiltersViewModel filters;
     private PendingFileRequests pendingFiles;
     private boolean reloadOnStart,firstStartPending;
     private Dialog pendingClientDialog;
@@ -87,35 +89,13 @@ public final class MainActivity extends ComponentActivity {
     private BookPrivacy privacy;
     private boolean unlocked,authInFlight;
     private long stoppedAt=-1;
-    private String clientScope=ClientDirectory.ACTIVE;
-    private int clientVisibleLimit=60;
     private LinearLayout root, mainPanel, navigation;
     private TextView shopCaption;
     private FrameLayout page;
-    private String search="", historyFilter="Все";
-    private String historyQuery="";
-    private String collectionQuery="";
-    private boolean collectionUrgent;
-    private String collectionPlanFilter="ALL";
-    private int collectionLimit=60;
-    private String historyClientId=null;
-    private String clientFilter=CollectionsInsights.ALL;
-    private boolean clientsAmountFirst,clientsRecentFirst;
     private String shopName="Мой магазин";
-    private LocalDate reportFrom=LocalDate.now().withDayOfMonth(1),reportTo=LocalDate.now();
-    private LocalDate historyFrom,historyTo;
-    private int reportDaysLimit=14;
     private boolean tablet=false, largeText=false, saving=false;
-    private int historyVisibleLimit=100, detailVisibleLimit=80, bookDayLimit=30;
-    private String detailFilter=ClientStatement.ALL, detailFilterClient;
-    private final Set<String> expandedBookDays=new java.util.HashSet<>();
-    private LocalDate bookFrom,bookTo,bookCalendarDay;
-    private boolean bookCalendar;
-    private String bookQuery="";
-    private boolean bookOnlyUnpaid,bookAutoExpand,bookPayments;
     private final DateTimeFormatter bookDateFormat=DateTimeFormatter.ofPattern("dd.MM.yy",new Locale("ru","RU"));
     private final int pad=14;
-    private String settingsExpanded="";
     private int controlHeight(){return largeText?54:48;}
     private int navHeight(){return largeText?76:64;}
 
@@ -129,6 +109,8 @@ public final class MainActivity extends ComponentActivity {
         analyticsViewModel=new ViewModelProvider(this).get(AnalyticsViewModel.class);
         bookNavigation=new ViewModelProvider(this).get(BookNavigationViewModel.class);
         bookNavigation.restore(state);
+        filters=new ViewModelProvider(this).get(BookFiltersViewModel.class);
+        filters.restore(state);
         pendingFiles=bookNavigation.getPendingFiles();
         analyticsViewModel.focus(bookNavigation.getState().getAnalyticsClientId());
         vault=new RecoveryVault(this);
@@ -140,34 +122,9 @@ public final class MainActivity extends ComponentActivity {
         largeText=getPreferences(MODE_PRIVATE).getBoolean("large",false);
         if(state!=null){
             firstStartPending=state.getBoolean("first_start_pending",false);
-            search=state.getString("search","");
-            clientFilter=state.getString("client_filter",CollectionsInsights.ALL);
-            clientScope=state.getString("client_scope",ClientDirectory.ACTIVE);
-            clientVisibleLimit=state.getInt("client_visible_limit",60);
             authInFlight=state.getBoolean("auth_in_flight",false);
-            clientsAmountFirst=state.getBoolean("clients_amount_first",false);
-            clientsRecentFirst=state.getBoolean("clients_recent_first",false);
-            historyVisibleLimit=state.getInt("history_visible_limit",100);
-            collectionQuery=state.getString("collection_query","");collectionUrgent=state.getBoolean("collection_urgent",false);
-            collectionPlanFilter=state.getString("collection_plan_filter","ALL");
-            collectionLimit=state.getInt("collection_limit",60);
-            historyQuery=state.getString("history_query","");historyClientId=state.getString("history_client_id");
             analyticsViewModel.restoreFilters(state.getString("analytics_preset"),readDate(state,"analytics_range_from"),readDate(state,"analytics_range_to"),
                     state.getString("analytics_overview_section"),state.getString("analytics_personal_section"),state.getString("analytics_ranking"));
-            detailVisibleLimit=state.getInt("detail_visible_limit",80);
-            detailFilter=state.getString("detail_filter",ClientStatement.ALL);detailFilterClient=state.getString("detail_filter_client");
-            bookDayLimit=state.getInt("book_day_limit",30);
-            bookFrom=readDate(state,"book_from");bookTo=readDate(state,"book_to");
-            bookQuery=state.getString("book_query","");bookOnlyUnpaid=state.getBoolean("book_unpaid",false);
-            bookPayments=state.getBoolean("book_payments",false);
-            bookCalendar=state.getBoolean("book_calendar",false);bookCalendarDay=readDate(state,"book_calendar_day");
-            ArrayList<String> expanded=state.getStringArrayList("expanded_book_days");
-            if(expanded!=null)expandedBookDays.addAll(expanded);
-            reportFrom=LocalDate.parse(state.getString("report_from",reportFrom.toString()));
-            reportTo=LocalDate.parse(state.getString("report_to",reportTo.toString()));
-            historyFrom=readDate(state,"history_from");historyTo=readDate(state,"history_to");
-            reportDaysLimit=state.getInt("report_days_limit",14);
-            settingsExpanded=state.getString("settings_expanded","");
         }
         else firstStartPending=getIntent().getBooleanExtra(EXTRA_FIRST_START,false);
         tablet=getResources().getConfiguration().screenWidthDp>=720;
@@ -181,36 +138,14 @@ public final class MainActivity extends ComponentActivity {
     @Override protected void onSaveInstanceState(Bundle out) {
         bookNavigation.save(out);
         out.putBoolean("first_start_pending",firstStartPending);
-        out.putString("search",search);
-        out.putString("client_filter",clientFilter);
-        out.putString("client_scope",clientScope);
-        out.putInt("client_visible_limit",clientVisibleLimit);
         out.putBoolean("auth_in_flight",authInFlight);
-        out.putBoolean("clients_amount_first",clientsAmountFirst);
-        out.putBoolean("clients_recent_first",clientsRecentFirst);
-        out.putInt("history_visible_limit",historyVisibleLimit);
-        out.putString("collection_query",collectionQuery);out.putBoolean("collection_urgent",collectionUrgent);
-        out.putString("collection_plan_filter",collectionPlanFilter);
-        out.putInt("collection_limit",collectionLimit);
-        out.putString("history_query",historyQuery);out.putString("history_client_id",historyClientId);
+        filters.save(out);
         var selection=analyticsViewModel.getRequest().getValue().getSelection();
         out.putString("analytics_preset",selection.getPreset().name());
         if(selection.getCustom()!=null){saveDate(out,"analytics_range_from",selection.getCustom().getFrom());saveDate(out,"analytics_range_to",selection.getCustom().getTo());}
         out.putString("analytics_overview_section",analyticsViewModel.getOverviewSection().getValue().name());
         out.putString("analytics_personal_section",analyticsViewModel.getPersonalSection().getValue().name());
         out.putString("analytics_ranking",analyticsViewModel.getRanking().getValue());
-        out.putInt("detail_visible_limit",detailVisibleLimit);
-        out.putString("detail_filter",detailFilter);out.putString("detail_filter_client",detailFilterClient);
-        out.putInt("book_day_limit",bookDayLimit);
-        saveDate(out,"book_from",bookFrom);saveDate(out,"book_to",bookTo);
-        out.putString("book_query",bookQuery);out.putBoolean("book_unpaid",bookOnlyUnpaid);
-        out.putBoolean("book_payments",bookPayments);
-        out.putBoolean("book_calendar",bookCalendar);saveDate(out,"book_calendar_day",bookCalendarDay);
-        out.putStringArrayList("expanded_book_days",new ArrayList<>(expandedBookDays));
-        out.putString("report_from",reportFrom.toString());out.putString("report_to",reportTo.toString());
-        saveDate(out,"history_from",historyFrom);saveDate(out,"history_to",historyTo);
-        out.putInt("report_days_limit",reportDaysLimit);
-        out.putString("settings_expanded",settingsExpanded);
         super.onSaveInstanceState(out);
     }
     private View createShell() {
@@ -316,7 +251,7 @@ public final class MainActivity extends ComponentActivity {
             item.setOnClickListener(v->{
                 firstStartPending=false;
                 bookNavigation.selectTab(destination);
-                settingsExpanded="";
+                filters.closeSettings();
                 render();
             });
             LinearLayout.LayoutParams ip=tablet?new LinearLayout.LayoutParams(-1,dp(controlHeight())):
@@ -393,34 +328,34 @@ public final class MainActivity extends ComponentActivity {
         }
     }
     private View homeView(BookScreenData data) {
-        return BookCompose.create(this,data,bookPayments,bookFrom,bookTo,bookQuery,bookOnlyUnpaid,
-                hasBookFilter(),bookFilterSummary(),expandedBookDays,bookAutoExpand,bookDayLimit,largeText,
+        return BookCompose.create(this,data,filters.getBook().getPayments(),filters.getBook().getFrom(),filters.getBook().getTo(),filters.getBook().getQuery(),filters.getBook().getOnlyUnpaid(),
+                filters.getBook().hasFilter(),filters.getBook().summary(),filters.getBook().getExpanded(),filters.getBook().getAutoExpand(),filters.getBook().getLimit(),largeText,
                 getPreferences(MODE_PRIVATE).getLong("last_json_export",0L)==0L,
                 this::showQuickDebt,()->chooseClient("payment"),this::openCollections,
-                payments->{if(bookPayments!=payments){bookPayments=payments;clearBookFilters();expandedBookDays.clear();bookAutoExpand=true;render();}},
-                this::showBookFilters,()->{clearBookFilters();bookCalendarDay=null;render();},
-                key->{if(!expandedBookDays.add(key))expandedBookDays.remove(key);},
-                key->{if(key!=null)expandedBookDays.add(key);bookAutoExpand=false;},
-                limit->bookDayLimit=limit,
+                payments->{if(filters.getBook().getPayments()!=payments){filters.setBookMode(payments);render();}},
+                this::showBookFilters,()->{filters.clearBookFilters();render();},
+                filters::toggleBookDay,
+                filters::finishBookAutoExpand,
+                filters::setBookLimit,
                 id->openClient(id,Screen.BOOK),
                 this::showOperation,id->showEntryForm(id,"payment"),id->showEntryForm(id,"debt"),
                 day->showQuickDebt(false,day),day->chooseClient("payment",day),
                 ()->{bookNavigation.show(Screen.REPORT);render();},()->exportBook(false),
-                bookCalendar,bookCalendarDay,(calendar,day)->{bookCalendar=calendar;bookCalendarDay=day;},
+                filters.getBook().getCalendar(),filters.getBook().getCalendarDay(),filters::setCalendar,
                 ()->{bookNavigation.openAnalytics();render();});
     }
 
     private void openCollections(){
-        collectionQuery="";collectionUrgent=false;collectionPlanFilter="ALL";collectionLimit=60;
+        filters.openQueue();
         bookNavigation.showRoot(Screen.COLLECTIONS);render();
     }
     private View collectionView(BookScreenData data){
-        return CollectionsCompose.create(this,data,collectionQuery,collectionUrgent,collectionLimit,largeText,
-                query->{collectionQuery=query;collectionLimit=60;},
-                urgent->{collectionUrgent=urgent;collectionLimit=60;},
-                limit->collectionLimit=limit,this::openClientFilter,
+        return CollectionsCompose.create(this,data,filters.getQueue().getQuery(),filters.getQueue().getUrgent(),filters.getQueue().getLimit(),largeText,
+                filters::setQueueQuery,
+                filters::setQueueUrgent,
+                filters::setQueueLimit,this::openClientFilter,
                 id->openClient(id,Screen.COLLECTIONS),
-                id->showEntryForm(id,"payment"),this::showFollowUp,collectionPlanFilter,plan->collectionPlanFilter=plan);
+                id->showEntryForm(id,"payment"),this::showFollowUp,filters.getQueue().getPlan(),filters::setQueuePlan);
     }
     private void showFollowUp(LedgerStore.Client person){
         FollowUpJournal.Record current=ledger.currentPlan(person.id);
@@ -458,17 +393,11 @@ public final class MainActivity extends ComponentActivity {
                 note.getText().toString().trim(),target,restartPromise.isChecked());
         });
     }
-    private boolean hasBookFilter(){return bookFrom!=null||!bookQuery.trim().isEmpty()||bookOnlyUnpaid;}
-    private void clearBookFilters(){bookFrom=null;bookTo=null;bookQuery="";bookOnlyUnpaid=false;bookDayLimit=30;bookAutoExpand=false;}
-    private String bookFilterSummary(){
-        String period=bookFrom==null?"Все даты":bookDateFormat.format(bookFrom)+(bookFrom.equals(bookTo)?"":" — "+bookDateFormat.format(bookTo));
-        return period+(bookOnlyUnpaid?" · непогашенные":"")+(bookQuery.trim().isEmpty()?"":" · "+bookQuery.trim());
-    }
     private void showBookFilters(){
         LinearLayout form=stack(6);
-        EditText query=field("Имя или телефон",bookQuery);
+        EditText query=field("Имя или телефон",filters.getBook().getQuery());
         form.addView(formGroup("Поиск в книге",query));
-        LocalDate[] period={bookFrom,bookTo};
+        LocalDate[] period={filters.getBook().getFrom(),filters.getBook().getTo()};
         TextView summary=label("",14,TEXT,true);
         Runnable update=()->summary.setText(period[0]==null?"Все даты":bookDateFormat.format(period[0])+
                 (period[0].equals(period[1])?"":" — "+bookDateFormat.format(period[1])));
@@ -492,14 +421,13 @@ public final class MainActivity extends ComponentActivity {
         }),1);
         form.addView(presets);
         Switch unpaid=new Switch(this);unpaid.setText("Только непогашенные записи");unpaid.setTextColor(TEXT);
-        unpaid.setChecked(!bookPayments&&bookOnlyUnpaid);unpaid.setMinHeight(dp(48));
-        if(!bookPayments)form.addView(unpaid);
+        unpaid.setChecked(!filters.getBook().getPayments()&&filters.getBook().getOnlyUnpaid());unpaid.setMinHeight(dp(48));
+        if(!filters.getBook().getPayments())form.addView(unpaid);
         addButton(form,"Сбросить все условия",false,()->{
             query.setText("");period[0]=null;period[1]=null;unpaid.setChecked(false);update.run();
         },1);
         showDialog("Фильтры книги",form,()->{
-            bookQuery=query.getText().toString().trim();bookFrom=period[0];bookTo=period[1];bookOnlyUnpaid=!bookPayments&&unpaid.isChecked();
-            bookDayLimit=30;bookAutoExpand=hasBookFilter();bookCalendarDay=null;expandedBookDays.clear();return true;
+            filters.applyBookFilters(query.getText().toString(),period[0],period[1],unpaid.isChecked());return true;
         });
     }
     private View tabletClientsView(BookScreenData data) {
@@ -521,33 +449,33 @@ public final class MainActivity extends ComponentActivity {
         return columns;
     }
     private void openClientFilter(String filter) {
-        clientFilter=filter;clientScope=ClientDirectory.ACTIVE;clientVisibleLimit=60;search="";
+        filters.openClientFilter(filter);
         bookNavigation.showRoot(Screen.CLIENTS);render();
     }
     private View clientsView(BookScreenData data) {
-        return ClientsCompose.create(this,data,clientScope,clientFilter,clientsAmountFirst,clientsRecentFirst,
-                bookNavigation.getState().getClientId(),search,clientVisibleLimit,largeText,
-                value->{search=value;clientVisibleLimit=60;},
-                limit->clientVisibleLimit=limit,
+        return ClientsCompose.create(this,data,filters.getClients().getScope(),filters.getClients().getFilter(),filters.getClients().getAmountFirst(),filters.getClients().getRecentFirst(),
+                bookNavigation.getState().getClientId(),filters.getClients().getQuery(),filters.getClients().getLimit(),largeText,
+                filters::setClientQuery,
+                filters::setClientLimit,
                 ()->showClientForm(null),this::showClientFilters,
                 id->openClient(id,Screen.CLIENTS),
                 ()->openClientFilter(CollectionsInsights.ALL),
-                ()->{clientFilter=CollectionsInsights.ALL;clientVisibleLimit=60;render();});
+                ()->{filters.setClientFilter(CollectionsInsights.ALL);render();});
     }
     private void showClientFilters(){
         LinearLayout menu=stack(2);
         section(menu,"Список","");
         for(String scope:new String[]{ClientDirectory.ACTIVE,ClientDirectory.FAVORITES,ClientDirectory.ARCHIVE})
-            filterMenuAction(menu,scope,scope.equals(clientScope),()->{
-                clientScope=scope;clientFilter=CollectionsInsights.ALL;clientVisibleLimit=60;render();
+            filterMenuAction(menu,scope,scope.equals(filters.getClients().getScope()),()->{
+                filters.setClientScope(scope);render();
             });
         section(menu,"Долги","");
         for(String choice:new String[]{CollectionsInsights.ALL,CollectionsInsights.OWING,CollectionsInsights.CLEAR,CollectionsInsights.LATE,CollectionsInsights.SOON})
-            filterMenuAction(menu,choice,choice.equals(clientFilter),()->{clientFilter=choice;clientVisibleLimit=60;render();});
+            filterMenuAction(menu,choice,choice.equals(filters.getClients().getFilter()),()->{filters.setClientFilter(choice);render();});
         section(menu,"Сортировка","");
-        filterMenuAction(menu,"Сортировка: по имени",!clientsAmountFirst&&!clientsRecentFirst,()->{clientsAmountFirst=false;clientsRecentFirst=false;clientVisibleLimit=60;render();});
-        filterMenuAction(menu,"Сортировка: по остатку ↓",clientsAmountFirst&&!clientsRecentFirst,()->{clientsAmountFirst=true;clientsRecentFirst=false;clientVisibleLimit=60;render();});
-        filterMenuAction(menu,"Сортировка: последние операции",clientsRecentFirst,()->{clientsAmountFirst=false;clientsRecentFirst=true;clientVisibleLimit=60;render();});
+        filterMenuAction(menu,"Сортировка: по имени",!filters.getClients().getAmountFirst()&&!filters.getClients().getRecentFirst(),()->{filters.setClientSort(false,false);render();});
+        filterMenuAction(menu,"Сортировка: по остатку ↓",filters.getClients().getAmountFirst()&&!filters.getClients().getRecentFirst(),()->{filters.setClientSort(true,false);render();});
+        filterMenuAction(menu,"Сортировка: последние операции",filters.getClients().getRecentFirst(),()->{filters.setClientSort(false,true);render();});
         showDialog("Фильтры клиентов",menu,null);
     }
     private View detailView(String id,BookScreenData data) {
@@ -561,14 +489,14 @@ public final class MainActivity extends ComponentActivity {
                     "К списку клиентов",()->{bookNavigation.showRoot(Screen.CLIENTS);render();}));
         }
         final CollectionsInsights.CustomerStatus status=found;
-        if(!id.equals(detailFilterClient)){detailFilterClient=id;detailFilter=ClientStatement.ALL;detailVisibleLimit=80;}
+        filters.focusDetail(id);
         Screen origin=bookNavigation.getState().getClientOrigin();
-        return ClientDetailCompose.create(this,data,id,detailFilter,detailVisibleLimit,largeText,origin==Screen.COLLECTIONS,
+        return ClientDetailCompose.create(this,data,id,filters.getDetail().getFilter(),filters.getDetail().getLimit(),largeText,origin==Screen.COLLECTIONS,
                 this::returnFromClient,
                 archived->showClientActions(status.client,status.balance,status.overdue,archived),
                 ()->showEntryForm(id,"debt"),()->showEntryForm(id,"payment"),
                 ()->changeClientArchive(id,true),this::showDetailFilters,
-                this::showOperation,this::showPurchaseDetails,limit->detailVisibleLimit=limit,origin==Screen.BOOK,
+                this::showOperation,this::showPurchaseDetails,filters::setDetailLimit,origin==Screen.BOOK,
                 ()->openClientAnalytics(id));
     }
     private void openClient(String id,Screen origin){
@@ -582,14 +510,13 @@ public final class MainActivity extends ComponentActivity {
     private void showDetailFilters(){
         LinearLayout menu=stack(2);
         for(String choice:ClientStatement.FILTERS)
-            filterMenuAction(menu,choice,choice.equals(detailFilter),()->{detailFilter=choice;detailVisibleLimit=80;render();});
+            filterMenuAction(menu,choice,choice.equals(filters.getDetail().getFilter()),()->{filters.setDetailFilter(choice);render();});
         showDialog("История клиента",menu,null);
     }
     private void changeClientArchive(String id,boolean archived){
         try{
             directory.archive(id,LedgerStore.balance(ledger.entriesForClient(id),id),!archived);
-            bookNavigation.clearClient();clientScope=archived?ClientDirectory.ACTIVE:ClientDirectory.ARCHIVE;
-            clientFilter=CollectionsInsights.ALL;search="";render();
+            bookNavigation.clearClient();filters.afterArchive(archived);render();
         }catch(Exception e){message(e.getMessage());}
     }
     private void addListDivider(LinearLayout parent){
@@ -701,11 +628,9 @@ public final class MainActivity extends ComponentActivity {
         if(date!=null)b.putString(key,date.toString());
     }
     private void setPeriod(boolean report,LocalDate from,LocalDate to){
-        if(from.isAfter(to)||to.isAfter(from.plusDays(365))){
+        if(!filters.setPeriod(report,from,to)){
             message("Выберите период от 1 до 366 дней.");return;
         }
-        if(report){reportFrom=from;reportTo=to;reportDaysLimit=14;}
-        else{historyFrom=from;historyTo=to;historyVisibleLimit=100;}
         render();
     }
     private void choosePeriod(boolean report){
@@ -723,9 +648,9 @@ public final class MainActivity extends ComponentActivity {
                 else if(which==1)setPeriod(report,today.minusDays(6),today);
                 else if(which==2)setPeriod(report,today.withDayOfMonth(1),today);
                 else{
-                    LocalDate start=report?reportFrom:historyFrom==null?today:historyFrom;
+                    LocalDate start=report?filters.getReport().getFrom():filters.getHistory().getFrom()==null?today:filters.getHistory().getFrom();
                     pickReportDate("Начало периода",start,from->{
-                        LocalDate end=report?reportTo:historyTo==null?today:historyTo;
+                        LocalDate end=report?filters.getReport().getTo():filters.getHistory().getTo()==null?today:filters.getHistory().getTo();
                         if(end.isBefore(from))end=from;
                         pickReportDate("Конец периода",end,to->setPeriod(report,from,to));
                     });
@@ -758,8 +683,7 @@ public final class MainActivity extends ComponentActivity {
         analyticsViewModel.focus(state.getAnalyticsClientId());
         return AnalyticsCompose.create(this,data,analyticsViewModel,
                 this::returnFromAnalytics,()->{bookNavigation.openAnalyticsReport();render();},(from,to)->{
-                    historyFrom=from;historyTo=to;historyFilter="Все";historyQuery="";
-                    historyClientId=state.getAnalyticsClientId();historyVisibleLimit=100;
+                    filters.openHistory(from,to,state.getAnalyticsClientId());
                     bookNavigation.openAnalyticsHistory();render();
                 },this::openClientAnalytics,state.getAnalyticsClientId()!=null&&state.getAnalyticsOrigin()==Screen.ANALYTICS,this::exportAnalytics);
     }
@@ -770,25 +694,24 @@ public final class MainActivity extends ComponentActivity {
                 "raschet-analytics-"+spec.getFrom()+"-"+spec.getTo()+(spec.getPdf()?".pdf":".csv")));
     }
     private View reportView(BookScreenData data){
-        return ReportCompose.create(this,data,reportFrom,reportTo,reportDaysLimit,
+        return ReportCompose.create(this,data,filters.getReport().getFrom(),filters.getReport().getTo(),filters.getReport().getLimit(),
                 ()->choosePeriod(true),()->{
-                    historyFrom=reportFrom;historyTo=reportTo;historyFilter="Все";historyQuery="";
-                    historyClientId=null;historyVisibleLimit=100;bookNavigation.show(Screen.HISTORY);render();
-                },this::exportReport,limit->reportDaysLimit=limit);
+                    filters.openReportHistory();bookNavigation.show(Screen.HISTORY);render();
+                },this::exportReport,filters::setReportLimit);
     }
     private void exportReport(){
-        pendingFiles.report(reportFrom,reportTo);
-        launchFileRequest(REQUEST_REPORT,createDocument("text/csv","raschet-report-"+reportFrom+"-"+reportTo+".csv"));
+        pendingFiles.report(filters.getReport().getFrom(),filters.getReport().getTo());
+        launchFileRequest(REQUEST_REPORT,createDocument("text/csv","raschet-report-"+filters.getReport().getFrom()+"-"+filters.getReport().getTo()+".csv"));
     }
     private View historyView(BookScreenData data) {
-        return HistoryCompose.create(this,data,historyClientId,historyQuery,historyFrom,historyTo,historyFilter,
-                historyVisibleLimit,largeText,
-                choice->{historyFilter=choice;historyVisibleLimit=100;render();},
+        return HistoryCompose.create(this,data,filters.getHistory().getClientId(),filters.getHistory().getQuery(),filters.getHistory().getFrom(),filters.getHistory().getTo(),filters.getHistory().getFilter(),
+                filters.getHistory().getLimit(),largeText,
+                choice->{filters.setHistoryFilter(choice);render();},
                 ()->choosePeriod(false),
-                ()->{historyFrom=null;historyTo=null;historyVisibleLimit=100;render();},
-                ()->{historyClientId=null;historyVisibleLimit=100;render();},
-                query->{historyQuery=query;historyVisibleLimit=100;},limit->historyVisibleLimit=limit,
-                ()->{historyFilter="Все";historyFrom=null;historyTo=null;historyQuery="";historyClientId=null;historyVisibleLimit=100;render();},
+                ()->{filters.clearHistoryPeriod();render();},
+                ()->{filters.clearHistoryClient();render();},
+                filters::setHistoryQuery,filters::setHistoryLimit,
+                ()->{filters.clearHistory();render();},
                 ()->{if(data.getSnapshot().getClients().isEmpty())showClientForm(null);else chooseClient("debt");},
                 this::showOperation,this::showPurchaseDetails);
     }
@@ -798,13 +721,13 @@ public final class MainActivity extends ComponentActivity {
                 ?"JSON-копия ещё не сохранена через это приложение."
                 :"Последний подтверждённый экспорт: "+dayFormat.format(
                     Instant.ofEpochMilli(lastExport).atZone(ZoneId.systemDefault()).toLocalDate());
-        int count=settingsExpanded.equals("backup")?vault.count():0;
+        int count=filters.getSettingsExpanded().equals("backup")?vault.count():0;
         String recoveryStatus=count==0
                 ?"Пока нет точек. Создайте первую, прежде чем менять книгу."
                 :"Сохранено точек: "+count+" · последняя: "+dayFormat.format(
                     Instant.ofEpochMilli(vault.latestTime()).atZone(ZoneId.systemDefault()).toLocalDate());
         SettingsSnapshot state=new SettingsSnapshot(shopName,largeText,DebtReminderService.enabled(this),
-                privacy.enabled(),privacy.hideScreens(),settingsExpanded,lastExport!=0L,lastExportText,
+                privacy.enabled(),privacy.hideScreens(),filters.getSettingsExpanded(),lastExport!=0L,lastExportText,
                 recoveryStatus,count>0,recoveryPrefs().contains("last_error"),recoveryPrefs().getBoolean("enabled",false));
         SettingsActions actions=new SettingsActions(this::showShopName,this::setLargeText,this::setReminders,
                 this::toggleSettings,()->authenticate(privacy.enabled()?CREDENTIAL_DISABLE:CREDENTIAL_ENABLE),
@@ -818,7 +741,7 @@ public final class MainActivity extends ComponentActivity {
         return SettingsCompose.create(this,state,actions);
     }
     private void toggleSettings(String section){
-        settingsExpanded=settingsExpanded.equals(section)?"":section;render();
+        filters.toggleSettings(section);render();
     }
     private LinearLayout emptyState(int iconRes,String title,String subtitle,
                                     String actionLabel,Runnable action) {
@@ -1812,8 +1735,7 @@ public final class MainActivity extends ComponentActivity {
             bookNavigation.openOperationClient(entry.clientId);render();
         });
         clientMenuAction(content,"Все операции клиента",()->{
-            historyClientId=entry.clientId;historyQuery="";historyFrom=null;historyTo=null;historyFilter="Все";
-            historyVisibleLimit=100;bookNavigation.show(Screen.HISTORY);render();
+            filters.openHistory(null,null,entry.clientId);bookNavigation.show(Screen.HISTORY);render();
         });
         if(active&&!directory.archived(entry.clientId,balance)){
             if(last!=null&&last.id.equals(entry.id)){
@@ -2013,21 +1935,7 @@ public final class MainActivity extends ComponentActivity {
         }
     }
     private void applyWriteReceipt(WriteReceipt receipt){
-        if("debt".equals(receipt.getKind())&&!(bookNavigation.getState().getClientOrigin()==Screen.BOOK&&receipt.getDestination()==WriteDestination.DETAIL)){
-            bookPayments=false;clearBookFilters();
-            bookDayLimit=Math.max(bookDayLimit,receipt.getRank());
-            bookCalendarDay=receipt.getDay();
-            expandedBookDays.add(receipt.getDay().toString());
-        }else if("payment".equals(receipt.getKind())&&receipt.getDestination()==WriteDestination.BOOK){
-            bookPayments=true;clearBookFilters();
-            bookDayLimit=Math.max(bookDayLimit,receipt.getRank());
-            bookCalendarDay=receipt.getDay();
-            expandedBookDays.clear();expandedBookDays.add(receipt.getDay().toString());
-        }
-        if(receipt.getDestination()==WriteDestination.CLIENTS){
-            clientScope=ClientDirectory.ACTIVE;
-            clientFilter=CollectionsInsights.ALL;search="";clientVisibleLimit=60;
-        }
+        filters.onWrite(receipt,bookNavigation.getState().getClientOrigin());
         bookNavigation.onWrite(receipt.getDestination(),receipt.getClientId());
     }
     private void pickImport() {

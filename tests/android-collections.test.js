@@ -27,7 +27,7 @@ test('customer filters, full repayment form and explicit Android sharing are wir
   const queue=read('android/app/src/main/kotlin/dev/ventry/raschet/CollectionsCompose.kt');
   assert.ok(queue.includes('LedgerMetric("Просрочено", ledgerMoney(model.overdue)'));
   assert.ok(queue.includes('actions.filter(CollectionsInsights.LATE)'));
-  assert.ok(activity.includes('limit->collectionLimit=limit,this::openClientFilter'));
+  assert.ok(activity.includes('filters::setQueueLimit,this::openClientFilter'));
   assert.ok(compose.includes('CollectionsInsights.visible(model.scoped, filter, amountFirst, recentFirst, query)'));
   const viewModel=read('android/app/src/main/kotlin/dev/ventry/raschet/presentation/BookViewModel.kt');
   assert.ok(viewModel.includes('CollectionsInsights.analyze(snapshot.clients, snapshot.entries, today)'));
@@ -37,8 +37,10 @@ test('customer filters, full repayment form and explicit Android sharing are wir
   assert.ok(activity.includes('showEntryForm(id,"payment",amount)'));
   assert.ok(activity.includes('Intent.createChooser(share'));
   assert.ok(activity.includes('share.setType("text/plain")'));
-  assert.ok(activity.includes('clientsAmountFirst=state.getBoolean'));
-  assert.ok(activity.includes('out.putString("client_filter"'));
+  const filters=read('android/app/src/main/kotlin/dev/ventry/raschet/presentation/BookFiltersViewModel.kt');
+  assert.ok(filters.includes('saved.getBoolean("clients_amount_first", false)'));
+  assert.ok(filters.includes('out.putString("client_filter", filter)'));
+  assert.ok(activity.includes('filters.save(out)') && activity.includes('filters.restore(state)'));
 });
 
 test('book exports stay local and preserve entries',()=>{
@@ -65,5 +67,5 @@ test('near-term debt totals are not presented as entirely due on the earliest da
   }
   assert.ok(queue.includes('За 7 дней: '));
   assert.ok(queue.includes('actions.filter(CollectionsInsights.SOON)'));
-  assert.ok(activity.includes('limit->collectionLimit=limit,this::openClientFilter'));
+  assert.ok(activity.includes('filters::setQueueLimit,this::openClientFilter'));
 });
