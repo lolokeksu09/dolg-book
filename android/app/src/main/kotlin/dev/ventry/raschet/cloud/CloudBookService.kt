@@ -8,21 +8,29 @@ import java.io.OutputStreamWriter
 import java.io.IOException
 import javax.crypto.AEADBadTagException
 
+/** Typed failure: a local book may be valid but exceed the encrypted cloud envelope. */
+internal class CloudSnapshotTooLarge : IOException(
+    "Книга превышает размер облачной копии. Используйте JSON-экспорт."
+)
+
+/** Enforce the byte limit while serializing, not after allocating the entire book. */
+internal class CloudSnapshotBuffer(private val limit:Int=CloudCipher.MAX_PLAIN):ByteArrayOutputStream(){
+    override fun write(b:Int){
+        if(count>=limit)throw CloudSnapshotTooLarge()
+        super.write(b)
+    }
+    override fun write(b:ByteArray,off:Int,len:Int){
+        if(off<0 || len<0 || off>b.size-len)throw IndexOutOfBoundsException()
+        if(len>limit-count)throw CloudSnapshotTooLarge()
+        super.write(b,off,len)
+    }
+    fun wipe(){buf.fill(0);reset()}
+}
+
 /** BookViewModel invokes this inside the existing serialized file/write boundary. */
 internal object CloudBookService{
-    private class WipingBuffer:ByteArrayOutputStream(){
-        override fun write(b:Int){
-            if(count>=CloudCipher.MAX_PLAIN)throw IOException("Книга превышает размер облачной копии. Используйте JSON-экспорт.")
-            super.write(b)
-        }
-        override fun write(b:ByteArray,off:Int,len:Int){
-            if(len>CloudCipher.MAX_PLAIN-count)throw IOException("Книга превышает размер облачной копии. Используйте JSON-экспорт.")
-            super.write(b,off,len)
-        }
-        fun wipe(){buf.fill(0);reset()}
-    }
     fun snapshot(ledger:LedgerStore):ByteArray{
-        val out=WipingBuffer()
+        val out=CloudSnapshotBuffer()
         val plain=try{
             val writer=OutputStreamWriter(out,Charsets.UTF_8).buffered()
             ledger.writeJson(writer);writer.flush()

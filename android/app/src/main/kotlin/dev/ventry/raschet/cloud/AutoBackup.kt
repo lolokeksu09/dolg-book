@@ -97,6 +97,9 @@ internal object AutoBackup {
                     }
                 }
             }finally{plain.fill(0)}
+        }catch(_:CloudSnapshotTooLarge){
+            // Serialization failed before encryption or PUT: retain the acknowledged cloud slot.
+            detail(app,"Книга превышает лимит облака. Предыдущая копия сохранена; используйте JSON-экспорт.")
         }catch(_:Exception){
             // A lost response may have committed; next list must still match the old CAS version.
             // Never guess or retry against a newly observed version.
