@@ -9,4 +9,4 @@
 - Источник общего статуса, владельческих решений и зависимостей: [ECOSYSTEM-STATUS](https://github.com/lolokeksu09/Ventry/blob/main/docs/ECOSYSTEM-STATUS.md). После новой ревизии обновить короткий снимок, не дописывать повтор истории.
 
 
-[Исторический журнал до 28.11.2026](CONTINUATION-HISTORY.md) — открывать по конкретному вопросу.
+[Исторические планы и журнал до 28.11.2026](https://github.com/lolokeksu09/dolg-book/tree/e36eeb8f9fb9ab0c9de702b737687c82e6f5d167/docs).
