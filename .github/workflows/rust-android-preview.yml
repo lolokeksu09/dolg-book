@@ -67,7 +67,7 @@ jobs:
           profile: pixel_6
           disable-animations: true
           emulator-options: -no-window -no-snapshot -noaudio -no-boot-anim -gpu swiftshader
-          script: gradle -p android -PraschetRustPreview=true -Pandroid.testInstrumentationRunnerArguments.class=dev.ventry.raschet.bridge.NativeCorrectionInstrumentedTest,dev.ventry.raschet.NativeCorrectionTransactionTest,dev.ventry.raschet.KotlinLedgerJsonTransactionTest :app:connectedDebugAndroidTest --no-daemon
+          script: gradle -p android -PraschetRustPreview=true -Pandroid.testInstrumentationRunnerArguments.class=dev.ventry.raschet.bridge.NativeCorrectionInstrumentedTest,dev.ventry.raschet.NativeCorrectionTransactionTest,dev.ventry.raschet.KotlinLedgerJsonTransactionTest,dev.ventry.raschet.KotlinLedgerWritesTest :app:connectedDebugAndroidTest --no-daemon
       - name: Require executed JNI instrumentation test
         run: |
           python3 - <<'PY'
@@ -79,6 +79,8 @@ jobs:
               ("dev.ventry.raschet.NativeCorrectionTransactionTest", "correctionAndRejectionPreserveTransactionContract"),
               ("dev.ventry.raschet.KotlinLedgerJsonTransactionTest", "streamingRestoreFailureRollsBackAndCanBeRetried"),
               ("dev.ventry.raschet.KotlinLedgerJsonTransactionTest", "writerFailureAndStaleCorrectionLeaveBookUnchanged"),
+              ("dev.ventry.raschet.KotlinLedgerWritesTest", "atomicNewCustomerAndDuplicateOperationIds"),
+              ("dev.ventry.raschet.KotlinLedgerWritesTest", "exactApprovalMustBeRevalidatedAtCommit"),
           }
           passed = set()
           for file in results.rglob("TEST-*.xml"):
