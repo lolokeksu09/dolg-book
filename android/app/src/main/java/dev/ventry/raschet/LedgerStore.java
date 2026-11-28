@@ -329,16 +329,16 @@ public final class LedgerStore extends SQLiteOpenHelper {
             dev.ventry.raschet.license.LicenseManager.requireNewDebt(appContext);
             if(due!=null&&!due.isEmpty()) { try { LocalDate.parse(due); } catch(Exception ex) {throw new IllegalArgumentException("Неверный срок.");} }
         } else due="";
-            if(!LedgerSql.hasClient(db,clientId))throw new IllegalArgumentException("Клиент не найден.");
-            if(android.database.DatabaseUtils.queryNumEntries(db,"entries")>=MAX_ENTRIES)throw new IllegalArgumentException("Достигнут лимит операций.");
-            long available=balance(entriesForClient(clientId),clientId);
-            if("payment".equals(type)&&amount>available)
-                throw new IllegalArgumentException("Оплата превышает остаток долга.");
-            if("debt".equals(type)&&amount>MAX_AMOUNT-available)
-                throw new IllegalArgumentException("Превышен максимальный остаток.");
-            Entry entry=new Entry(entryId,clientId,type,amount,timestamp,
-                    due==null?"":due,note,"",purchase);
-            db.insertOrThrow("entries",null,LedgerSql.values(entry));
+        if(!LedgerSql.hasClient(db,clientId))throw new IllegalArgumentException("Клиент не найден.");
+        if(android.database.DatabaseUtils.queryNumEntries(db,"entries")>=MAX_ENTRIES)throw new IllegalArgumentException("Достигнут лимит операций.");
+        long available=balance(entriesForClient(clientId),clientId);
+        if("payment".equals(type)&&amount>available)
+            throw new IllegalArgumentException("Оплата превышает остаток долга.");
+        if("debt".equals(type)&&amount>MAX_AMOUNT-available)
+            throw new IllegalArgumentException("Превышен максимальный остаток.");
+        Entry entry=new Entry(entryId,clientId,type,amount,timestamp,
+                due==null?"":due,note,"",purchase);
+        db.insertOrThrow("entries",null,LedgerSql.values(entry));
     }
     public synchronized Entry lastActive(String clientId) {
         Set<String> undone=new HashSet<>();
