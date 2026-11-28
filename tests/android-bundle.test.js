@@ -25,14 +25,14 @@ test('Android UI is native and does not contain web UI runtime',()=>{
 
 test('Native SQLite ledger implements balances, reversals and atomic JSON restore',()=>{
   const store=read('android/app/src/main/java/dev/ventry/raschet/LedgerStore.java');
-  for(const part of ['SQLiteOpenHelper','beginTransaction()','setTransactionSuccessful()',
-    'importJson(', 'exportJson()', 'reverseLast(', 'overdue(', 'MAX_AMOUNT-available',
-    '"payment".equals(type)&&amount>available'])
+  for(const part of ['SQLiteOpenHelper', 'importJson(', 'exportJson()', 'reverseLast(', 'overdue('])
     assert.ok(store.includes(part),'Missing '+part);
   const json=read('android/app/src/main/kotlin/dev/ventry/raschet/LedgerJson.kt');
   assert.ok(json.includes('amountDigits.matches(rawAmount.toString())'));
   assert.ok(json.includes('db.beginTransaction()') && json.includes('db.setTransactionSuccessful()') && json.includes('db.endTransaction()'));
   assert.ok(store.includes('LedgerJson.restore(getWritableDatabase(),source)'));
+  const writes=read('android/app/src/main/kotlin/dev/ventry/raschet/LedgerWrites.kt');
+  for(const guard of ['db.beginTransaction()', 'db.setTransactionSuccessful()', 'db.endTransaction()', 'LedgerStore.MAX_AMOUNT - available', 'type != "payment" || amount <= available', 'LicenseManager.requireNewDebt(app)']) assert.ok(writes.includes(guard),'Missing '+guard);
 });
 
 test('No automatic off-device backup of financial data',()=>{
@@ -211,7 +211,8 @@ test('book starts directly with a dated debt form and expandable daily journal',
   assert.ok(ui.includes('filters::toggleBookDay'));
   assert.ok(ui.includes('formGroup("Дата записи",date)'));
   assert.ok(ui.includes('hasExactCustomer('));
-  assert.ok(store.includes('insertEntry(db,id,"debt",amount,due,note,null,timestamp,entryId)'));
+  const writes=read('android/app/src/main/kotlin/dev/ventry/raschet/LedgerWrites.kt');
+  assert.ok(writes.includes('insertEntry(db, app, id, "debt", amount, due, note, null, timestamp, entryId)'));
 });
 
 
@@ -308,13 +309,16 @@ test('all new debt forms check the local client credit limit before storing debt
   assert.ok(ui.includes('separate[0],notice.confirmation()'));
   assert.ok(ui.includes('false,notice.confirmation(),false,destination'));
   const store=read('android/app/src/main/java/dev/ventry/raschet/LedgerStore.java');
-  const purchase=store.slice(store.indexOf('WriteReceipt recordCheckedPurchase('),store.indexOf('/** Existing-client draft submission'));
+  const writes=read('android/app/src/main/kotlin/dev/ventry/raschet/LedgerWrites.kt');
+  const purchase=writes.slice(writes.indexOf('fun recordCheckedPurchase('),writes.indexOf('fun saveFollowUp('));
+  const approval=writes.slice(writes.indexOf('private fun checkApproval('),writes.indexOf('private fun insertEntry('));
   assert.ok(ui.includes('new ClientCommand.ItemizedDebt(purchaseId,clientId,purchase.encode()'));
   assert.ok(ui.includes('note.getText().toString().trim(),notice.confirmation()'));
-  assert.ok(purchase.includes('DebtApproval.matches('));
-  assert.ok(purchase.includes('DebtLimits.requireConsent(limit,balance,purchase.total,confirmed)'));
-  assert.ok(purchase.includes('db.beginTransaction()'));
-  assert.ok(purchase.includes('db.setTransactionSuccessful()'));
+  assert.ok(approval.includes('DebtApproval.matches('));
+  assert.ok(approval.includes('DebtLimits.requireConsent(limit, balance, amount, confirmed)'));
+  assert.ok(purchase.includes('checkApproval(db, context, client, purchase.total, command.approval)'));
+  assert.ok(purchase.includes('return transaction(db)'));
+  assert.ok(store.includes('LedgerWrites.recordCheckedPurchase(getWritableDatabase()'));
   assert.ok(ui.includes('consent.setChecked(false)'));
 });
 
@@ -325,7 +329,9 @@ test('quick form drafts resume explicitly and use stable operation IDs',()=>{
   assert.ok(ui.includes('Продолжить черновик'));
   assert.ok(ui.includes('QuickDebtDrafts.Draft pending'));
   assert.ok(ui.includes('separate[0],notice.confirmation()'));
-  assert.ok(store.includes('if(hasEntryId(entryId))'));
+  const writes=read('android/app/src/main/kotlin/dev/ventry/raschet/LedgerWrites.kt');
+  assert.ok(writes.includes('uniqueDraft(db, entryId,'));
+  assert.ok(writes.includes('!LedgerSql.hasEntry(db, id)'));
 });
 
 
@@ -337,7 +343,9 @@ test('collection workspace is separate from chronological book and uses a read-o
   assert.ok(ui.includes('id->openClient(id,Screen.COLLECTIONS)'));
   assert.ok(ui.includes('new ClientCommand.FollowUp(person.id,current==null?null:current.id,day[0]'));
   const store=read('android/app/src/main/java/dev/ventry/raschet/LedgerStore.java');
-  assert.ok(store.includes('FollowUpJournal.save(db,command.getClientId()'));
+  const writes=read('android/app/src/main/kotlin/dev/ventry/raschet/LedgerWrites.kt');
+  assert.ok(writes.includes('FollowUpJournal.save(db, command.clientId,'));
+  assert.ok(store.includes('LedgerWrites.saveFollowUp(getWritableDatabase()'));
   assert.ok(!ui.includes('directory.setFollowUp(person.id'));
   assert.ok(ui.includes('fromCollections?WriteDestination.COLLECTIONS:WriteDestination.DETAIL'));
   assert.ok(ui.includes('bookNavigation.onWrite(receipt.getDestination(),receipt.getClientId())'));
@@ -397,7 +405,8 @@ test('backdated receipts validate historical balances and reopen the actual rece
  assert.ok(book.includes('actions.paymentDate(day.date)'));
  assert.ok(ui.includes('day->chooseClient("payment",day)'));
  assert.ok(ui.includes('operationId[0],entryDay[0]'));
- assert.ok(store.includes('amount>DatedPayments.maximum('));
+ const writes=read('android/app/src/main/kotlin/dev/ventry/raschet/LedgerWrites.kt');
+ assert.ok(writes.includes('amount <= DatedPayments.maximum('));
  assert.ok(model.includes('DatedLedger.maximum(entries, id, day, today, zone)'));
  const kotlin=read('android/app/src/main/kotlin/dev/ventry/raschet/domain/DatedLedger.kt');
  assert.ok(kotlin.includes('minimum = minOf(minimum, running)'));
@@ -433,12 +442,14 @@ test('financial commands revalidate consent and preserve existing transactional 
   const store=read('android/app/src/main/java/dev/ventry/raschet/LedgerStore.java');
   const repository=read('android/app/src/main/kotlin/dev/ventry/raschet/data/LedgerRepository.kt');
   const service=read('android/app/src/main/kotlin/dev/ventry/raschet/ClientWriteService.kt');
-  const debt=store.slice(store.indexOf('WriteReceipt recordCheckedDebt('),store.indexOf('WriteReceipt recordCheckedPayment('));
-  assert.ok(debt.includes('db.beginTransaction()'));
-  assert.ok(debt.includes('DebtApproval.matches('));
-  assert.ok(debt.includes('DebtLimits.requireConsent('));
-  assert.ok(debt.includes('recordDatedDebt(client,'));
-  assert.ok(debt.includes('db.setTransactionSuccessful()'));
+  const writes=read('android/app/src/main/kotlin/dev/ventry/raschet/LedgerWrites.kt');
+  const debt=writes.slice(writes.indexOf('fun recordCheckedDebt('),writes.indexOf('private fun datedPayment('));
+  assert.ok(debt.includes('return transaction(db)'));
+  assert.ok(writes.includes('DebtApproval.matches('));
+  assert.ok(writes.includes('DebtLimits.requireConsent('));
+  assert.ok(debt.includes('datedDebt(db, app, client,'));
+  assert.ok(debt.includes('checkApproval(db, context, client, command.amount, command.approval)'));
+  assert.ok(store.includes('LedgerWrites.recordCheckedDebt(getWritableDatabase()'));
   assert.ok(repository.includes('store.recordCheckedDebt(command, context)'));
   assert.ok(repository.includes('store.recordCheckedPayment(command)'));
   assert.ok(service.includes('drafts.get(clientId, kind)?.id == id'));
