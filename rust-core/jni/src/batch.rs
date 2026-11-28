@@ -108,8 +108,7 @@ fn compute(
                 return Err(INVALID);
             }
             let entries: Vec<_> = rows.iter().map(Row::dated).collect();
-            let result = maximum(&entries, &a.to_string(), Some(b), c)
-                .map_err(|_| CALCULATION)?;
+            let result = maximum(&entries, &a.to_string(), Some(b), c).map_err(|_| CALCULATION)?;
             Ok(vec![result])
         }
         3 => {
@@ -182,21 +181,20 @@ unsafe fn transport(
     mode: i32,
     input: Array,
     owners: i32,
-    a: i64,
-    b: i64,
-    c: i64,
+    parameters: [i64; 3],
     output: Array,
 ) -> i32 {
+    let [a, b, c] = parameters;
     if env.is_null() || input.is_null() || output.is_null() || owners < 0 {
         return INVALID;
     }
     // SAFETY: typed signatures match the fixed JNI table. Region operations
     // copy into owned Rust storage, and no JVM array remains pinned.
     unsafe {
-        let length: Length = std::mem::transmute(slot(env, GET_ARRAY_LENGTH));
-        let read: Read = std::mem::transmute(slot(env, GET_LONG_ARRAY_REGION));
-        let write: Write = std::mem::transmute(slot(env, SET_LONG_ARRAY_REGION));
-        let exception: Exception = std::mem::transmute(slot(env, EXCEPTION_CHECK));
+        let length = std::mem::transmute::<*const c_void, Length>(slot(env, GET_ARRAY_LENGTH));
+        let read = std::mem::transmute::<*const c_void, Read>(slot(env, GET_LONG_ARRAY_REGION));
+        let write = std::mem::transmute::<*const c_void, Write>(slot(env, SET_LONG_ARRAY_REGION));
+        let exception = std::mem::transmute::<*const c_void, Exception>(slot(env, EXCEPTION_CHECK));
         let size = length(env, input);
         if exception(env) != 0 {
             return TRANSPORT;
@@ -249,6 +247,6 @@ pub unsafe extern "system" fn Java_dev_ventry_raschet_bridge_NativeLedger_comput
     output: Array,
 ) -> i32 {
     // SAFETY: all references are scoped to this native invocation.
-    catch_unwind(|| unsafe { transport(env, mode, input, owners, a, b, c, output) })
-        .unwrap_or(INTERNAL)
+    let result = catch_unwind(|| unsafe { transport(env, mode, input, owners, [a, b, c], output) });
+    result.unwrap_or(INTERNAL)
 }
