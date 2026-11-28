@@ -2,8 +2,6 @@ package dev.ventry.raschet.presentation
 
 import android.os.Bundle
 import androidx.lifecycle.ViewModel
-import dev.ventry.raschet.ClientDirectory
-import dev.ventry.raschet.ClientStatement
 import dev.ventry.raschet.CollectionsInsights
 import dev.ventry.raschet.data.WriteDestination
 import dev.ventry.raschet.data.WriteReceipt
@@ -31,13 +29,13 @@ class BookFiltersViewModel : ViewModel() {
         }
     }
     data class Clients(
-        val scope: String = ClientDirectory.ACTIVE, val filter: String = CollectionsInsights.ALL,
+        val scope: String = BookFilterLabels.ACTIVE, val filter: String = CollectionsInsights.ALL,
         val query: String = "", val limit: Int = 60,
         val amountFirst: Boolean = false, val recentFirst: Boolean = false
     )
     data class CollectionsQueue(val query: String = "", val urgent: Boolean = false,
         val plan: String = "ALL", val limit: Int = 60)
-    data class Detail(val clientId: String? = null, val filter: String = ClientStatement.ALL, val limit: Int = 80)
+    data class Detail(val clientId: String? = null, val filter: String = BookFilterLabels.ALL_OPERATIONS, val limit: Int = 80)
     data class History(val clientId: String? = null, val query: String = "", val filter: String = "Все",
         val from: LocalDate? = null, val to: LocalDate? = null, val limit: Int = 100)
     data class Report(val from: LocalDate, val to: LocalDate, val limit: Int = 14)
@@ -89,7 +87,7 @@ class BookFiltersViewModel : ViewModel() {
     fun setQueueLimit(limit: Int) = updateQueue { it.copy(limit = limit) }
     fun setQueuePlan(plan: String) = updateQueue { it.copy(plan = plan) }
 
-    fun openClientFilter(filter: String) = updateClients { it.copy(scope = ClientDirectory.ACTIVE, filter = filter, limit = 60, query = "") }
+    fun openClientFilter(filter: String) = updateClients { it.copy(scope = BookFilterLabels.ACTIVE, filter = filter, limit = 60, query = "") }
     fun setClientQuery(query: String) = updateClients { it.copy(query = query, limit = 60) }
     fun setClientLimit(limit: Int) = updateClients { it.copy(limit = limit) }
     fun setClientScope(scope: String) = updateClients { it.copy(scope = scope, filter = CollectionsInsights.ALL, limit = 60) }
@@ -99,7 +97,7 @@ class BookFiltersViewModel : ViewModel() {
         updateClients { it.copy(amountFirst = amountFirst, recentFirst = recentFirst, limit = 60) }
     }
     fun afterArchive(archived: Boolean) = updateClients {
-        it.copy(scope = if (archived) ClientDirectory.ACTIVE else ClientDirectory.ARCHIVE, filter = CollectionsInsights.ALL, query = "")
+        it.copy(scope = if (archived) BookFilterLabels.ACTIVE else BookFilterLabels.ARCHIVE, filter = CollectionsInsights.ALL, query = "")
     }
 
     fun focusDetail(id: String) = updateDetail { if (id == it.clientId) it else Detail(clientId = id) }
@@ -108,7 +106,7 @@ class BookFiltersViewModel : ViewModel() {
 
     /** Validate before publishing either range; rejected input leaves state intact. */
     fun setPeriod(report: Boolean, from: LocalDate, to: LocalDate): Boolean {
-        if (from.isAfter(to) || to.isAfter(from.plusDays(365))) return false
+        if (from.isAfter(to) || java.time.temporal.ChronoUnit.DAYS.between(from, to) > 365) return false
         if (report) mutable.update { it.copy(report = Report(from, to)) }
         else updateHistory { it.copy(from = from, to = to, limit = 100) }
         return true
@@ -135,7 +133,7 @@ class BookFiltersViewModel : ViewModel() {
             state.book.cleared().copy(payments = showPayment, limit = maxOf(30, receipt.rank), calendarDay = day, expanded = immutableDays(expanded))
         } else state.book
         val clients = if (receipt.destination == WriteDestination.CLIENTS)
-            state.clients.copy(scope = ClientDirectory.ACTIVE, filter = CollectionsInsights.ALL, query = "", limit = 60)
+            state.clients.copy(scope = BookFilterLabels.ACTIVE, filter = CollectionsInsights.ALL, query = "", limit = 60)
         else state.clients
         state.copy(book = book, clients = clients)
     }
@@ -146,7 +144,7 @@ class BookFiltersViewModel : ViewModel() {
         initialized = true
         if (saved == null) return
         fun date(key: String): LocalDate? = saved.getString(key)?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
-        fun text(key: String, fallback: String) = saved.getString(key, fallback)
+        fun text(key: String, fallback: String) = saved.getString(key, fallback) ?: fallback
         val old = state.value
         val bookFrom = date("book_from")
         val bookTo = date("book_to")
@@ -154,23 +152,23 @@ class BookFiltersViewModel : ViewModel() {
         val payments = saved.getBoolean("book_payments", false)
         val historyFrom = date("history_from")
         val historyTo = date("history_to")
-        val validHistoryRange = historyFrom != null && historyTo != null && !historyTo.isBefore(historyFrom) && !historyTo.isAfter(historyFrom.plusDays(365))
+        val validHistoryRange = historyFrom != null && historyTo != null && !historyTo.isBefore(historyFrom)
         val reportFrom = date("report_from") ?: old.report.from
         val reportTo = date("report_to") ?: old.report.to
-        val validReport = !reportTo.isBefore(reportFrom) && !reportTo.isAfter(reportFrom.plusDays(365))
+        val validReport = !reportTo.isBefore(reportFrom) && java.time.temporal.ChronoUnit.DAYS.between(reportFrom, reportTo) <= 365
         mutable.value = State(
             book = Book(payments, bookFrom.takeIf { validBookRange }, bookTo.takeIf { validBookRange },
                 text("book_query", ""), !payments && saved.getBoolean("book_unpaid", false),
                 saved.getBoolean("book_auto_expand", false), saved.getInt("book_day_limit", 30).coerceAtLeast(30),
                 immutableDays(saved.getStringArrayList("expanded_book_days").orEmpty()),
                 saved.getBoolean("book_calendar", false), date("book_calendar_day")),
-            clients = Clients(text("client_scope", ClientDirectory.ACTIVE), text("client_filter", CollectionsInsights.ALL),
+            clients = Clients(text("client_scope", BookFilterLabels.ACTIVE), text("client_filter", CollectionsInsights.ALL),
                 text("search", ""), saved.getInt("client_visible_limit", 60).coerceAtLeast(60),
                 saved.getBoolean("clients_amount_first", false) && !saved.getBoolean("clients_recent_first", false),
                 saved.getBoolean("clients_recent_first", false)),
             queue = CollectionsQueue(text("collection_query", ""), saved.getBoolean("collection_urgent", false),
                 text("collection_plan_filter", "ALL"), saved.getInt("collection_limit", 60).coerceAtLeast(60)),
-            detail = Detail(saved.getString("detail_filter_client"), text("detail_filter", ClientStatement.ALL),
+            detail = Detail(saved.getString("detail_filter_client"), text("detail_filter", BookFilterLabels.ALL_OPERATIONS),
                 saved.getInt("detail_visible_limit", 80).coerceAtLeast(80)),
             history = History(saved.getString("history_client_id"), text("history_query", ""), text("history_filter", "Все"),
                 historyFrom.takeIf { validHistoryRange }, historyTo.takeIf { validHistoryRange },

@@ -26,3 +26,9 @@ adb shell am instrument -w -e class dev.ventry.raschet.LicensedStagingTest -e ac
   dev.ventry.raschet.licensedstaging.test/androidx.test.runner.AndroidJUnitRunner | tee "$RUNNER_TEMP/licensed-staging-test.txt"
 grep -Eq 'OK \(1 test\)' "$RUNNER_TEMP/licensed-staging-test.txt"
 echo RASCHET_REAL_SIGNED_ACTIVATION_LEDGER_SAFETY_PASS
+
+# Exercise restoration using a real Android Bundle on the same emulator.
+adb shell am instrument -w -e class dev.ventry.raschet.presentation.BookFiltersRestoreTest \
+  dev.ventry.raschet.test/androidx.test.runner.AndroidJUnitRunner | tee "$RUNNER_TEMP/raschet-filter-restore-test.txt"
+grep -Eq 'OK \(2 tests\)' "$RUNNER_TEMP/raschet-filter-restore-test.txt"
+echo RASCHET_FILTER_RESTORE_PASS

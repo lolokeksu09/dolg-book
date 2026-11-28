@@ -10,7 +10,7 @@ import java.util.Set;
 
 /** Read-only customer statement. Allocate before filtering; never change financial history. */
 final class ClientStatement {
-    static final String ALL="Все", UNPAID="Не погашено", DEBTS="Долги", PAYMENTS="Оплаты", REVERSED="Отмены";
+    static final String ALL=dev.ventry.raschet.presentation.BookFilterLabels.ALL_OPERATIONS, UNPAID="Не погашено", DEBTS="Долги", PAYMENTS="Оплаты", REVERSED="Отмены";
     static final String[] FILTERS={ALL,UNPAID,DEBTS,PAYMENTS,REVERSED};
     final List<LedgerStore.Entry> entries;
     final Set<String> canceled,ids=new HashSet<>();
