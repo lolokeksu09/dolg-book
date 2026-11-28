@@ -13,8 +13,10 @@ sealed interface ClientCommand {
         data class Import(val uri: String, val preferencesName: String) : FileTask
         data class RestorePoint(val preferencesName: String) : FileTask
         data object CreatePoint : FileTask
+        data object DisableAutoCloud : FileTask
         // Never a data class: the passphrase must not be included in toString or saved state.
         sealed class Cloud(val passphrase:CharArray):FileTask {
+            class EnableAuto(val expected:String?,passphrase:CharArray):Cloud(passphrase)
             class Put(val slot:Int,val expected:String?,passphrase:CharArray):Cloud(passphrase)
             class Restore(val slot:Int,val version:String,val size:Int,val sha256:String,val preferencesName:String,passphrase:CharArray):Cloud(passphrase)
             fun clearSecret(){passphrase.fill('\u0000')}
