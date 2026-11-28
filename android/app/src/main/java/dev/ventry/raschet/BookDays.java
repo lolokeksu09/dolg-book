@@ -7,7 +7,6 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
@@ -62,7 +61,7 @@ final class BookDays {
     }
     static List<Day> select(List<Day> days,Map<String,LedgerStore.Client> clients,
             LocalDate from,LocalDate to,String query,boolean onlyUnpaid){
-        String needle=normalize(query);
+        String needle=ClientSearch.normalize(query);
         List<Day> result=new ArrayList<>();
         for(Day source:days){
             if(from!=null&&source.date.isBefore(from)||to!=null&&source.date.isAfter(to))continue;
@@ -71,16 +70,13 @@ final class BookDays {
                 long rest=source.unpaid.getOrDefault(e.id,0L);
                 if(onlyUnpaid&&rest==0)continue;
                 LedgerStore.Client c=clients.get(e.clientId);
-                if(!needle.isEmpty()&&(c==null||!normalize(c.name).contains(needle)
-                        &&!normalize(c.phone).contains(needle)
+                if(!needle.isEmpty()&&(c==null||!ClientSearch.normalize(c.name).contains(needle)
+                        &&!ClientSearch.normalize(c.phone).contains(needle)
                         &&!ClientSearch.phoneMatches(c.phone,needle)))continue;
                 visible.add(e,source.canceled.contains(e.id),rest);
             }
             if(!visible.entries.isEmpty())result.add(visible);
         }
         return result;
-    }
-    private static String normalize(String value){
-        return value==null?"":value.trim().toLowerCase(Locale.ROOT).replace('ё','е').replaceAll("\\s+"," ");
     }
 }

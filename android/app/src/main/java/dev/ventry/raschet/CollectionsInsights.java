@@ -4,7 +4,6 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -62,7 +61,7 @@ public final class CollectionsInsights {
     }
     public static List<CustomerStatus> visible(List<CustomerStatus> statuses,
             String filter,boolean amountFirst,boolean recentFirst,String search) {
-        String needle=normalize(search);
+        String needle=ClientSearch.normalize(search);
         List<CustomerStatus> results = new ArrayList<>();
         for (CustomerStatus status : statuses) {
             if (OWING.equals(filter) && status.balance == 0) continue;
@@ -70,8 +69,8 @@ public final class CollectionsInsights {
             if (LATE.equals(filter) && status.overdue == 0) continue;
             if (SOON.equals(filter) && status.upcoming == 0) continue;
             boolean phoneMatch=ClientSearch.phoneMatches(status.client.phone,needle);
-            if (!needle.isEmpty()&&!normalize(status.client.name).contains(needle)
-                    &&!normalize(status.client.phone).contains(needle)&&!phoneMatch)continue;
+            if (!needle.isEmpty()&&!ClientSearch.normalize(status.client.name).contains(needle)
+                    &&!ClientSearch.normalize(status.client.phone).contains(needle)&&!phoneMatch)continue;
             results.add(status);
         }
         Comparator<CustomerStatus> names = Comparator
@@ -84,9 +83,4 @@ public final class CollectionsInsights {
         else results.sort(names);
         return results;
     }
-    private static String normalize(String text){
-        return text==null?"":text.trim().toLowerCase(Locale.ROOT).replace('ё','е')
-                .replaceAll("\\s+"," ");
-    }
-
 }
