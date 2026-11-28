@@ -312,14 +312,17 @@ test('quick form drafts resume explicitly and use stable operation IDs',()=>{
 test('collection workspace is separate from chronological book and uses a read-only worklist',()=>{
   const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
   const queue=read('android/app/src/main/java/dev/ventry/raschet/CollectionWorklist.java');
-  assert.ok(ui.includes('tab.equals("Возврат")?collectionView(data)'));
+  const navigation=read('android/app/src/main/kotlin/dev/ventry/raschet/presentation/BookNavigationViewModel.kt');
+  assert.ok(ui.includes('case COLLECTIONS -> collectionView(data)'));
+  assert.ok(ui.includes('id->openClient(id,Screen.COLLECTIONS)'));
   assert.ok(ui.includes('new ClientCommand.FollowUp(person.id,current==null?null:current.id,day[0]'));
   const store=read('android/app/src/main/java/dev/ventry/raschet/LedgerStore.java');
   assert.ok(store.includes('FollowUpJournal.save(db,command.getClientId()'));
   assert.ok(!ui.includes('directory.setFollowUp(person.id'));
   assert.ok(ui.includes('fromCollections?WriteDestination.COLLECTIONS:WriteDestination.DETAIL'));
-  assert.ok(ui.includes("case COLLECTIONS: tab=\"Возврат\";selectedClient=null;returnToBook=false;returnToCollections=false;break;"));
-  assert.ok(ui.includes("tab=returnToBook?\"Главная\":returnToCollections?\"Возврат\":\"Клиенты\";"));
+  assert.ok(ui.includes('bookNavigation.onWrite(receipt.getDestination(),receipt.getClientId())'));
+  assert.ok(navigation.includes('WriteDestination.COLLECTIONS -> showRoot(Screen.COLLECTIONS)'));
+  assert.ok(navigation.includes('showRoot(state.clientOrigin)'));
   assert.ok(queue.includes('if(s.balance>0)'));
 });
 

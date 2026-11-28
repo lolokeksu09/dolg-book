@@ -52,7 +52,9 @@ test('native navigation and empty states are accessible, with actionable call-to
   assert.ok(activity.includes('setSingleLine(true)'));
   assert.ok(activity.includes('setContentDescription(caption)'));
   assert.ok(activity.includes('item.setSelected(active)'));
-  assert.ok(activity.includes('tab.equals("Возврат")||tab.equals("Отчёт")'));
+  const navigation=read('android/app/src/main/kotlin/dev/ventry/raschet/presentation/BookNavigationViewModel.kt');
+  assert.ok(activity.includes('getScreen().mainTab()'));
+  assert.ok(navigation.includes('COLLECTIONS, REPORT, ANALYTICS -> BOOK'));
   assert.ok(activity.includes('emptyState('));
   const clients=read('android/app/src/main/kotlin/dev/ventry/raschet/ClientsCompose.kt');
   const history=read('android/app/src/main/kotlin/dev/ventry/raschet/HistoryCompose.kt');
