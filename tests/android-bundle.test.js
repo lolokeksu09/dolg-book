@@ -263,14 +263,14 @@ test('payment journal is separate from unpaid debt and shortcuts only prefill th
 
 test('repeat debt shortcuts prefill without posting and quick debt has optional detail fields',()=>{
   const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
-  const recent=read('android/app/src/main/java/dev/ventry/raschet/RecentDebts.java');
+  const recent=read('android/app/src/main/kotlin/dev/ventry/raschet/RecentDebts.kt');
   const book=read('android/app/src/main/kotlin/dev/ventry/raschet/BookCompose.kt');
   assert.ok(book.includes('actions.debtClient(person.id)'));
   assert.ok(ui.includes('id->showEntryForm(id,"debt")'));
   assert.ok(ui.includes('()->amount.setText(amountInput(cents))'));
   assert.ok(ui.includes('addButton(matches,"Недавние клиенты"'));
   assert.match(ui,/new ClientCommand\.Debt\(draftId,selected\[0\],n,ph,cents,day\[0\],\s*due\.getText\(\)\.toString\(\),note\.getText\(\)\.toString\(\)\.trim\(\)/);
-  assert.ok(recent.includes('!canceled.contains(e.id)'));
+  assert.ok(recent.includes('entry.id !in canceled'));
 });
 
 
@@ -380,14 +380,14 @@ test('client statement allocates before filtering and reuses the existing operat
 test('backdated receipts validate historical balances and reopen the actual receipt day',()=>{
  const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
  const store=read('android/app/src/main/java/dev/ventry/raschet/LedgerStore.java');
- const model=read('android/app/src/main/java/dev/ventry/raschet/DatedPayments.java');
+ const model=read('android/app/src/main/kotlin/dev/ventry/raschet/DatedPayments.kt');
  const book=read('android/app/src/main/kotlin/dev/ventry/raschet/BookCompose.kt');
  assert.ok(book.includes('"+ Оплата за этот день"'));
  assert.ok(book.includes('actions.paymentDate(day.date)'));
  assert.ok(ui.includes('day->chooseClient("payment",day)'));
  assert.ok(ui.includes('operationId[0],entryDay[0]'));
  assert.ok(store.includes('amount>DatedPayments.maximum('));
- assert.ok(model.includes('DatedLedger.maximum(entries,id,day,today,zone)'));
+ assert.ok(model.includes('DatedLedger.maximum(entries, id, day, today, zone)'));
  const kotlin=read('android/app/src/main/kotlin/dev/ventry/raschet/domain/DatedLedger.kt');
  assert.ok(kotlin.includes('minimum = minOf(minimum, running)'));
 });
@@ -396,13 +396,13 @@ test('backdated receipts validate historical balances and reopen the actual rece
 test('client directory supports cleared balances and recent insertion order without changing financial data',()=>{
  const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
  const model=read('android/app/src/main/java/dev/ventry/raschet/CollectionsInsights.java');
- const search=read('android/app/src/main/java/dev/ventry/raschet/ClientSearch.java');
+ const search=read('android/app/src/main/kotlin/dev/ventry/raschet/ClientSearch.kt');
  assert.ok(ui.includes('Сортировка: последние операции'));
  const compose=read('android/app/src/main/kotlin/dev/ventry/raschet/ClientsCompose.kt');
  assert.ok(compose.includes('"Клиентов: " + result.size'));
  assert.ok(model.includes('CLEAR.equals(filter) && status.balance != 0'));
  assert.ok(model.includes('item.lastOperationIndex'));
- assert.ok(search.includes('wanted.substring(1).equals(actual.substring(1))'));
+ assert.ok(search.includes('wanted.substring(1) == actual.substring(1)'));
 });
 
 
