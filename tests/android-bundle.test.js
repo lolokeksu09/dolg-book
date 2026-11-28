@@ -104,7 +104,7 @@ test('catalog data stays portable and real editing/picking is routed to the repo
 test('client history follows two primary actions and secondary actions live in one menu',()=>{
   const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
   const detail=read('android/app/src/main/kotlin/dev/ventry/raschet/ClientDetailCompose.kt');
-  assert.ok(ui.includes('return ClientDetailCompose.create(this,data,id,detailFilter'));
+  assert.ok(ui.includes('return ClientDetailCompose.create(this,data,id,filters.getDetail().getFilter()'));
   assert.ok(detail.includes('"+ Долг"')&&detail.includes('"Оплата"')&&detail.includes('"Ещё действия"'));
   assert.ok(!detail.includes('"Сохранить выписку PDF"')&&!detail.includes('"Долг по товарам"'));
   assert.ok(detail.includes('История клиента'));
@@ -118,7 +118,7 @@ test('compact book keeps essential controls and hides redundant empty-state filt
   assert.ok(ui.includes('private int navHeight(){return largeText?76:64;}'));
   const clients=ui.slice(ui.indexOf('private View clientsView(BookScreenData data)'),ui.indexOf('private void showClientFilters()'));
   const compose=read('android/app/src/main/kotlin/dev/ventry/raschet/ClientsCompose.kt');
-  assert.ok(clients.includes('ClientsCompose.create(this,data,clientScope,clientFilter'));
+  assert.ok(clients.includes('ClientsCompose.create(this,data,filters.getClients().getScope(),filters.getClients().getFilter()'));
   assert.match(compose, /if \(model\.allCount > 0\) TextButton\(onClick = actions\.add,/);
   assert.ok(compose.includes('LazyColumn('));
   assert.ok(compose.includes('CollectionsInsights.visible(model.scoped, filter, amountFirst, recentFirst, query)'));
@@ -127,16 +127,17 @@ test('compact book keeps essential controls and hides redundant empty-state filt
   const settings=read('android/app/src/main/kotlin/dev/ventry/raschet/SettingsCompose.kt');
   assert.ok(settings.includes('if (state.expanded == "privacy")'));
   assert.ok(settings.includes('if (state.expanded == "backup")'));
-  assert.ok(ui.includes('settingsExpanded=settingsExpanded.equals(section)?"":section;render();'));
-  assert.ok(ui.includes('out.putString("settings_expanded",settingsExpanded)'));
+  assert.ok(ui.includes('filters.toggleSettings(section);render();'));
+  const filters=read('android/app/src/main/kotlin/dev/ventry/raschet/presentation/BookFiltersViewModel.kt');
+  assert.ok(filters.includes('out.putString("settings_expanded", s.settingsExpanded)'));
 });
 
 test('dense lists, selected filters and content-sized dialogs are wired',()=>{
   const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
   const compose=read('android/app/src/main/kotlin/dev/ventry/raschet/ClientsCompose.kt');
   assert.ok(compose.includes('HorizontalDivider(color = border)'));
-  assert.ok(ui.includes('filterMenuAction(menu,scope,scope.equals(clientScope)'));
-  assert.ok(ui.includes('filterMenuAction(menu,choice,choice.equals(clientFilter)'));
+  assert.ok(ui.includes('filterMenuAction(menu,scope,scope.equals(filters.getClients().getScope())'));
+  assert.ok(ui.includes('filterMenuAction(menu,choice,choice.equals(filters.getClients().getFilter())'));
   assert.ok(ui.includes('if(selected)item.addView(label("Выбрано"'));
   const history=read('android/app/src/main/kotlin/dev/ventry/raschet/HistoryCompose.kt');
   assert.ok(history.includes('shown[index - 1].date != row.date'));
@@ -195,8 +196,8 @@ test('book starts directly with a dated debt form and expandable daily journal',
   const book=read('android/app/src/main/kotlin/dev/ventry/raschet/BookCompose.kt');
   assert.ok(book.includes('BookDays.group(entries, zone)'));
   assert.ok(book.includes('expanded = if (open) expanded - key else expanded + key'));
-  assert.ok(ui.includes('return BookCompose.create(this,data,bookPayments'));
-  assert.ok(ui.includes('expandedBookDays.add(key)'));
+  assert.ok(ui.includes('return BookCompose.create(this,data,filters.getBook().getPayments()'));
+  assert.ok(ui.includes('filters::toggleBookDay'));
   assert.ok(ui.includes('formGroup("Дата записи",date)'));
   assert.ok(ui.includes('hasExactCustomer('));
   assert.ok(store.includes('insertEntry(db,id,"debt",amount,due,note,null,timestamp,entryId)'));
@@ -274,7 +275,7 @@ test('operation inspector uses exact selected IDs and history search',()=>{
   const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
   const history=read('android/app/src/main/kotlin/dev/ventry/raschet/HistoryCompose.kt');
   assert.ok(history.includes('HistoryRows.select(entries, people, clientId, query, from, to, filter, zone)'));
-  assert.ok(ui.includes('return HistoryCompose.create(this,data,historyClientId,historyQuery'));
+  assert.ok(ui.includes('return HistoryCompose.create(this,data,filters.getHistory().getClientId(),filters.getHistory().getQuery()'));
   assert.ok(history.includes('actions.open(row.entry.id)'));
   assert.ok(ui.includes('this::showOperation,this::showPurchaseDetails'));
   const repository=read('android/app/src/main/kotlin/dev/ventry/raschet/data/LedgerRepository.kt');
