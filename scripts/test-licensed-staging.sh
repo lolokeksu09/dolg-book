@@ -32,3 +32,9 @@ adb shell am instrument -w -e class dev.ventry.raschet.presentation.BookFiltersR
   dev.ventry.raschet.licensedstaging.test/androidx.test.runner.AndroidJUnitRunner | tee "$RUNNER_TEMP/raschet-filter-restore-test.txt"
 grep -Eq 'OK \(2 tests\)' "$RUNNER_TEMP/raschet-filter-restore-test.txt"
 echo RASCHET_FILTER_RESTORE_PASS
+
+# Exercise v1/v2/v3 migrations, real rollback and catalog constraints on isolated SQLite files.
+adb shell am instrument -w -e class dev.ventry.raschet.LedgerSchemaMigrationTest \
+  dev.ventry.raschet.licensedstaging.test/androidx.test.runner.AndroidJUnitRunner | tee "$RUNNER_TEMP/raschet-schema-test.txt"
+grep -Eq 'OK \(3 tests\)' "$RUNNER_TEMP/raschet-schema-test.txt"
+echo RASCHET_SCHEMA_MIGRATION_PASS

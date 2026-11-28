@@ -60,22 +60,12 @@ public final class LedgerStore extends SQLiteOpenHelper {
     // test from overwriting or deleting real customer records.
     LedgerStore(Context context,String databaseName) { this(context,databaseName,null); }
     LedgerStore(Context context,String databaseName,ClientDirectory legacyDirectory) {
-        super(context,databaseName,null,4);
+        super(context,databaseName,null,LedgerSchema.VERSION);
         appContext=context.getApplicationContext();this.legacyDirectory=legacyDirectory;
     }
-    @Override public void onCreate(SQLiteDatabase db) {
-        db.execSQL("CREATE TABLE clients (id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, phone TEXT NOT NULL)");
-        db.execSQL("CREATE TABLE entries (seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE, client_id TEXT NOT NULL REFERENCES clients(id), type TEXT NOT NULL, amount INTEGER NOT NULL, date TEXT NOT NULL, due TEXT NOT NULL, note TEXT NOT NULL, reverses TEXT NOT NULL, purchase TEXT NOT NULL DEFAULT '')");
-        db.execSQL("CREATE INDEX entries_client_seq ON entries(client_id, seq)");
-        createCatalog(db);
-        FollowUpJournal.create(db);
-    }
+    @Override public void onCreate(SQLiteDatabase db) { LedgerSchema.create(db); }
     @Override public void onUpgrade(SQLiteDatabase db,int oldVersion,int newVersion) {
-        if(oldVersion<1||oldVersion>3||newVersion!=4)throw new IllegalStateException("Unsupported migration");
-        if(oldVersion==1)db.execSQL("ALTER TABLE entries ADD COLUMN purchase TEXT NOT NULL DEFAULT ''");
-        if(oldVersion<=2)createCatalog(db);
-        FollowUpJournal.create(db);
-        if(legacyDirectory!=null)FollowUpJournal.migrate(db,legacyDirectory);
+        LedgerSchema.upgrade(db,oldVersion,newVersion,legacyDirectory);
     }
     public synchronized List<FollowUpJournal.Record> followUpHistory(){
         return FollowUpJournal.read(getReadableDatabase());
@@ -92,86 +82,32 @@ public final class LedgerStore extends SQLiteOpenHelper {
             db.setTransactionSuccessful();
         }finally{db.endTransaction();}
     }
-    private static void createCatalog(SQLiteDatabase db){
-        db.execSQL("CREATE TABLE products (id TEXT PRIMARY KEY NOT NULL,name TEXT NOT NULL,category TEXT NOT NULL,unit TEXT NOT NULL,price INTEGER NOT NULL,favorite INTEGER NOT NULL,archived INTEGER NOT NULL)");
-    }
     public synchronized List<Product> products(){
-        List<Product> result=new ArrayList<>();
-        try(Cursor c=getReadableDatabase().rawQuery("SELECT id,name,category,unit,price,favorite,archived FROM products ORDER BY name COLLATE NOCASE,id",null)){
-            while(c.moveToNext())result.add(new Product(c.getString(0),c.getString(1),c.getString(2),c.getString(3),c.getLong(4),c.getInt(5)!=0,c.getInt(6)!=0));
-        }
-        return result;
+        return LedgerCatalogSql.products(getReadableDatabase());
     }
     public synchronized void saveProduct(Product product){
-        SQLiteDatabase db=getWritableDatabase();
-        db.beginTransaction();
-        try{
-            List<Product> all=products();
-            boolean exists=false;
-            for(Product p:all){
-                if(p.id.equals(product.id)){exists=true;continue;}
-                if(!product.archived&&!p.archived&&p.sameName(product))
-                    throw new IllegalArgumentException("Такой товар уже есть в этой категории.");
-            }
-            if(!exists&&all.size()>=Product.MAX_PRODUCTS)throw new IllegalArgumentException("Достигнут лимит каталога.");
-            if(exists){
-                if(db.update("products",productValues(product),"id=?",new String[]{product.id})!=1)
-                    throw new IllegalStateException("Товар не найден.");
-            }else db.insertOrThrow("products",null,productValues(product));
-            db.setTransactionSuccessful();
-        }finally{db.endTransaction();}
+        LedgerCatalogSql.save(getWritableDatabase(),product);
     }
     public synchronized List<dev.ventry.raschet.data.CatalogRecord> catalogRecords(){
-        List<dev.ventry.raschet.data.CatalogRecord> result=new ArrayList<>();
-        for(Product p:products())result.add(new dev.ventry.raschet.data.CatalogRecord(
-                p.id,p.name,p.category,p.unit,p.price,p.favorite,p.archived));
-        return java.util.Collections.unmodifiableList(result);
+        return LedgerCatalogSql.records(getReadableDatabase());
     }
     public synchronized void saveCatalogRecord(dev.ventry.raschet.data.CatalogRecord record){
-        saveProduct(new Product(record.getId(),record.getName(),record.getCategory(),record.getUnit(),
-                record.getPrice(),record.getFavorite(),record.getArchived()));
-    }
-    private static ContentValues productValues(Product p){
-        ContentValues row=new ContentValues();
-        row.put("id",p.id);row.put("name",p.name);row.put("category",p.category);
-        row.put("unit",p.unit);row.put("price",p.price);row.put("favorite",p.favorite?1:0);row.put("archived",p.archived?1:0);
-        return row;
+        LedgerCatalogSql.saveRecord(getWritableDatabase(),record);
     }
     @Override public void onConfigure(SQLiteDatabase db) { super.onConfigure(db); db.setForeignKeyConstraintsEnabled(true); }
 
     public synchronized List<Client> clients() {
-        List<Client> result=new ArrayList<>();
-        try(Cursor c=getReadableDatabase().rawQuery("SELECT id,name,phone FROM clients ORDER BY name COLLATE NOCASE,id",null)) {
-            while(c.moveToNext()) result.add(new Client(c.getString(0),c.getString(1),c.getString(2)));
-        }
-        return result;
+        return LedgerSql.clients(getReadableDatabase());
     }
-    public synchronized List<Entry> entries() { return readEntries(null); }
+    public synchronized List<Entry> entries() { return LedgerSql.entries(getReadableDatabase(),null); }
     /** Indexed client history, including every reversal, in insertion order. */
     public synchronized List<Entry> entriesForClient(String clientId) {
         if(clientId==null)throw new IllegalArgumentException("Клиент не выбран.");
-        return readEntries(clientId);
-    }
-    private List<Entry> readEntries(String clientId) {
-        List<Entry> result=new ArrayList<>();
-        String query="SELECT id,client_id,type,amount,date,due,note,reverses,purchase FROM entries"+
-                (clientId==null?"":" WHERE client_id=?")+" ORDER BY seq";
-        try(Cursor c=getReadableDatabase().rawQuery(query,clientId==null?null:new String[]{clientId})) {
-            while(c.moveToNext()) result.add(new Entry(c.getString(0),c.getString(1),c.getString(2),
-                    c.getLong(3),c.getString(4),c.getString(5),c.getString(6),c.getString(7),Purchase.decode(c.getString(8))));
-        }
-        return result;
+        return LedgerSql.entries(getReadableDatabase(),clientId);
     }
     /** Both ordered queries observe the same committed SQLite transaction. */
     public synchronized dev.ventry.raschet.data.LedgerSnapshot readSnapshot() {
-        SQLiteDatabase db=getWritableDatabase();
-        db.beginTransactionNonExclusive();
-        try {
-            dev.ventry.raschet.data.LedgerSnapshot snapshot=
-                    new dev.ventry.raschet.data.LedgerSnapshot(clients(),entries(),followUpHistory());
-            db.setTransactionSuccessful();
-            return snapshot;
-        }finally{db.endTransaction();}
+        return LedgerSql.snapshot(getWritableDatabase());
     }
     public synchronized void addClient(String name,String phone) {
         insertClient(getWritableDatabase(),name,phone);
@@ -214,12 +150,8 @@ public final class LedgerStore extends SQLiteOpenHelper {
     public synchronized String recordDatedDebt(String existingId,String name,String phone,long amount,LocalDate day,String due,String note){
         return recordDatedDebt(existingId,name,phone,amount,day,due,note,UUID.randomUUID().toString());
     }
-    synchronized boolean hasEntryId(String id){
-        try(Cursor c=getReadableDatabase().rawQuery("SELECT 1 FROM entries WHERE id=?",new String[]{id})){return c.moveToFirst();}
-    }
-    synchronized boolean hasClientId(String id){
-        try(Cursor c=getReadableDatabase().rawQuery("SELECT 1 FROM clients WHERE id=?",new String[]{id})){return c.moveToFirst();}
-    }
+    synchronized boolean hasEntryId(String id){return LedgerSql.hasEntry(getReadableDatabase(),id);}
+    synchronized boolean hasClientId(String id){return LedgerSql.hasClient(getReadableDatabase(),id);}
     public synchronized String recordDatedDebt(String existingId,String name,String phone,long amount,LocalDate day,String due,String note,String entryId){
         if(day==null||day.isAfter(LocalDate.now()))throw new IllegalArgumentException("Дата записи не может быть в будущем.");
         String timestamp=day.equals(LocalDate.now())?Instant.now().toString():
@@ -277,15 +209,7 @@ public final class LedgerStore extends SQLiteOpenHelper {
      * Reversed entries remain visible in both journals; count original operation dates.
      */
     static int journalRank(SQLiteDatabase db,String type,LocalDate day,ZoneId zone){
-        if(day==null)throw new IllegalArgumentException("Дата не выбрана.");
-        Set<LocalDate> later=new HashSet<>();
-        try(Cursor cursor=db.rawQuery("SELECT DISTINCT date FROM entries WHERE type=?",new String[]{type})){
-            while(cursor.moveToNext()){
-                LocalDate date=dev.ventry.raschet.domain.DatedLedger.localDate(cursor.getString(0),zone);
-                if(date.isAfter(day))later.add(date);
-            }
-        }
-        return 1+later.size();
+        return LedgerSql.journalRank(db,type,day,zone);
     }
 
     /** Retain the existing historical-payment guard and compute the journal position before commit. */
@@ -405,18 +329,16 @@ public final class LedgerStore extends SQLiteOpenHelper {
             dev.ventry.raschet.license.LicenseManager.requireNewDebt(appContext);
             if(due!=null&&!due.isEmpty()) { try { LocalDate.parse(due); } catch(Exception ex) {throw new IllegalArgumentException("Неверный срок.");} }
         } else due="";
-            boolean exists=false;
-            try(Cursor c=db.rawQuery("SELECT 1 FROM clients WHERE id=?",new String[]{clientId})) {exists=c.moveToFirst();}
-            if(!exists)throw new IllegalArgumentException("Клиент не найден.");
-            if(android.database.DatabaseUtils.queryNumEntries(db,"entries")>=MAX_ENTRIES)throw new IllegalArgumentException("Достигнут лимит операций.");
-            long available=balance(entriesForClient(clientId),clientId);
-            if("payment".equals(type)&&amount>available)
-                throw new IllegalArgumentException("Оплата превышает остаток долга.");
-            if("debt".equals(type)&&amount>MAX_AMOUNT-available)
-                throw new IllegalArgumentException("Превышен максимальный остаток.");
-            Entry entry=new Entry(entryId,clientId,type,amount,timestamp,
-                    due==null?"":due,note,"",purchase);
-            db.insertOrThrow("entries",null,values(entry));
+        if(!LedgerSql.hasClient(db,clientId))throw new IllegalArgumentException("Клиент не найден.");
+        if(android.database.DatabaseUtils.queryNumEntries(db,"entries")>=MAX_ENTRIES)throw new IllegalArgumentException("Достигнут лимит операций.");
+        long available=balance(entriesForClient(clientId),clientId);
+        if("payment".equals(type)&&amount>available)
+            throw new IllegalArgumentException("Оплата превышает остаток долга.");
+        if("debt".equals(type)&&amount>MAX_AMOUNT-available)
+            throw new IllegalArgumentException("Превышен максимальный остаток.");
+        Entry entry=new Entry(entryId,clientId,type,amount,timestamp,
+                due==null?"":due,note,"",purchase);
+        db.insertOrThrow("entries",null,LedgerSql.values(entry));
     }
     public synchronized Entry lastActive(String clientId) {
         Set<String> undone=new HashSet<>();
@@ -446,7 +368,7 @@ public final class LedgerStore extends SQLiteOpenHelper {
             if("debt".equals(last.type)&&b<last.amount)
                 throw new IllegalArgumentException("Этот долг уже частично погашен. Сначала отмените последнюю оплату.");
             Entry undo=new Entry(UUID.randomUUID().toString(),clientId,"reversal",last.amount,Instant.now().toString(),"",reason.trim(),last.id);
-            db.insertOrThrow("entries",null,values(undo));
+            db.insertOrThrow("entries",null,LedgerSql.values(undo));
             db.setTransactionSuccessful();
         }finally{db.endTransaction();}
     }
@@ -490,8 +412,8 @@ public final class LedgerStore extends SQLiteOpenHelper {
                     last.amount,timestamp,"",reason.trim(),last.id);
             Entry corrected=new Entry(UUID.randomUUID().toString(),clientId,last.type,
                     amount,timestamp,due,note,"",last.purchase);
-            db.insertOrThrow("entries",null,values(undo));
-            db.insertOrThrow("entries",null,values(corrected));
+            db.insertOrThrow("entries",null,LedgerSql.values(undo));
+            db.insertOrThrow("entries",null,LedgerSql.values(corrected));
             db.setTransactionSuccessful();
         }finally{db.endTransaction();}
     }
@@ -502,14 +424,6 @@ public final class LedgerStore extends SQLiteOpenHelper {
         return dev.ventry.raschet.bridge.CorrectionEngine.correctedBalance(available,last.type,last.amount,amount);
     }
 
-    private static ContentValues values(Entry entry) {
-        ContentValues row=new ContentValues();
-        row.put("id",entry.id);row.put("client_id",entry.clientId);row.put("type",entry.type);
-        row.put("amount",entry.amount);row.put("date",entry.date);row.put("due",entry.due);
-        row.put("note",entry.note);row.put("reverses",entry.reverses);
-        row.put("purchase",entry.purchase==null?"":entry.purchase.encode());
-        return row;
-    }
     public static Set<String> canceled(List<Entry> list) {
         return dev.ventry.raschet.domain.LedgerProjection.canceled(list);
     }
@@ -537,7 +451,7 @@ public final class LedgerStore extends SQLiteOpenHelper {
         try{
             output.write("{\"clients\":[");
             boolean first=true;
-            try(Cursor c=db.rawQuery("SELECT id,name,phone FROM clients ORDER BY name COLLATE NOCASE,id",null)){
+            try(Cursor c=LedgerSql.clientRows(db)){
                 while(c.moveToNext()){
                     if(!first)output.write(',');first=false;
                     output.write(new JSONObject().put("id",c.getString(0)).put("name",c.getString(1))
@@ -547,7 +461,7 @@ public final class LedgerStore extends SQLiteOpenHelper {
             output.write("],\"entries\":[");
             first=true;
             int version=2;
-            try(Cursor c=db.rawQuery("SELECT id,client_id,type,amount,date,due,note,reverses,purchase FROM entries ORDER BY seq",null)){
+            try(Cursor c=LedgerSql.entryRows(db,null)){
                 while(c.moveToNext()){
                     if(!first)output.write(',');first=false;
                     JSONObject row=new JSONObject().put("id",c.getString(0)).put("clientId",c.getString(1))
@@ -667,7 +581,7 @@ public final class LedgerStore extends SQLiteOpenHelper {
 
             // All changes below are uncommitted until validation of the last entry succeeds.
             db.delete("products",null,null);
-            for(Product p:newProducts)db.insertOrThrow("products",null,productValues(p));
+            for(Product p:newProducts)db.insertOrThrow("products",null,LedgerCatalogSql.values(p));
             db.delete("collection_plans",null,null);
             db.delete("entries",null,null);
             db.delete("clients",null,null);
@@ -710,7 +624,7 @@ public final class LedgerStore extends SQLiteOpenHelper {
                     }
                     history.accept(cid,id,type,amount,reverses,note);
                     Entry e=new Entry(id,cid,type,amount,date,due,note,reverses,purchase);
-                    db.insertOrThrow("entries",null,values(e));
+                    db.insertOrThrow("entries",null,LedgerSql.values(e));
                 }
             }
             if(planCount>=0){

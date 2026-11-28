@@ -70,7 +70,9 @@ test('itemized debts use an additive migration and versioned validated purchase 
   const store=read('android/app/src/main/java/dev/ventry/raschet/LedgerStore.java');
   const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
   const purchase=read('android/app/src/main/java/dev/ventry/raschet/Purchase.java');
-  assert.ok(store.includes("ALTER TABLE entries ADD COLUMN purchase"));
+  const schema=read("android/app/src/main/kotlin/dev/ventry/raschet/LedgerSchema.kt");
+  assert.ok(schema.includes("ALTER TABLE entries ADD COLUMN purchase"));
+  assert.ok(store.includes("LedgerSchema.upgrade(db,oldVersion,newVersion,legacyDirectory)"));
   assert.ok(store.includes('Math.max(version,3)'));
   assert.ok(store.includes('purchase.total!=amount'));
   assert.ok(store.includes('last.purchase!=null&&amount!=last.amount'));
@@ -86,7 +88,9 @@ test('catalog data stays portable and real editing/picking is routed to the repo
   const ui=read('android/app/src/main/java/dev/ventry/raschet/MainActivity.java');
   const settings=read('android/app/src/main/kotlin/dev/ventry/raschet/SettingsCompose.kt');
   const service=read('android/app/src/main/kotlin/dev/ventry/raschet/ClientWriteService.kt');
-  assert.ok(store.includes('CREATE TABLE products'));
+  const schema=read('android/app/src/main/kotlin/dev/ventry/raschet/LedgerSchema.kt');
+  assert.ok(schema.includes('CREATE TABLE products'));
+  assert.ok(store.includes('LedgerCatalogSql.save(getWritableDatabase(),product)'));
   assert.ok(store.includes('for(Product product:catalog)'));
   assert.ok(store.includes('version=4;'));
   assert.ok(store.includes('for(Product p:newProducts)'));
