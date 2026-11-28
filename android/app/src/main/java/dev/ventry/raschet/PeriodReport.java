@@ -38,7 +38,7 @@ final class PeriodReport {
     }
     static PeriodReport build(List<LedgerStore.Entry> entries,LocalDate from,LocalDate to,ZoneId zone){
         dev.ventry.raschet.domain.ReportProjection.Report report=
-                dev.ventry.raschet.domain.ReportProjection.build(entries,from,to,zone);
+                dev.ventry.raschet.bridge.NativeLedgerEngine.report(entries,from,to,zone);
         Map<LocalDate,Totals> daily=new TreeMap<>();
         report.getDaily().forEach((date,totals)->daily.put(date,adapt(totals)));
         return new PeriodReport(from,to,report.getOpening(),adapt(report.getTotals()),daily,report.getActiveCustomers());

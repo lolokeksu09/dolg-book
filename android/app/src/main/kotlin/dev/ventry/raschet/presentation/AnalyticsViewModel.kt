@@ -3,6 +3,7 @@ package dev.ventry.raschet.presentation
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dev.ventry.raschet.domain.AnalyticsPeriods
+import dev.ventry.raschet.bridge.NativeLedgerEngine
 import dev.ventry.raschet.domain.AnalyticsProjection
 import dev.ventry.raschet.domain.AnalyticsSeries
 import dev.ventry.raschet.domain.DatedLedger
@@ -90,10 +91,13 @@ class AnalyticsViewModel : ViewModel() {
                 earliest
             } else null
             val ranges = AnalyticsPeriods.resolve(selected.selection, source.today, firstDate)
+            check.run()
+            val statuses = NativeLedgerEngine.collections(entries, source.today)
+            check.run()
             val current = AnalyticsProjection.build(entries, names.keys, ranges.range, source.today,
-                timeZone, selected.customerId, check)
+                timeZone, selected.customerId, check, statuses)
             val previous = ranges.previous?.let {
-                AnalyticsProjection.build(entries, names.keys, it, source.today, timeZone, selected.customerId, check)
+                AnalyticsProjection.build(entries, names.keys, it, source.today, timeZone, selected.customerId, check, statuses)
             }
             val focus = current.customers.firstOrNull { it.id == selected.customerId }
             val series = if (selected.customerId == null) AnalyticsSeries.build(ranges.range, current.opening, current.daily)

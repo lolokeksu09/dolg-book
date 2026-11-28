@@ -131,6 +131,7 @@ if (rustPreview) {
     android.buildTypes.getByName("debug").buildConfigField("boolean", "RUST_PREVIEW", "true")
     android.sourceSets.getByName("debug").jniLibs.srcDir(nativeLibs)
     android.sourceSets.getByName("androidTest").java.srcDir("src/nativePreviewAndroidTest/java")
+    android.sourceSets.getByName("androidTest").java.srcDir("src/nativePreviewAndroidTest/kotlin")
     android.sourceSets.getByName("androidTest").assets.srcDir(nativeAssets)
     val verifyRustTestAssets = tasks.register("verifyRustTestAssets") {
         dependsOn(verifyRustLibraries)

@@ -46,8 +46,11 @@ jobs:
           cargo +1.85.1 clippy --manifest-path rust-core/jni/Cargo.toml --locked --all-targets -- -D warnings
           cargo +1.85.1 test --manifest-path rust-core/jni/Cargo.toml --locked
           cargo +1.85.1 build --manifest-path rust-core/jni/Cargo.toml --locked --release
-          javac --release 17 -d "$RUNNER_TEMP/jni-classes" android/app/src/main/java/dev/ventry/raschet/bridge/NativeCorrection.java tests/contracts/NativeCorrectionSmoke.java
+          cc -std=c11 -I"$JAVA_HOME/include" -I"$JAVA_HOME/include/linux" tests/contracts/jni-table.c -o "$RUNNER_TEMP/jni-table"
+          "$RUNNER_TEMP/jni-table"
+          javac --release 17 -d "$RUNNER_TEMP/jni-classes" android/app/src/main/java/dev/ventry/raschet/bridge/NativeCorrection.java android/app/src/main/java/dev/ventry/raschet/bridge/NativeLedger.java tests/contracts/NativeCorrectionSmoke.java tests/contracts/NativeLedgerSmoke.java
           java -cp "$RUNNER_TEMP/jni-classes" NativeCorrectionSmoke rust-core/jni/target/release/libraschet_jni.so tests/contracts/correction.tsv
+          java -Xcheck:jni -cp "$RUNNER_TEMP/jni-classes" NativeLedgerSmoke rust-core/jni/target/release/libraschet_jni.so
   kotlin:
     runs-on: ubuntu-24.04
     timeout-minutes: 20

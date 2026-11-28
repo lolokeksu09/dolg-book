@@ -103,7 +103,8 @@ object AnalyticsProjection {
     fun build(
         entries: List<DatedLedgerRecord>, customerIds: Collection<String>, range: Range,
         today: LocalDate, zone: ZoneId, focusId: String? = null,
-        cancellationCheck: Runnable? = null
+        cancellationCheck: Runnable? = null,
+        currentStatuses: Map<String, CollectionProjection.Status>? = null
     ): Snapshot {
         require(!range.to.isAfter(today)) { "Период не может заканчиваться в будущем." }
         val customers = LinkedHashMap<String, CustomerBuilder>()
@@ -164,7 +165,7 @@ object AnalyticsProjection {
 
         // Reuse the production allocation rules for current balances and overdue debts.
         cancellationCheck?.run()
-        val statuses = CollectionProjection.analyze(entries, today)
+        val statuses = currentStatuses ?: CollectionProjection.analyze(entries, today)
         cancellationCheck?.run()
         val result = customers.map { (id, state) ->
             val status = statuses[id] ?: CollectionProjection.EMPTY

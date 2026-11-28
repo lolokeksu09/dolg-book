@@ -1,6 +1,6 @@
 package dev.ventry.raschet
 
-import dev.ventry.raschet.domain.DatedLedger
+import dev.ventry.raschet.bridge.NativeLedgerEngine
 import java.time.LocalDate
 import java.time.ZoneId
 
@@ -8,5 +8,5 @@ import java.time.ZoneId
 object DatedPayments {
     @JvmStatic
     fun maximum(entries: List<LedgerStore.Entry>, id: String, day: LocalDate, today: LocalDate, zone: ZoneId): Long =
-        DatedLedger.maximum(entries, id, day, today, zone)
+        NativeLedgerEngine.historical(entries, id, day, today, zone)
 }
