@@ -9,6 +9,7 @@ import dev.ventry.raschet.data.LedgerSnapshot
 import dev.ventry.raschet.data.WriteReceipt
 import dev.ventry.raschet.domain.DatedLedgerRecord
 import dev.ventry.raschet.domain.LedgerArithmetic
+import dev.ventry.raschet.bridge.NativeLedgerEngine
 import dev.ventry.raschet.domain.LedgerProjection
 import org.json.JSONException
 import java.io.IOException
@@ -187,8 +188,8 @@ class LedgerStore(
         @JvmStatic fun correctedBalance(available: Long, last: Entry?, amount: Long): Long =
             LedgerCorrections.correctedBalance(available, last, amount)
         @JvmStatic fun canceled(list: List<Entry>): Set<String> = LedgerProjection.canceled(list)
-        @JvmStatic fun balance(list: List<Entry>, clientId: String): Long = LedgerProjection.balance(list, clientId)
+        @JvmStatic fun balance(list: List<Entry>, clientId: String): Long = NativeLedgerEngine.balance(list, clientId)
         @JvmStatic fun overdue(list: List<Entry>, clientId: String, today: LocalDate): Long =
-            LedgerProjection.overdue(list, clientId, today.toString())
+            NativeLedgerEngine.overdue(list, clientId, today)
     }
 }

@@ -10,7 +10,7 @@ out="$root/android/app/build/generated/rustPreview/jniLibs"
 assets="$root/android/app/build/generated/rustPreview/testAssets"
 target_dir="$root/rust-core/jni/target/android"
 manifest="$root/rust-core/jni/Cargo.toml"
-symbol=Java_dev_ventry_raschet_bridge_NativeCorrection_correctedBalance
+symbols=(Java_dev_ventry_raschet_bridge_NativeCorrection_correctedBalance Java_dev_ventry_raschet_bridge_NativeLedger_compute)
 test -x "$toolchain/llvm-readelf"
 test -x "$toolchain/llvm-nm"
 grep -Eq '^Pkg.Revision[[:space:]]*=[[:space:]]*28\.2\.13676358[[:space:]]*$' "$ndk/source.properties"
@@ -33,7 +33,9 @@ do
     test -s "$so"
     actual=$("$toolchain/llvm-readelf" -h "$so" | sed -n 's/^[[:space:]]*Machine:[[:space:]]*//p')
     test "$actual" = "$machine" || { echo "Wrong ELF machine: $abi: $actual" >&2; exit 1; }
-    "$toolchain/llvm-nm" -D --defined-only "$so" | awk -v symbol="$symbol" '$NF == symbol { found=1 } END { exit !found }'
+    for symbol in "${symbols[@]}"; do
+        "$toolchain/llvm-nm" -D --defined-only "$so" | awk -v symbol="$symbol" '$NF == symbol { found=1 } END { exit !found }'
+    done
     # Check actual ELF LOAD segment alignment, not just NDK version.
     if [[ "$abi" == arm64-v8a || "$abi" == x86_64 ]]; then
         "$toolchain/llvm-readelf" -lW "$so" | python3 -c 'import sys; align=[int(l.split()[-1],16) for l in sys.stdin if l.strip().startswith("LOAD ")]; assert align and min(align)>=16384, align'

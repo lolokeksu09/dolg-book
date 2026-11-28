@@ -44,7 +44,7 @@ public final class CollectionsInsights {
     public static List<CustomerStatus> analyze(List<LedgerStore.Client> clients,
             List<LedgerStore.Entry> entries, LocalDate today) {
         Map<String, dev.ventry.raschet.domain.CollectionProjection.Status> projections =
-                dev.ventry.raschet.domain.CollectionProjection.analyze(entries,today);
+                dev.ventry.raschet.bridge.NativeLedgerEngine.collections(entries,today);
         List<CustomerStatus> output = new ArrayList<>(clients.size());
         for (LedgerStore.Client client : clients) {
             dev.ventry.raschet.domain.CollectionProjection.Status status =

@@ -10,3 +10,5 @@
 
 
 [Исторические планы и журнал до 28.11.2026](https://github.com/lolokeksu09/dolg-book/tree/e36eeb8f9fb9ab0c9de702b737687c82e6f5d167/docs).
+
+- E-05: #43/#44 merged; beta.9/44 signed candidate [46174506573](https://github.com/lolokeksu09/dolg-book/actions/runs/46174506573), main `12ab0727`. Следующий срез: bounded JNI v2 для projection/historical/collections/report; Kotlin parity остаётся обязательной, release кандидат beta.10/45 только после CI. SQLite, лицензирование, подпись, формат копий не меняются. Расширенные агрегаты AnalyticsProjection по-прежнему Kotlin, current statuses идут через Rust. Производительность не подтверждена; физическая приёмка отдельно.

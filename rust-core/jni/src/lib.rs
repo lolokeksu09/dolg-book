@@ -1,6 +1,8 @@
 //! JNI boundary for the scalar correction contract.
 //! Primitive JNI arguments only; no dereferencing VM pointers or shared state.
 
+mod batch;
+
 use raschet_ledger::{CorrectionError, corrected_balance};
 use std::ffi::c_void;
 use std::panic::catch_unwind;

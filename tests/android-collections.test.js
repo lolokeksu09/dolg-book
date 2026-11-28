@@ -8,7 +8,7 @@ const read=path=>readFileSync(resolve(import.meta.dirname,'..',path),'utf8');
 test('collections insight model is derived from active entries with oldest-first payment allocation',()=>{
   const source=read('android/app/src/main/java/dev/ventry/raschet/CollectionsInsights.java');
   const kotlin=read('android/app/src/main/kotlin/dev/ventry/raschet/domain/CollectionProjection.kt');
-  assert.ok(source.includes('CollectionProjection.analyze(entries,today)'));
+  assert.ok(source.includes('NativeLedgerEngine.collections(entries,today)'));
   assert.ok(kotlin.includes('LedgerProjection.canceled(entries)'));
   assert.ok(kotlin.includes('minOf(payments, row.amountKopecks)'));
   assert.ok(kotlin.includes('today.plusDays(7)'));
