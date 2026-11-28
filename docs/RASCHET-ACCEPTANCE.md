@@ -4,8 +4,8 @@
 
 ## Сборка и идентификация
 
-1. Сверить `versionCode` и `versionName` в [Gradle](../android/app/build.gradle.kts) и обоих `aapt` в [Raschet public licensed candidate](../.github/workflows/raschet-public-licensed-candidate.yml). Сравнить с последним установленным подписанным кандидатом и версией, одобренной в Delivery. Для следующего кандидата выбрать новый возрастающий код. Для прошлых артефактов сравнивать также SHA-256, поскольку `36` использовался в нескольких запусках.
-2. Вручную запустить `Raschet public licensed candidate` на `main` с публичным Ed25519-ключом действующего Delivery. Сверить успешный запуск, событие `workflow_dispatch`, полный head SHA и срок доступности ZIP.
+1. Сверить `versionCode`, `versionName` и публичный ключ в [release-profile.properties](../android/release-profile.properties) с принятыми для выпуска значениями. При подготовке следующего кандидата выбрать код выше установленной подписанной версии и APK, одобренного в Delivery.
+2. Изменение профиля в `main` запускает [Raschet public licensed candidate](../.github/workflows/raschet-public-licensed-candidate.yml). Возможен ручной перезапуск на `main`. Сверить успешный запуск, полный head SHA и срок доступности ZIP.
 3. Сверить SHA-256 ZIP с Actions, отдельно проверить SHA-256 APK, сертификат, `dev.ventry.raschet`, версию и Rust JNI ABI по [инструкции Ventry](https://github.com/lolokeksu09/Ventry/blob/main/docs/RASCHET-DISTRIBUTION-READINESS.md#подготовка-подписанного-кандидата). Сертификат APK и Ed25519-ключ лицензии проверяются независимо. Подготовка кандидата и переключение выдачи фиксируются отдельными событиями.
 
 ## Физический Android
