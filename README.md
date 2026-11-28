@@ -8,6 +8,7 @@
 - [Состояние и следующий этап](docs/CONTINUATION.md)
 - [Карточка проекта и контракты](PROJECT.md)
 - [Android: сборка и структура](android/README.md)
+- [Приёмка подписанной сборки «Расчёта»](docs/RASCHET-ACCEPTANCE.md)
 - [Общий план Ventry](https://github.com/lolokeksu09/Ventry/blob/main/docs/ECOSYSTEM-STATUS.md)
 - [Правила разработки](AGENTS.md), [проверки](TESTING-LEVELS.md)
 
