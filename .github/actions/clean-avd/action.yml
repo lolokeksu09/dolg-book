@@ -1,0 +1,74 @@
+name: Clean Android emulator with snapshot reuse
+description: Restore a compatible pristine AVD or boot clean, then execute the unchanged test command.
+inputs:
+  script:
+    description: Test command, executed by android-emulator-runner
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Fingerprint the installed emulator and system image
+      id: fingerprint
+      shell: bash
+      run: |
+        set -euo pipefail
+        sdkmanager_bin="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+        "$sdkmanager_bin" --install emulator 'system-images;android-35;google_apis;x86_64'
+        digest=$(sha256sum "$ANDROID_HOME/emulator/source.properties" "$ANDROID_HOME/system-images/android-35/google_apis/x86_64/source.properties" | sha256sum | cut -d' ' -f1)
+        printf 'key=%s-%s-%s\n' "${ImageOS:-linux}" "${ImageVersion:-unknown}" "$digest" >> "$GITHUB_OUTPUT"
+    - name: Restore only the pristine AVD
+      id: avd-cache
+      continue-on-error: true
+      uses: actions/cache/restore@v4
+      with:
+        path: ~/.android/avd
+        key: raschet-clean-avd-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.fingerprint.outputs.key }}-api35-google-apis-x86_64-pixel6-${{ hashFiles('.github/actions/clean-avd/action.yml', 'scripts/ci-clean-avd.sh') }}
+    - name: Generate clean snapshot on cache miss
+      id: seed
+      if: steps.avd-cache.outputs.cache-hit != 'true'
+      continue-on-error: true
+      uses: reactivecircus/android-emulator-runner@v2
+      with:
+        api-level: 35
+        target: google_apis
+        arch: x86_64
+        profile: pixel_6
+        force-avd-creation: true
+        disable-animations: false
+        emulator-options: -no-window -noaudio -no-boot-anim -gpu swiftshader
+        script: bash scripts/ci-clean-avd.sh seed
+    - name: Verify snapshot availability
+      id: snapshot
+      shell: bash
+      env:
+        CACHE_HIT: ${{ steps.avd-cache.outputs.cache-hit }}
+        SEED_OUTCOME: ${{ steps.seed.outcome }}
+      run: |
+        set -euo pipefail
+        if [[ ( "$CACHE_HIT" == true || "$SEED_OUTCOME" == success ) && -f "$HOME/.android/avd/test.avd/snapshots/default_boot/snapshot.pb" ]]; then
+          echo 'available=true' >> "$GITHUB_OUTPUT"
+          echo "AVD snapshot available (cache hit: ${CACHE_HIT:-false})" >> "$GITHUB_STEP_SUMMARY"
+        else
+          echo 'available=false' >> "$GITHUB_OUTPUT"
+          echo 'AVD snapshot unavailable; force a clean cold boot' >> "$GITHUB_STEP_SUMMARY"
+        fi
+    - name: Save snapshot before any app installation
+      if: steps.avd-cache.outputs.cache-hit != 'true' && steps.snapshot.outputs.available == 'true'
+      continue-on-error: true
+      uses: actions/cache/save@v4
+      with:
+        path: ~/.android/avd
+        key: ${{ steps.avd-cache.outputs.cache-primary-key }}
+    - name: Run required tests on isolated emulator
+      uses: reactivecircus/android-emulator-runner@v2
+      env:
+        RASCHET_CI_TEST_COMMAND: ${{ inputs.script }}
+      with:
+        api-level: 35
+        target: google_apis
+        arch: x86_64
+        profile: pixel_6
+        force-avd-creation: ${{ steps.snapshot.outputs.available != 'true' }}
+        disable-animations: true
+        emulator-options: -no-window -no-snapshot-save -noaudio -no-boot-anim -gpu swiftshader
+        script: bash scripts/ci-clean-avd.sh run
