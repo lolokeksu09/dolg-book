@@ -21,14 +21,14 @@ internal object LedgerSql {
 
     @JvmStatic fun clients(db: SQLiteDatabase): List<LedgerStore.Client> =
         clientRows(db).use { cursor ->
-            buildList {
+            ArrayList<LedgerStore.Client>().apply {
                 while (cursor.moveToNext()) add(LedgerStore.Client(cursor.getString(0), cursor.getString(1), cursor.getString(2)))
             }
         }
 
     @JvmStatic fun entries(db: SQLiteDatabase, clientId: String?): List<LedgerStore.Entry> =
         entryRows(db, clientId).use { cursor ->
-            buildList {
+            ArrayList<LedgerStore.Entry>().apply {
                 while (cursor.moveToNext()) add(LedgerStore.Entry(cursor.getString(0), cursor.getString(1), cursor.getString(2),
                     cursor.getLong(3), cursor.getString(4), cursor.getString(5), cursor.getString(6),
                     cursor.getString(7), Purchase.decode(cursor.getString(8))))

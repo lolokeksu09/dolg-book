@@ -9,7 +9,7 @@ import java.util.Collections
 internal object LedgerCatalogSql {
     @JvmStatic fun products(db: SQLiteDatabase): List<Product> =
         db.rawQuery("SELECT id,name,category,unit,price,favorite,archived FROM products ORDER BY name COLLATE NOCASE,id", null).use { cursor ->
-            buildList {
+            ArrayList<Product>().apply {
                 while (cursor.moveToNext()) add(Product(cursor.getString(0), cursor.getString(1), cursor.getString(2),
                     cursor.getString(3), cursor.getLong(4), cursor.getInt(5) != 0, cursor.getInt(6) != 0))
             }
