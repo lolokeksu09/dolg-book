@@ -7,6 +7,7 @@ on:
       - 'scripts/android-native-smoke.sh'
       - '.github/workflows/android-native-smoke.yml'
       - '.github/actions/clean-avd/**'
+      - 'scripts/ci-clean-avd.sh'
   workflow_dispatch:
 
 concurrency:

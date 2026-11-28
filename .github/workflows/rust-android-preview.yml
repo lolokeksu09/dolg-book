@@ -11,6 +11,7 @@ on:
       - 'tests/contracts/correction.tsv'
       - '.github/workflows/rust-android-preview.yml'
       - '.github/actions/clean-avd/**'
+      - 'scripts/ci-clean-avd.sh'
   workflow_dispatch:
 
 permissions:

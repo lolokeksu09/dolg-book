@@ -6,6 +6,7 @@ on:
       - 'android/**'
       - '.github/workflows/raschet-licensed-staging.yml'
       - '.github/actions/clean-avd/**'
+      - 'scripts/ci-clean-avd.sh'
       - 'scripts/test-licensed-staging.sh'
   workflow_dispatch:
     inputs:

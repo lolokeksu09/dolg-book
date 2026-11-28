@@ -18,10 +18,11 @@ runs:
         printf 'key=%s-%s-%s\n' "${ImageOS:-linux}" "${ImageVersion:-unknown}" "$digest" >> "$GITHUB_OUTPUT"
     - name: Restore only the pristine AVD
       id: avd-cache
+      continue-on-error: true
       uses: actions/cache/restore@v4
       with:
         path: ~/.android/avd
-        key: raschet-clean-avd-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.fingerprint.outputs.key }}-api35-google-apis-x86_64-pixel6-${{ hashFiles('.github/actions/clean-avd/action.yml') }}
+        key: raschet-clean-avd-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.fingerprint.outputs.key }}-api35-google-apis-x86_64-pixel6-${{ hashFiles('.github/actions/clean-avd/action.yml', 'scripts/ci-clean-avd.sh') }}
     - name: Generate clean snapshot on cache miss
       id: seed
       if: steps.avd-cache.outputs.cache-hit != 'true'
@@ -35,14 +36,7 @@ runs:
         force-avd-creation: true
         disable-animations: false
         emulator-options: -no-window -noaudio -no-boot-anim -gpu swiftshader
-        script: |
-          set -euo pipefail
-          packages=$(adb shell pm list packages | tr -d '\r')
-          if grep -Eq '^package:dev\.ventry\.raschet($|\.)' <<< "$packages"; then
-            echo 'Unexpected Raschet package in snapshot seed' >&2
-            exit 1
-          fi
-          echo 'PRISTINE_AVD_SEED_OK'
+        script: bash scripts/ci-clean-avd.sh seed
     - name: Verify snapshot availability
       id: snapshot
       shell: bash
@@ -60,12 +54,15 @@ runs:
         fi
     - name: Save snapshot before any app installation
       if: steps.avd-cache.outputs.cache-hit != 'true' && steps.snapshot.outputs.available == 'true'
+      continue-on-error: true
       uses: actions/cache/save@v4
       with:
         path: ~/.android/avd
         key: ${{ steps.avd-cache.outputs.cache-primary-key }}
     - name: Run required tests on isolated emulator
       uses: reactivecircus/android-emulator-runner@v2
+      env:
+        RASCHET_CI_TEST_COMMAND: ${{ inputs.script }}
       with:
         api-level: 35
         target: google_apis
@@ -74,14 +71,4 @@ runs:
         force-avd-creation: ${{ steps.snapshot.outputs.available != 'true' }}
         disable-animations: true
         emulator-options: -no-window -no-snapshot-save -noaudio -no-boot-anim -gpu swiftshader
-        script: |
-          set -euo pipefail
-          packages=$(adb shell pm list packages | tr -d '\r')
-          if grep -Eq '^package:dev\.ventry\.raschet($|\.)' <<< "$packages"; then
-            echo 'Unexpected Raschet package before test' >&2
-            exit 1
-          fi
-          start=$(date +%s)
-          echo "RASCHET_TEST_START_EPOCH=$start"
-          ${{ inputs.script }}
-          echo "RASCHET_TEST_DURATION_SECONDS=$(($(date +%s)-start))"
+        script: bash scripts/ci-clean-avd.sh run
