@@ -5,6 +5,8 @@ import static dev.ventry.raschet.ActivityRequests.*;
 import androidx.activity.ComponentActivity;
 import androidx.lifecycle.ViewModelProvider;
 import dev.ventry.raschet.presentation.BookViewModel;
+import dev.ventry.raschet.presentation.BookNavigationViewModel;
+import dev.ventry.raschet.presentation.BookNavigationViewModel.Screen;
 import dev.ventry.raschet.presentation.AnalyticsViewModel;
 import dev.ventry.raschet.domain.AnalyticsExport;
 import dev.ventry.raschet.presentation.BookScreenData;
@@ -68,15 +70,14 @@ public final class MainActivity extends ComponentActivity {
     private static final int ACCENT=LedgerTheme.ACCENT, INK=LedgerTheme.INK, ALERT=LedgerTheme.ALERT, RED=LedgerTheme.RED;
     private static final String RECOVERY_PREFS="raschet_local_recovery";
     public static final String EXTRA_FIRST_START = "dev.ventry.raschet.FIRST_START";
-    private static final String[] TABS={"Главная","Клиенты","История","Настройки"};
+    private static final Screen[] TABS={Screen.BOOK,Screen.CLIENTS,Screen.HISTORY,Screen.SETTINGS};
     private static final int[] ICONS={R.drawable.ic_nav_home,R.drawable.ic_nav_people,R.drawable.ic_nav_history,R.drawable.ic_nav_settings};
     private final DateTimeFormatter dayFormat=DateTimeFormatter.ofPattern("d MMM yyyy",new Locale("ru","RU"));
     private LedgerStore ledger;
     private BookViewModel bookViewModel;
     private AnalyticsViewModel analyticsViewModel;
-    private String analyticsClientId=null, analyticsReturnTab="Клиенты";
-    private boolean historyFromAnalytics;
-    private final PendingFileRequests pendingFiles=new PendingFileRequests();
+    private BookNavigationViewModel bookNavigation;
+    private PendingFileRequests pendingFiles;
     private boolean reloadOnStart,firstStartPending;
     private Dialog pendingClientDialog;
     private TextView pendingClientError;
@@ -91,13 +92,12 @@ public final class MainActivity extends ComponentActivity {
     private LinearLayout root, mainPanel, navigation;
     private TextView shopCaption;
     private FrameLayout page;
-    private String tab="Главная", selectedClient=null, search="", historyFilter="Все";
+    private String search="", historyFilter="Все";
     private String historyQuery="";
     private String collectionQuery="";
     private boolean collectionUrgent;
     private String collectionPlanFilter="ALL";
     private int collectionLimit=60;
-    private boolean returnToCollections,returnToBook;
     private String historyClientId=null;
     private String clientFilter=CollectionsInsights.ALL;
     private boolean clientsAmountFirst,clientsRecentFirst;
@@ -127,6 +127,10 @@ public final class MainActivity extends ComponentActivity {
         ledger=new LedgerStore(this);
         bookViewModel=new ViewModelProvider(this).get(BookViewModel.class);
         analyticsViewModel=new ViewModelProvider(this).get(AnalyticsViewModel.class);
+        bookNavigation=new ViewModelProvider(this).get(BookNavigationViewModel.class);
+        bookNavigation.restore(state);
+        pendingFiles=bookNavigation.getPendingFiles();
+        analyticsViewModel.focus(bookNavigation.getState().getAnalyticsClientId());
         vault=new RecoveryVault(this);
         directory=new ClientDirectory(this);
         privacy=new BookPrivacy(this);
@@ -135,7 +139,6 @@ public final class MainActivity extends ComponentActivity {
         shopName=getPreferences(MODE_PRIVATE).getString("shop","Мой магазин");
         largeText=getPreferences(MODE_PRIVATE).getBoolean("large",false);
         if(state!=null){
-            tab=state.getString("tab","Главная");selectedClient=state.getString("client");
             firstStartPending=state.getBoolean("first_start_pending",false);
             search=state.getString("search","");
             clientFilter=state.getString("client_filter",CollectionsInsights.ALL);
@@ -147,15 +150,10 @@ public final class MainActivity extends ComponentActivity {
             historyVisibleLimit=state.getInt("history_visible_limit",100);
             collectionQuery=state.getString("collection_query","");collectionUrgent=state.getBoolean("collection_urgent",false);
             collectionPlanFilter=state.getString("collection_plan_filter","ALL");
-            collectionLimit=state.getInt("collection_limit",60);returnToCollections=state.getBoolean("return_to_collections",false);
-            returnToBook=state.getBoolean("return_to_book",false);
+            collectionLimit=state.getInt("collection_limit",60);
             historyQuery=state.getString("history_query","");historyClientId=state.getString("history_client_id");
-            analyticsClientId=state.getString("analytics_client_id");analyticsReturnTab=state.getString("analytics_return_tab","Клиенты");
-            historyFromAnalytics=state.getBoolean("history_from_analytics",false);
-            analyticsViewModel.focus(analyticsClientId);
             analyticsViewModel.restoreFilters(state.getString("analytics_preset"),readDate(state,"analytics_range_from"),readDate(state,"analytics_range_to"),
                     state.getString("analytics_overview_section"),state.getString("analytics_personal_section"),state.getString("analytics_ranking"));
-            pendingFiles.restore(state);
             detailVisibleLimit=state.getInt("detail_visible_limit",80);
             detailFilter=state.getString("detail_filter",ClientStatement.ALL);detailFilterClient=state.getString("detail_filter_client");
             bookDayLimit=state.getInt("book_day_limit",30);
@@ -181,7 +179,7 @@ public final class MainActivity extends ComponentActivity {
         render();
     }
     @Override protected void onSaveInstanceState(Bundle out) {
-        out.putString("tab",tab);out.putString("client",selectedClient);
+        bookNavigation.save(out);
         out.putBoolean("first_start_pending",firstStartPending);
         out.putString("search",search);
         out.putString("client_filter",clientFilter);
@@ -193,18 +191,14 @@ public final class MainActivity extends ComponentActivity {
         out.putInt("history_visible_limit",historyVisibleLimit);
         out.putString("collection_query",collectionQuery);out.putBoolean("collection_urgent",collectionUrgent);
         out.putString("collection_plan_filter",collectionPlanFilter);
-        out.putInt("collection_limit",collectionLimit);out.putBoolean("return_to_collections",returnToCollections);
-        out.putBoolean("return_to_book",returnToBook);
+        out.putInt("collection_limit",collectionLimit);
         out.putString("history_query",historyQuery);out.putString("history_client_id",historyClientId);
-        out.putString("analytics_client_id",analyticsClientId);out.putString("analytics_return_tab",analyticsReturnTab);
-        out.putBoolean("history_from_analytics",historyFromAnalytics);
         var selection=analyticsViewModel.getRequest().getValue().getSelection();
         out.putString("analytics_preset",selection.getPreset().name());
         if(selection.getCustom()!=null){saveDate(out,"analytics_range_from",selection.getCustom().getFrom());saveDate(out,"analytics_range_to",selection.getCustom().getTo());}
         out.putString("analytics_overview_section",analyticsViewModel.getOverviewSection().getValue().name());
         out.putString("analytics_personal_section",analyticsViewModel.getPersonalSection().getValue().name());
         out.putString("analytics_ranking",analyticsViewModel.getRanking().getValue());
-        pendingFiles.save(out);
         out.putInt("detail_visible_limit",detailVisibleLimit);
         out.putString("detail_filter",detailFilter);out.putString("detail_filter_client",detailFilterClient);
         out.putInt("book_day_limit",bookDayLimit);
@@ -276,7 +270,9 @@ public final class MainActivity extends ComponentActivity {
         return root;
     }
     private void render() {
-        if(analyticsViewModel!=null&&(!unlocked||!tab.equals("Статистика")||bookViewModel.hasPendingWrite()))analyticsViewModel.bindBook(null);
+        Screen activeTab=bookNavigation.getState().getScreen().mainTab();
+        if(!unlocked||bookNavigation.getState().getScreen()!=Screen.ANALYTICS||bookViewModel.hasPendingWrite())
+            analyticsViewModel.bindBook(null);
         if(!unlocked){bookViewModel.clear();page.removeAllViews();root.setVisibility(View.INVISIBLE);return;}
         root.setVisibility(View.VISIBLE);
         if(!tablet){navigation.getLayoutParams().height=dp(navHeight());navigation.requestLayout();}
@@ -287,9 +283,9 @@ public final class MainActivity extends ComponentActivity {
             return;
         }
         for(int i=0;i<TABS.length;i++){
-            final String destination=TABS[i];
-            String caption=destination.equals("Главная")?"Книга":destination;
-            boolean active=destination.equals(tab)||(destination.equals("Главная")&&(tab.equals("Возврат")||tab.equals("Отчёт")||tab.equals("Статистика")));
+            final Screen destination=TABS[i];
+            String caption=destination.getTitle();
+            boolean active=destination==activeTab;
             LinearLayout item=tablet?row():stack(2);
             item.setGravity(Gravity.CENTER);
             item.setPadding(dp(tablet?10:2),dp(tablet?6:2),dp(tablet?6:2),dp(tablet?6:2));
@@ -317,7 +313,12 @@ public final class MainActivity extends ComponentActivity {
             item.setContentDescription(caption);
             item.setSelected(active);
             item.setFocusable(true);
-            item.setOnClickListener(v->{firstStartPending=false;tab=destination;selectedClient=null;analyticsClientId=null;historyFromAnalytics=false;returnToCollections=false;returnToBook=false;settingsExpanded="";render();});
+            item.setOnClickListener(v->{
+                firstStartPending=false;
+                bookNavigation.selectTab(destination);
+                settingsExpanded="";
+                render();
+            });
             LinearLayout.LayoutParams ip=tablet?new LinearLayout.LayoutParams(-1,dp(controlHeight())):
                     new LinearLayout.LayoutParams(0,-1,1);
             if(tablet)ip.bottomMargin=dp(6);else {ip.leftMargin=dp(2);ip.rightMargin=dp(2);}
@@ -338,11 +339,12 @@ public final class MainActivity extends ComponentActivity {
         }
     }
     private boolean tabletClientScreen(){
-        return tablet&&getResources().getConfiguration().screenWidthDp>=1100&&tab.equals("Клиенты");
+        return tablet&&getResources().getConfiguration().screenWidthDp>=1100
+                &&bookNavigation.getState().getScreen()==Screen.CLIENTS;
     }
     private boolean needsBookSnapshot(){
-        return tabletClientScreen()||selectedClient!=null||
-                tab.equals("Главная")||tab.equals("Клиенты")||tab.equals("Возврат")||tab.equals("История")||tab.equals("Отчёт")||tab.equals("Статистика");
+        var state=bookNavigation.getState();
+        return state.getClientId()!=null||state.getScreen()!=Screen.SETTINGS;
     }
     private void onBookState(ReadState<?> state){
         if(!unlocked||isFinishing()||isDestroyed()||bookViewModel.hasPendingWrite()||!needsBookSnapshot()
@@ -361,8 +363,8 @@ public final class MainActivity extends ComponentActivity {
     private void showReadyBook(BookScreenData data){
         if(firstStartPending){
             firstStartPending=false;
-            if(tab.equals("Главная")&&data.getSnapshot().getClients().isEmpty()){
-                tab="Клиенты";render();return;
+            if(bookNavigation.getState().getScreen()==Screen.BOOK&&data.getSnapshot().getClients().isEmpty()){
+                bookNavigation.showRoot(Screen.CLIENTS);render();return;
             }
         }
         renderContent(data);
@@ -370,14 +372,19 @@ public final class MainActivity extends ComponentActivity {
     private void renderContent(BookScreenData data){
         page.removeAllViews();
         try {
-            View contents=tabletClientScreen()?tabletClientsView(data):
-                    selectedClient!=null?detailView(selectedClient,data):
-                    tab.equals("Главная")?homeView(data):
-                    tab.equals("Клиенты")?clientsView(data):
-                    tab.equals("История")?historyView(data):
-                    tab.equals("Возврат")?collectionView(data):
-                    tab.equals("Отчёт")?reportView(data):
-                    tab.equals("Статистика")?analyticsView(data):settingsView();
+            var state=bookNavigation.getState();
+            View contents;
+            if(tabletClientScreen())contents=tabletClientsView(data);
+            else if(state.getClientId()!=null)contents=detailView(state.getClientId(),data);
+            else contents=switch (state.getScreen()) {
+                case BOOK -> homeView(data);
+                case CLIENTS -> clientsView(data);
+                case HISTORY -> historyView(data);
+                case COLLECTIONS -> collectionView(data);
+                case REPORT -> reportView(data);
+                case ANALYTICS -> analyticsView(data);
+                case SETTINGS -> settingsView();
+            };
             page.addView(contents,new FrameLayout.LayoutParams(-1,-1));
         }catch(Exception e){
             LinearLayout error=screen("Ошибка чтения книги","Данные не были изменены.");
@@ -395,23 +402,24 @@ public final class MainActivity extends ComponentActivity {
                 key->{if(!expandedBookDays.add(key))expandedBookDays.remove(key);},
                 key->{if(key!=null)expandedBookDays.add(key);bookAutoExpand=false;},
                 limit->bookDayLimit=limit,
-                id->{returnToCollections=false;returnToBook=true;selectedClient=id;tab="Клиенты";render();},
+                id->openClient(id,Screen.BOOK),
                 this::showOperation,id->showEntryForm(id,"payment"),id->showEntryForm(id,"debt"),
                 day->showQuickDebt(false,day),day->chooseClient("payment",day),
-                ()->{tab="Отчёт";selectedClient=null;render();},()->exportBook(false),
+                ()->{bookNavigation.show(Screen.REPORT);render();},()->exportBook(false),
                 bookCalendar,bookCalendarDay,(calendar,day)->{bookCalendar=calendar;bookCalendarDay=day;},
-                ()->{analyticsClientId=null;historyFromAnalytics=false;analyticsViewModel.focus(null);tab="Статистика";selectedClient=null;render();});
+                ()->{bookNavigation.openAnalytics();render();});
     }
 
     private void openCollections(){
-        collectionQuery="";collectionUrgent=false;collectionPlanFilter="ALL";collectionLimit=60;returnToCollections=false;returnToBook=false;selectedClient=null;tab="Возврат";render();
+        collectionQuery="";collectionUrgent=false;collectionPlanFilter="ALL";collectionLimit=60;
+        bookNavigation.showRoot(Screen.COLLECTIONS);render();
     }
     private View collectionView(BookScreenData data){
         return CollectionsCompose.create(this,data,collectionQuery,collectionUrgent,collectionLimit,largeText,
                 query->{collectionQuery=query;collectionLimit=60;},
                 urgent->{collectionUrgent=urgent;collectionLimit=60;},
                 limit->collectionLimit=limit,this::openClientFilter,
-                id->{returnToCollections=true;returnToBook=false;tab="Клиенты";selectedClient=id;render();},
+                id->openClient(id,Screen.COLLECTIONS),
                 id->showEntryForm(id,"payment"),this::showFollowUp,collectionPlanFilter,plan->collectionPlanFilter=plan);
     }
     private void showFollowUp(LedgerStore.Client person){
@@ -503,24 +511,26 @@ public final class MainActivity extends ComponentActivity {
         View divider=new View(this);
         divider.setBackgroundColor(BORDER);
         columns.addView(divider,new LinearLayout.LayoutParams(dp(1),-1));
-        View detail=selectedClient==null?
+        String client=bookNavigation.getState().getClientId();
+        View detail=client==null?
                 scroll(emptyState(R.drawable.ic_nav_people,
                         "Выберите клиента",
                         "Слева список клиентов и фильтры. Здесь появятся остаток, операции и быстрые действия.",
-                        null,null)):detailView(selectedClient,data);
+                        null,null)):detailView(client,data);
         columns.addView(detail,new LinearLayout.LayoutParams(0,-1,62f));
         return columns;
     }
     private void openClientFilter(String filter) {
-        clientFilter=filter;clientScope=ClientDirectory.ACTIVE;clientVisibleLimit=60;search="";returnToCollections=false;returnToBook=false;selectedClient=null;tab="Клиенты";render();
+        clientFilter=filter;clientScope=ClientDirectory.ACTIVE;clientVisibleLimit=60;search="";
+        bookNavigation.showRoot(Screen.CLIENTS);render();
     }
     private View clientsView(BookScreenData data) {
         return ClientsCompose.create(this,data,clientScope,clientFilter,clientsAmountFirst,clientsRecentFirst,
-                selectedClient,search,clientVisibleLimit,largeText,
+                bookNavigation.getState().getClientId(),search,clientVisibleLimit,largeText,
                 value->{search=value;clientVisibleLimit=60;},
                 limit->clientVisibleLimit=limit,
                 ()->showClientForm(null),this::showClientFilters,
-                id->{returnToBook=false;returnToCollections=false;selectedClient=id;render();},
+                id->openClient(id,Screen.CLIENTS),
                 ()->openClientFilter(CollectionsInsights.ALL),
                 ()->{clientFilter=CollectionsInsights.ALL;clientVisibleLimit=60;render();});
     }
@@ -545,25 +555,29 @@ public final class MainActivity extends ComponentActivity {
         for(CollectionsInsights.CustomerStatus status:data.getStatuses())
             if(status.client.id.equals(id)){found=status;break;}
         if(found==null){
-            selectedClient=null;
+            bookNavigation.clearClient();
             return scroll(emptyState(R.drawable.ic_nav_people,"Клиент не найден",
                     "Запись могла измениться после восстановления книги.",
-                    "К списку клиентов",()->{tab="Клиенты";render();}));
+                    "К списку клиентов",()->{bookNavigation.showRoot(Screen.CLIENTS);render();}));
         }
         final CollectionsInsights.CustomerStatus status=found;
         if(!id.equals(detailFilterClient)){detailFilterClient=id;detailFilter=ClientStatement.ALL;detailVisibleLimit=80;}
-        return ClientDetailCompose.create(this,data,id,detailFilter,detailVisibleLimit,largeText,returnToCollections,
+        Screen origin=bookNavigation.getState().getClientOrigin();
+        return ClientDetailCompose.create(this,data,id,detailFilter,detailVisibleLimit,largeText,origin==Screen.COLLECTIONS,
                 this::returnFromClient,
                 archived->showClientActions(status.client,status.balance,status.overdue,archived),
                 ()->showEntryForm(id,"debt"),()->showEntryForm(id,"payment"),
                 ()->changeClientArchive(id,true),this::showDetailFilters,
-                this::showOperation,this::showPurchaseDetails,limit->detailVisibleLimit=limit,returnToBook,
+                this::showOperation,this::showPurchaseDetails,limit->detailVisibleLimit=limit,origin==Screen.BOOK,
                 ()->openClientAnalytics(id));
     }
+    private void openClient(String id,Screen origin){
+        bookNavigation.openClient(id,origin);
+        render();
+    }
     private void returnFromClient(){
-        selectedClient=null;
-        tab=returnToBook?"Главная":returnToCollections?"Возврат":"Клиенты";
-        returnToBook=false;returnToCollections=false;render();
+        bookNavigation.closeClient();
+        render();
     }
     private void showDetailFilters(){
         LinearLayout menu=stack(2);
@@ -574,7 +588,7 @@ public final class MainActivity extends ComponentActivity {
     private void changeClientArchive(String id,boolean archived){
         try{
             directory.archive(id,LedgerStore.balance(ledger.entriesForClient(id),id),!archived);
-            selectedClient=null;clientScope=archived?ClientDirectory.ACTIVE:ClientDirectory.ARCHIVE;
+            bookNavigation.clearClient();clientScope=archived?ClientDirectory.ACTIVE:ClientDirectory.ARCHIVE;
             clientFilter=CollectionsInsights.ALL;search="";render();
         }catch(Exception e){message(e.getMessage());}
     }
@@ -732,24 +746,22 @@ public final class MainActivity extends ComponentActivity {
         picker.setTitle(title);picker.show();
     }
     private void openClientAnalytics(String id){
-        analyticsClientId=id;analyticsReturnTab=tab;historyFromAnalytics=false;
-        selectedClient=null;tab="Статистика";render();
+        bookNavigation.openClientAnalytics(id);
+        render();
     }
     private void returnFromAnalytics(){
-        historyFromAnalytics=false;
-        String client=analyticsClientId;analyticsClientId=null;
-        if(client==null){tab="Главная";selectedClient=null;}
-        else if(analyticsReturnTab.equals("Статистика")){tab="Статистика";selectedClient=null;}
-        else{tab=analyticsReturnTab;selectedClient=client;}
+        bookNavigation.closeAnalytics();
         render();
     }
     private View analyticsView(BookScreenData data){
-        analyticsViewModel.focus(analyticsClientId);
+        var state=bookNavigation.getState();
+        analyticsViewModel.focus(state.getAnalyticsClientId());
         return AnalyticsCompose.create(this,data,analyticsViewModel,
-                this::returnFromAnalytics,()->{analyticsClientId=null;tab="Отчёт";render();},(from,to)->{
+                this::returnFromAnalytics,()->{bookNavigation.openAnalyticsReport();render();},(from,to)->{
                     historyFrom=from;historyTo=to;historyFilter="Все";historyQuery="";
-                    historyClientId=analyticsClientId;historyVisibleLimit=100;historyFromAnalytics=true;tab="История";render();
-                },this::openClientAnalytics,analyticsClientId!=null&&analyticsReturnTab.equals("Статистика"),this::exportAnalytics);
+                    historyClientId=state.getAnalyticsClientId();historyVisibleLimit=100;
+                    bookNavigation.openAnalyticsHistory();render();
+                },this::openClientAnalytics,state.getAnalyticsClientId()!=null&&state.getAnalyticsOrigin()==Screen.ANALYTICS,this::exportAnalytics);
     }
     private void exportAnalytics(AnalyticsExport.Spec spec){
         if(!unlocked||bookViewModel.hasPendingWrite())return;
@@ -761,7 +773,7 @@ public final class MainActivity extends ComponentActivity {
         return ReportCompose.create(this,data,reportFrom,reportTo,reportDaysLimit,
                 ()->choosePeriod(true),()->{
                     historyFrom=reportFrom;historyTo=reportTo;historyFilter="Все";historyQuery="";
-                    historyClientId=null;historyVisibleLimit=100;tab="История";render();
+                    historyClientId=null;historyVisibleLimit=100;bookNavigation.show(Screen.HISTORY);render();
                 },this::exportReport,limit->reportDaysLimit=limit);
     }
     private void exportReport(){
@@ -860,7 +872,7 @@ public final class MainActivity extends ComponentActivity {
                 message("Напоминания включены. Android выберет время проверки.");
             else message("Не удалось запланировать напоминания.");
         }else message("Без разрешения уведомления остаются выключенными.");
-        if(tab.equals("Настройки"))render();
+        if(bookNavigation.getState().getScreen()==Screen.SETTINGS)render();
     }
     private android.content.SharedPreferences recoveryPrefs() {
         return getSharedPreferences(RECOVERY_PREFS,MODE_PRIVATE);
@@ -1594,8 +1606,9 @@ public final class MainActivity extends ComponentActivity {
         if(c==null){message("Клиент не найден.");return;}
         final List<LedgerStore.Entry> clientEntries=ledger.entriesForClient(clientId);
         final long available=LedgerStore.balance(clientEntries,clientId);
-        final boolean fromBook=tab.equals("Главная");
-        final boolean fromCollections=tab.equals("Возврат");
+        Screen origin=bookNavigation.getState().getScreen();
+        final boolean fromBook=origin==Screen.BOOK;
+        final boolean fromCollections=origin==Screen.COLLECTIONS;
         if(directory.archived(clientId,available)){message("Сначала верните клиента из архива.");return;}
         if(type.equals("payment")&&available<=0){message("Нет долга для оплаты.");return;}
         LinearLayout content=stack(7);
@@ -1796,12 +1809,11 @@ public final class MainActivity extends ComponentActivity {
         }
         if(entry.purchase!=null)clientMenuAction(content,"Состав покупки",()->showPurchaseDetails(entry));
         clientMenuAction(content,"Карточка клиента",()->{
-            if(!"Клиенты".equals(tab)){returnToBook="Главная".equals(tab);returnToCollections="Возврат".equals(tab);}
-            selectedClient=entry.clientId;tab="Клиенты";render();
+            bookNavigation.openOperationClient(entry.clientId);render();
         });
         clientMenuAction(content,"Все операции клиента",()->{
             historyClientId=entry.clientId;historyQuery="";historyFrom=null;historyTo=null;historyFilter="Все";
-            historyVisibleLimit=100;selectedClient=null;tab="История";render();
+            historyVisibleLimit=100;bookNavigation.show(Screen.HISTORY);render();
         });
         if(active&&!directory.archived(entry.clientId,balance)){
             if(last!=null&&last.id.equals(entry.id)){
@@ -2001,7 +2013,7 @@ public final class MainActivity extends ComponentActivity {
         }
     }
     private void applyWriteReceipt(WriteReceipt receipt){
-        if("debt".equals(receipt.getKind())&&!(returnToBook&&receipt.getDestination()==WriteDestination.DETAIL)){
+        if("debt".equals(receipt.getKind())&&!(bookNavigation.getState().getClientOrigin()==Screen.BOOK&&receipt.getDestination()==WriteDestination.DETAIL)){
             bookPayments=false;clearBookFilters();
             bookDayLimit=Math.max(bookDayLimit,receipt.getRank());
             bookCalendarDay=receipt.getDay();
@@ -2012,16 +2024,11 @@ public final class MainActivity extends ComponentActivity {
             bookCalendarDay=receipt.getDay();
             expandedBookDays.clear();expandedBookDays.add(receipt.getDay().toString());
         }
-        switch(receipt.getDestination()){
-            case CLIENTS:
-                returnToBook=false;returnToCollections=false;
-                tab="Клиенты";selectedClient=null;clientScope=ClientDirectory.ACTIVE;
-                clientFilter=CollectionsInsights.ALL;search="";clientVisibleLimit=60;break;
-            case BOOK: tab="Главная";selectedClient=null;returnToBook=false;returnToCollections=false;break;
-            case COLLECTIONS: tab="Возврат";selectedClient=null;returnToBook=false;returnToCollections=false;break;
-            case DETAIL: tab="Клиенты";selectedClient=receipt.getClientId();break;
-            case KEEP: break;
+        if(receipt.getDestination()==WriteDestination.CLIENTS){
+            clientScope=ClientDirectory.ACTIVE;
+            clientFilter=CollectionsInsights.ALL;search="";clientVisibleLimit=60;
         }
+        bookNavigation.onWrite(receipt.getDestination(),receipt.getClientId());
     }
     private void pickImport() {
         pendingFiles.requestImport();
@@ -2079,10 +2086,7 @@ public final class MainActivity extends ComponentActivity {
     @Override public void onBackPressed() {
         if(!unlocked){finishAndRemoveTask();return;}
         if(bookViewModel.hasPendingWrite())return;
-        if(selectedClient!=null){returnFromClient();}
-        else if(tab.equals("Статистика")){returnFromAnalytics();}
-        else if(tab.equals("История")&&historyFromAnalytics){historyFromAnalytics=false;tab="Статистика";render();}
-        else if(!tab.equals("Главная")){tab="Главная";render();}
+        if(bookNavigation.back())render();
         else super.onBackPressed();
     }
     @Override protected void onDestroy() {if(productPickerDialog!=null)productPickerDialog.dismiss();if(analyticsViewModel!=null)analyticsViewModel.bindBook(null);if(bookViewModel!=null)bookViewModel.clear();if(ledger!=null)ledger.close();super.onDestroy();}
