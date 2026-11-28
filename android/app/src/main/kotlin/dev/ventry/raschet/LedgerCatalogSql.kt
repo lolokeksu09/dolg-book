@@ -7,7 +7,7 @@ import java.util.Collections
 
 /** Catalog persistence shares the same SQLite connection and caller synchronization as the ledger. */
 internal object LedgerCatalogSql {
-    @JvmStatic fun products(db: SQLiteDatabase): List<Product> =
+    @JvmStatic fun products(db: SQLiteDatabase): MutableList<Product> =
         db.rawQuery("SELECT id,name,category,unit,price,favorite,archived FROM products ORDER BY name COLLATE NOCASE,id", null).use { cursor ->
             ArrayList<Product>().apply {
                 while (cursor.moveToNext()) add(Product(cursor.getString(0), cursor.getString(1), cursor.getString(2),

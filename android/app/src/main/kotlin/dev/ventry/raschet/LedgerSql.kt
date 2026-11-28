@@ -19,14 +19,14 @@ internal object LedgerSql {
         return db.rawQuery(query, clientId?.let { arrayOf(it) })
     }
 
-    @JvmStatic fun clients(db: SQLiteDatabase): List<LedgerStore.Client> =
+    @JvmStatic fun clients(db: SQLiteDatabase): MutableList<LedgerStore.Client> =
         clientRows(db).use { cursor ->
             ArrayList<LedgerStore.Client>().apply {
                 while (cursor.moveToNext()) add(LedgerStore.Client(cursor.getString(0), cursor.getString(1), cursor.getString(2)))
             }
         }
 
-    @JvmStatic fun entries(db: SQLiteDatabase, clientId: String?): List<LedgerStore.Entry> =
+    @JvmStatic fun entries(db: SQLiteDatabase, clientId: String?): MutableList<LedgerStore.Entry> =
         entryRows(db, clientId).use { cursor ->
             ArrayList<LedgerStore.Entry>().apply {
                 while (cursor.moveToNext()) add(LedgerStore.Entry(cursor.getString(0), cursor.getString(1), cursor.getString(2),

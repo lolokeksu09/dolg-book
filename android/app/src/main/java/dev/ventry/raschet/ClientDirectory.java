@@ -8,7 +8,7 @@ import java.util.List;
 import java.util.Set;
 
 /** Local presentation preferences; never removes or changes ledger operations. */
-final class ClientDirectory {
+public final class ClientDirectory {
     static final String ACTIVE=dev.ventry.raschet.presentation.BookFilterLabels.ACTIVE,
             FAVORITES=dev.ventry.raschet.presentation.BookFilterLabels.FAVORITES,
             ARCHIVE=dev.ventry.raschet.presentation.BookFilterLabels.ARCHIVE;

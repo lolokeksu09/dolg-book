@@ -8,7 +8,7 @@ import java.util.UUID;
 import org.json.JSONObject;
 import org.json.JSONException;
 
-final class Product {
+public final class Product {
     static final int MAX_PRODUCTS=3000;
     static final String[] UNITS={"шт","кг","л","упак"};
     final String id,name,category,unit;
