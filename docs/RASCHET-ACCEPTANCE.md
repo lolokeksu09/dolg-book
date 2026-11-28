@@ -1,6 +1,6 @@
 # Приёмка подписанного «Расчёта»
 
-Критерии E-02 из [статуса экосистемы Ventry](https://github.com/lolokeksu09/Ventry/blob/main/docs/ECOSYSTEM-STATUS.md). Актуальная ревизия и последний кандидат указаны в [точке продолжения](CONTINUATION.md).
+Критерии E-02 из [статуса экосистемы Ventry](https://github.com/lolokeksu09/Ventry/blob/main/docs/ECOSYSTEM-STATUS.md). Актуальная ревизия и последний кандидат указаны в [точке продолжения](CONTINUATION.md). Обязательное постоянное правило единого APK для пользователя закреплено в [AGENTS.md](../AGENTS.md#постоянное-правило-выпуска-один-подписанный-apk): debug/preview/staging не заменяют подписанную сборку.
 
 ## Сборка и идентификация
 
