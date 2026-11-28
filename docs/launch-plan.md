@@ -1,5 +1,7 @@
 # Проверка проекта: долговая книга для магазина
 
+> Текущий статус и порядок: [CONTINUATION](https://github.com/lolokeksu09/dolg-book/blob/main/docs/CONTINUATION.md), [единый план Ventry](https://github.com/lolokeksu09/Ventry/blob/main/docs/ECOSYSTEM-STATUS.md). Ниже — контракт и исторические доказательства; старые статусы не переопределяют текущий снимок.
+
 Дата подготовки: 17 ноября 2026 года.
 
 ## Исходная цель
