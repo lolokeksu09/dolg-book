@@ -3,6 +3,7 @@ package dev.ventry.raschet.cloud
 import android.content.Context
 import dev.ventry.raschet.BuildConfig
 import dev.ventry.raschet.license.LicenseManager
+import dev.ventry.raschet.license.LicenseManager.CloudCredential
 import dev.ventry.raschet.license.hex
 import dev.ventry.raschet.license.uuid
 import org.json.JSONArray
@@ -19,9 +20,8 @@ internal object CloudBackupClient {
     private const val ORIGIN="https://license.ventrylab.top"
     private const val META_MAX=8192
     private data class Reply(val bytes:ByteArray,val hash:String?)
-    private fun call(context:Context,path:String,body:ByteArray=byteArrayOf(),headers:Map<String,String> = emptyMap(),limit:Int=META_MAX):Reply{
+    private fun call(context:Context,path:String,body:ByteArray=byteArrayOf(),headers:Map<String,String> = emptyMap(),limit:Int=META_MAX,credential:CloudCredential=LicenseManager.cloudCredential(context)):Reply{
         require(BuildConfig.LICENSE_PUBLIC_PROFILE && BuildConfig.LICENSE_ORIGIN==ORIGIN){"Облачные копии доступны только в лицензируемой версии."}
-        val credential=LicenseManager.cloudCredential(context)
         val connection=URL(ORIGIN+"/api/v1/backups/"+path).openConnection() as HttpsURLConnection
         try{
             connection.instanceFollowRedirects=false
@@ -73,18 +73,18 @@ internal object CloudBackupClient {
         return CloudSlot(slot,version,size,hash,OffsetDateTime.parse(j.getString("saved_at")))
     }
     private fun hash(bytes:ByteArray)=MessageDigest.getInstance("SHA-256").digest(bytes).hex()
-    fun list(context:Context):List<CloudSlot>{
-        val j=JSONArray(call(context,"list").bytes.toString(Charsets.UTF_8))
+    fun list(context:Context,credential:CloudCredential=LicenseManager.cloudCredential(context)):List<CloudSlot>{
+        val j=JSONArray(call(context,"list",credential=credential).bytes.toString(Charsets.UTF_8))
         require(j.length()<=3)
         val items=(0 until j.length()).map{parse(j.getJSONObject(it))}
         require(items.map{it.slot}.distinct().size==items.size)
         return items.sortedBy{it.slot}
     }
-    fun put(context:Context,slot:Int,expected:String?,data:ByteArray):CloudSlot{
+    fun put(context:Context,slot:Int,expected:String?,data:ByteArray,credential:CloudCredential=LicenseManager.cloudCredential(context)):CloudSlot{
         require(slot in 1..3 && data.size in 49..CloudCipher.MAX)
         val version=UUID.randomUUID().toString()
         val reply=call(context,"$slot/put",data,mapOf("Content-Type" to "application/octet-stream",
-            "X-Ventry-Backup-Version" to version,"X-Ventry-Backup-Expected" to (expected?.uuid()?:"empty")))
+            "X-Ventry-Backup-Version" to version,"X-Ventry-Backup-Expected" to (expected?.uuid()?:"empty")),credential=credential)
         val saved=parse(JSONObject(reply.bytes.toString(Charsets.UTF_8)))
         require(saved.slot==slot && saved.version==version && saved.size==data.size && saved.sha256==hash(data)){"Ответ записи копии не совпадает. Обновите список."}
         return saved

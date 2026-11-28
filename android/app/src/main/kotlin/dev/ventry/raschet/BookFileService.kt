@@ -113,8 +113,19 @@ internal object BookFileService {
                 is FileTask.RestorePoint -> {
                     vault.openLatest().use { restore(app, ledger, it, task.preferencesName, vault) }
                 }
+                FileTask.DisableAutoCloud -> {
+                    dev.ventry.raschet.cloud.AutoBackup.disable(app)
+                    receipt("Автокопирование отключено. Облачные копии сохранены.")
+                }
+                is FileTask.Cloud.EnableAuto -> {
+                    try {
+                        dev.ventry.raschet.cloud.AutoBackup.enable(app,ledger,task.expected,task.passphrase)
+                        receipt("Первая копия сохранена. Автокопирование включено.")
+                    } finally { task.clearSecret() }
+                }
                 is FileTask.Cloud.Put -> {
                     try {
+                        require(task.slot!=3 || !dev.ventry.raschet.cloud.AutoBackup.status(app).enabled){"Сначала выключите автокопирование для слота 3."}
                         dev.ventry.raschet.cloud.CloudBookService.save(app,ledger,task)
                         receipt("Зашифрованная облачная копия сохранена.")
                     } finally { task.clearSecret() }

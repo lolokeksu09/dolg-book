@@ -21,13 +21,17 @@ internal object CloudBookService{
         }
         fun wipe(){buf.fill(0);reset()}
     }
-    fun save(app:Application,ledger:LedgerStore,task:FileTask.Cloud.Put){
+    fun snapshot(ledger:LedgerStore):ByteArray{
         val out=WipingBuffer()
         val plain=try{
             val writer=OutputStreamWriter(out,Charsets.UTF_8).buffered()
             ledger.writeJson(writer);writer.flush()
             out.toByteArray()
         }finally{out.wipe()}
+        return plain
+    }
+    fun save(app:Application,ledger:LedgerStore,task:FileTask.Cloud.Put){
+        val plain=snapshot(ledger)
         val encrypted=try{CloudCipher.encrypt(plain,task.passphrase)}finally{plain.fill(0)}
         try{CloudBackupClient.put(app,task.slot,task.expected,encrypted)}finally{encrypted.fill(0)}
     }
