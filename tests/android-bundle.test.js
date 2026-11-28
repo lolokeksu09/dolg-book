@@ -27,8 +27,12 @@ test('Native SQLite ledger implements balances, reversals and atomic JSON restor
   const store=read('android/app/src/main/java/dev/ventry/raschet/LedgerStore.java');
   for(const part of ['SQLiteOpenHelper','beginTransaction()','setTransactionSuccessful()',
     'importJson(', 'exportJson()', 'reverseLast(', 'overdue(', 'MAX_AMOUNT-available',
-    '"payment".equals(type)&&amount>available', 'rawAmount.toString().matches'])
+    '"payment".equals(type)&&amount>available'])
     assert.ok(store.includes(part),'Missing '+part);
+  const json=read('android/app/src/main/kotlin/dev/ventry/raschet/LedgerJson.kt');
+  assert.ok(json.includes('amountDigits.matches(rawAmount.toString())'));
+  assert.ok(json.includes('db.beginTransaction()') && json.includes('db.setTransactionSuccessful()') && json.includes('db.endTransaction()'));
+  assert.ok(store.includes('LedgerJson.restore(getWritableDatabase(),source)'));
 });
 
 test('No automatic off-device backup of financial data',()=>{
@@ -73,9 +77,11 @@ test('itemized debts use an additive migration and versioned validated purchase 
   const schema=read("android/app/src/main/kotlin/dev/ventry/raschet/LedgerSchema.kt");
   assert.ok(schema.includes("ALTER TABLE entries ADD COLUMN purchase"));
   assert.ok(store.includes("LedgerSchema.upgrade(db,oldVersion,newVersion,legacyDirectory)"));
-  assert.ok(store.includes('Math.max(version,3)'));
-  assert.ok(store.includes('purchase.total!=amount'));
-  assert.ok(store.includes('last.purchase!=null&&amount!=last.amount'));
+  const json=read('android/app/src/main/kotlin/dev/ventry/raschet/LedgerJson.kt');
+  const corrections=read('android/app/src/main/kotlin/dev/ventry/raschet/LedgerCorrections.kt');
+  assert.ok(json.includes('maxOf(version, 3)'));
+  assert.ok(json.includes('p.total == amount'));
+  assert.ok(corrections.includes('last.purchase == null || amount == last.amount'));
   assert.ok(purchase.includes('RoundingMode.HALF_UP'));
   assert.ok(ui.includes('new ClientCommand.ItemizedDebt(purchaseId,clientId,purchase.encode()'));
   const files=read('android/app/src/main/kotlin/dev/ventry/raschet/BookFileService.kt');
@@ -91,9 +97,10 @@ test('catalog data stays portable and real editing/picking is routed to the repo
   const schema=read('android/app/src/main/kotlin/dev/ventry/raschet/LedgerSchema.kt');
   assert.ok(schema.includes('CREATE TABLE products'));
   assert.ok(store.includes('LedgerCatalogSql.save(getWritableDatabase(),product)'));
-  assert.ok(store.includes('for(Product product:catalog)'));
-  assert.ok(store.includes('version=4;'));
-  assert.ok(store.includes('for(Product p:newProducts)'));
+  const json=read('android/app/src/main/kotlin/dev/ventry/raschet/LedgerJson.kt');
+  assert.ok(json.includes('for (product in catalog)'));
+  assert.ok(json.includes('version = 4'));
+  assert.ok(json.includes('for (p in newProducts)'));
   assert.ok(settings.includes('LedgerMetric("Каталог товаров"'));
   assert.ok(ui.includes('new SqliteLedgerRepository(ledger).catalog()'));
   assert.ok(ui.includes('new ClientCommand.Catalog(new CatalogRecord('));
@@ -417,7 +424,9 @@ test('correction and reversal previews use the same balance guard and exact sele
  assert.ok(ui.includes('showReversal(entry.clientId,entry.id)'));
  assert.ok(ui.includes('LedgerStore.correctedBalance(currentBalance,original,'));
  assert.ok(ui.includes('Остаток после отмены: '));
- assert.ok(store.includes('correctedBalance(balance(all,clientId),last,amount)'));
+ const corrections=read('android/app/src/main/kotlin/dev/ventry/raschet/LedgerCorrections.kt');
+ assert.ok(corrections.includes('correctedBalance(LedgerStore.balance(all, clientId), last, amount)'));
+ assert.ok(store.includes('LedgerCorrections.correct(getWritableDatabase()'));
 });
 
 test('financial commands revalidate consent and preserve existing transactional write guards',()=>{
